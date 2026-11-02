@@ -190,6 +190,27 @@ class MainActivity : ComponentActivity() {
             setOnClickListener { diagnose70mai() }
         })
         panel.addView(Button(this).apply {
+            text = "OPENPILOT: KIỂM TRA ĐỊNH DẠNG MÔ HÌNH"
+            textSize = 12f
+            setOnClickListener {
+                val contract = SupercomboV027Contract
+                report.text = buildString {
+                    append("Đã phân tích cấu trúc Supercombo trong xADAS 0.2.7:\n")
+                    append("img & big_img: 1×12×128×256\n")
+                    append("vout_pass: 1.576 float (11 nhánh)\n")
+                    for (head in contract.heads) {
+                        append(head.name).append(" · ")
+                            .append(head.offset).append("..")
+                            .append(head.endExclusive - 1).append("\n")
+                    }
+                    append("KHÔNG có trọng số Openpilot được cấp phép trong APK TTX.\n")
+                    append("Chưa có bộ warp/YUV temporal đã được kiểm định.\n")
+                    append("OpenCV hiện là backend hình học thử nghiệm, không phải suy luận Openpilot.")
+                }
+                show("Đã kiểm tra định dạng · Openpilot chưa kích hoạt")
+            }
+        })
+        panel.addView(Button(this).apply {
             text = "CÀI ĐẶT ADAS · HUD / LÀN ĐƯỜNG / CẢNH BÁO"
             textSize = 12f
             setOnClickListener { startActivity(Intent(this@MainActivity, AdasSettingsActivity::class.java)) }

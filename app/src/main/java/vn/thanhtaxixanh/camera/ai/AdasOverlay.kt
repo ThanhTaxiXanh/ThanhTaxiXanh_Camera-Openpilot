@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.os.SystemClock
 import android.view.View
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -30,8 +31,17 @@ class AdasOverlay(context: Context) : View(context) {
     }
     var observation: Observation? = null
         private set
+    private var lastRenderMillis = 0L
+    private val staleLimitMillis = 1800L
+    private val repaintStale = Runnable { invalidate() }
 
-    fun render(value: Observation) { observation = value; invalidate() }
+    fun render(value: Observation) {
+        observation = value
+        lastRenderMillis = SystemClock.elapsedRealtime()
+        removeCallbacks(repaintStale)
+        postDelayed(repaintStale, staleLimitMillis)
+        invalidate()
+    }
 
     private fun xAt(line: Segment, targetY: Float): Float? {
         val changeY = line.y2 - line.y1
@@ -43,6 +53,11 @@ class AdasOverlay(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val result = observation ?: return
+        if (SystemClock.elapsedRealtime() - lastRenderMillis >= staleLimitMillis) {
+            canvas.drawText("AI: DỮ LIỆU CŨ – ĐÃ ẨN LÀN VÀ KHOẢNG CÁCH",
+                12f, height - 14f, labelPaint)
+            return
+        }
         if (result.width < 1 || result.height < 1) return
         val scale = minOf(width.toFloat() / result.width, height.toFloat() / result.height)
         val dx = (width - result.width * scale) / 2f
