@@ -513,7 +513,7 @@ class MainActivity : ComponentActivity() {
                     if (vlcMode || directMode) {
                         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
                         if (!cm.bindProcessToNetwork(wifi.network)) {
-                            show("Không thể ghim luồng VLC vào Wi-Fi 70mai")
+                            show("Không thể ghim bộ phát vào Wi-Fi 70mai")
                             stopSources()
                             return@runOnUiThread
                         }
@@ -861,8 +861,20 @@ class MainActivity : ComponentActivity() {
         if (source != "rtsp") return
         val now = SystemClock.elapsedRealtime()
         if (!videoRendered && now - lastFrame > 12000L) {
-            report.text = report.text.toString() + "\nVLC chưa hiển thị hình sau 12 giây."
-            tryNextUrl()
+            if (directMode) {
+                // Keep the exact A500S endpoint and protocol-stage diagnostics.
+                // A failed custom RTSP handshake should not silently switch paths.
+                report.text = (report.text.toString() +
+                    "\nDirect: quá 12 giây chưa có hình; đã dừng thử nghiệm. " +
+                    "Xem bước OPTIONS/DESCRIBE/SETUP/PLAY bên trên.").takeLast(2500)
+                show("Direct chưa nhận video. Kiểm tra báo cáo; VLC 800 ms vẫn hoạt động.")
+                directPlayer?.close()
+                directPlayer = null
+                source = "none"
+            } else {
+                report.text = report.text.toString() + "\nChưa có video sau 12 giây."
+                tryNextUrl()
+            }
             return
         }
 
