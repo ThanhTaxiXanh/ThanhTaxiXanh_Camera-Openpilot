@@ -33,3 +33,14 @@ Mở **Actions → Build Android Debug APK → Run workflow**. Sau build thành 
 
 ## Nguyên tắc
 Không tự tải hoặc chép model xADAS vào bản build. Không dùng API đóng, không yêu cầu can thiệp firmware, không phá cơ chế ghép nối camera. Dành cho nghiên cứu và kiểm thử khi xe dừng, chỉ lái sau khi đã hoàn tất thiết lập.
+
+
+## V0.3.1 · Cải tiến sau thử nghiệm thực tế ngày 02/11/2026
+
+Video A500S đã chạy với LibVLC ở mạng `192.168.0.20`, gateway `192.168.0.1`.
+SDP trả về `Content-Base: rtsp://192.168.0.1/00000011/`, `a=control:*,track1`, H.264/90000.
+
+- Màn hình xem video chuyển lên phía trên, vùng hiển thị 16:9, bảng điều khiển cuộn bên dưới; chạm video để mở rộng/thu nhỏ.
+- Lớp vẽ ADAS được căn theo FIT_CENTER (cả letterbox) và có dòng trạng thái vạch trái/phải.
+- Hiển thị số khung hình đã xử lý để xác nhận pipeline PixelCopy → OpenCV đang chạy; không đồng nhất việc có video với việc AI nhận diện thành công.
+- Phát hiện vạch theo Canny/Hough còn là thí nghiệm. Đo khoảng cách chưa hiệu chuẩn, không dùng đưa ra quyết định phanh/lái.

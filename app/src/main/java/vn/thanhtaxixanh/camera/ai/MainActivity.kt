@@ -14,7 +14,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.view.Gravity
 import android.view.PixelCopy
 import android.view.SurfaceView
 import android.view.ViewGroup
@@ -24,6 +23,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import androidx.media3.ui.AspectRatioFrameLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.annotation.OptIn
@@ -50,6 +50,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 @OptIn(UnstableApi::class)
 class MainActivity : ComponentActivity() {
     private lateinit var root: FrameLayout
+    private lateinit var previewContainer: FrameLayout
+    private lateinit var settingsScroll: ScrollView
+    private var expandedVideo = false
+    private var compactPreviewHeight = 0
+    private var analyzedFrames = 0
+    private var lastMetricTime = 0L
     private lateinit var playerView: PlayerView
     private lateinit var phonePreview: PreviewView
     private lateinit var vlcSurface: VLCVideoLayout
@@ -103,14 +109,33 @@ class MainActivity : ComponentActivity() {
         engine = VisionEngine(applicationContext)
         engine.reloadModel()
         root = FrameLayout(this)
-        playerView = PlayerView(this).apply { useController = false; visibility = View.GONE }
+        val contentColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(android.graphics.Color.BLACK)
+        }
+        previewContainer = FrameLayout(this).apply {
+            setBackgroundColor(android.graphics.Color.BLACK)
+        }
+        playerView = PlayerView(this).apply {
+            useController = false
+            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            visibility = View.GONE
+        }
         vlcSurface = VLCVideoLayout(this).apply { visibility = View.GONE }
-        phonePreview = PreviewView(this).apply { visibility = View.GONE }
+        phonePreview = PreviewView(this).apply {
+            scaleType = PreviewView.ScaleType.FIT_CENTER
+            visibility = View.GONE
+        }
         overlay = AdasOverlay(this)
-        root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
-        root.addView(vlcSurface, FrameLayout.LayoutParams(-1, -1))
-        root.addView(phonePreview, FrameLayout.LayoutParams(-1, -1))
-        root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
+        previewContainer.addView(playerView, FrameLayout.LayoutParams(-1, -1))
+        previewContainer.addView(vlcSurface, FrameLayout.LayoutParams(-1, -1))
+        previewContainer.addView(phonePreview, FrameLayout.LayoutParams(-1, -1))
+        previewContainer.addView(overlay, FrameLayout.LayoutParams(-1, -1))
+        // Preserve video aspect in compact mode. Tap the picture to enter/exit fullscreen.
+        compactPreviewHeight = (resources.displayMetrics.widthPixels * 9 / 16).coerceAtLeast(180)
+        contentColumn.addView(previewContainer,
+            LinearLayout.LayoutParams(-1, compactPreviewHeight))
+        overlay.setOnClickListener { toggleVideoSize() }
 
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -170,15 +195,32 @@ class MainActivity : ComponentActivity() {
             setOnClickListener { openModel.launch(arrayOf("*/*")) }
         }
         panel.addView(modelButton)
-        val scroller = ScrollView(this).apply {
+        panel.addView(TextView(this).apply {
+            text = "Chạm vào video để bật/tắt xem lớn. Chỉ kiểm thử khi xe dừng."
+            setTextColor(0xFF9ABBC6.toInt())
+            textSize = 12f
+        })
+        settingsScroll = ScrollView(this).apply {
+            fillViewport = false
             addView(panel)
         }
-        root.addView(scroller, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        contentColumn.addView(settingsScroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(contentColumn, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
         show("Chỉ nghiên cứu khi xe dừng. Khoảng cách chưa được hiệu chuẩn.")
     }
 
     private fun show(message: String) { status.text = message }
+
+    private fun toggleVideoSize() {
+        expandedVideo = !expandedVideo
+        settingsScroll.visibility = if (expandedVideo) View.GONE else View.VISIBLE
+        previewContainer.layoutParams = LinearLayout.LayoutParams(
+            -1, if (expandedVideo) 0 else compactPreviewHeight,
+            if (expandedVideo) 1f else 0f
+        )
+        previewContainer.requestLayout()
+    }
 
     private fun stopSources() {
         source = "none"
@@ -187,6 +229,8 @@ class MainActivity : ComponentActivity() {
         selectedWifi = null
         trialUrls = emptyList()
         videoRendered = false
+        analyzedFrames = 0
+        lastMetricTime = 0L
         handler.removeCallbacksAndMessages(null)
         cameraProvider?.unbindAll()
         vlcPlayer?.close()
@@ -490,12 +534,21 @@ class MainActivity : ComponentActivity() {
         worker.execute {
             try {
                 val result = engine.analyze(bitmap)
+                analyzedFrames++
+                val now = SystemClock.elapsedRealtime()
                 runOnUiThread {
                     if (source == "none") return@runOnUiThread
                     overlay.render(result)
-                    val lead = result.vehicle
-                    show(if (lead == null) result.note
-                         else "Xe phía trước ~${lead.approxM.toInt()} m · CHƯA HIỆU CHUẨN")
+                    if (now - lastMetricTime >= 900L) {
+                        lastMetricTime = now
+                        val laneCount = listOfNotNull(result.left, result.right).size
+                        val lead = result.vehicle
+                        show("Nguồn: " + (if (source == "rtsp") "70mai A500S" else "Camera điện thoại") +
+                            " · AI: " + analyzedFrames + " khung" +
+                            " · Vạch: " + laneCount + "/2" +
+                            (if (lead == null) " · Chưa có phát hiện xe"
+                             else " · Xe ~" + lead.approxM.toInt() + "m (chưa hiệu chuẩn)"))
+                    }
                 }
             } catch (e: Exception) {
                 runOnUiThread { show("Xử lý ảnh lỗi: ${e.message}") }

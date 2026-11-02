@@ -31,20 +31,37 @@ class AdasOverlay(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val r = observation ?: return
-        val x = width.toFloat() / r.width
-        val y = height.toFloat() / r.height
+        // Use a FIT_CENTER transform matching VLC/Media3 video instead of stretching
+        // lane geometry across black letterboxing in portrait fullscreen.
+        val scale = minOf(width.toFloat() / r.width, height.toFloat() / r.height)
+        val dx = (width - r.width * scale) * 0.5f
+        val dy = (height - r.height * scale) * 0.5f
         fun drawLine(s: Segment?) {
-            if (s != null) canvas.drawLine(s.x1 * x, s.y1 * y, s.x2 * x, s.y2 * y, linePaint)
+            if (s != null) canvas.drawLine(
+                dx + s.x1 * scale, dy + s.y1 * scale,
+                dx + s.x2 * scale, dy + s.y2 * scale, linePaint
+            )
         }
         drawLine(r.left); drawLine(r.right)
         r.vehicle?.let { car ->
             val b = car.box
-            canvas.drawRect(b.left * x, b.top * y, b.right * x, b.bottom * y, leadPaint)
+            canvas.drawRect(
+                dx + b.left * scale, dy + b.top * scale,
+                dx + b.right * scale, dy + b.bottom * scale, leadPaint
+            )
             canvas.drawText(
                 String.format(Locale.US, "~%.0f m · CHƯA HIỆU CHUẨN", car.approxM),
-                b.left * x, (b.top * y - 14f).coerceAtLeast(42f), textPaint
+                dx + b.left * scale,
+                (dy + b.top * scale - 14f).coerceAtLeast(42f), textPaint
             )
         }
-        canvas.drawText("TTX Camera AI · BẢN THỬ NGHIỆM", 18f, 50f, textPaint)
+        textPaint.textSize = 26f
+        canvas.drawText("TTX Camera AI · THỬ NGHIỆM", 14f, 35f, textPaint)
+        val detected = listOfNotNull(r.left, r.right).size
+        canvas.drawText(
+            "Vạch: " + detected + "/2 · " +
+                if (r.vehicle == null) "Chưa có phát hiện xe" else "Ước lượng chưa hiệu chuẩn",
+            14f, height - 16f, textPaint
+        )
     }
 }
