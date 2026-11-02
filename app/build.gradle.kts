@@ -18,7 +18,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    packaging { jniLibs { useLegacyPackaging = true } }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            pickFirsts += "**/libc++_shared.so"
+        }
+    }
 }
 dependencies {
     implementation("androidx.core:core-ktx:1.16.0")
