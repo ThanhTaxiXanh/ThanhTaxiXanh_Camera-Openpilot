@@ -29,3 +29,9 @@ Chưa kết luận chắc rằng dữ liệu bắt đầu bằng "$" là một g
 5. Trường hợp Direct vẫn lỗi cần dữ liệu Wi-Fi/RTP thực tế; không có mẫu lưu lượng TCP của chính A500S trong môi trường này.
 
 RFC: https://www.rfc-editor.org/rfc/rfc2326.html
+
+## V0.9.2: Ưu tiên DESCRIBE làm lệnh đầu tiên
+
+Ảnh A500S cho thấy probe `DESCRIBE` đơn lẻ trả 200 OK. Trong khi đó bộ phát Direct V0.9.0 gửi `OPTIONS` trước, chưa có bằng chứng A500S cần lệnh này. Theo RTSP/1.0, OPTIONS không bắt buộc trước DESCRIBE.
+Bởi vậy bộ phát Direct dùng trình tự `DESCRIBE (CSeq 1) → SETUP (2) → PLAY (3)`, dựa trên thao tác đã được người dùng kiểm chứng ở bước probe. Nếu model firmware khác cần OPTIONS, log mới sẽ cho thấy DESCRIBE không thành công.
+Các sửa đổi về demultiplexer của V0.9.1 vẫn được giữ nguyên.

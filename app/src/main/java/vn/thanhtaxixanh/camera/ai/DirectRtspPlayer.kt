@@ -217,8 +217,11 @@ class DirectRtspPlayer(
             val src=BufferedInputStream(sock.getInputStream(),65536)
             val wire = RtspWireReader(src)
             val dst=BufferedOutputStream(sock.getOutputStream(),8192)
-            require(request(wire,dst,1,"OPTIONS",url).code==200){"OPTIONS failed"}
-            val describe=request(wire,dst,2,"DESCRIBE",url,
+            // A500S is known to accept DESCRIBE as the first command on a
+            // fresh socket (same sequence as the verified diagnostics probe).
+            // OPTIONS is optional in RTSP 1.0 and can trigger vendor-specific
+            // binary responses on some firmware revisions.
+            val describe=request(wire,dst,1,"DESCRIBE",url,
                 mapOf("Accept" to "application/sdp"))
             require(describe.code==200 && describe.sdp.contains("m=video")) {
                 "DESCRIBE "+describe.code
@@ -230,7 +233,7 @@ class DirectRtspPlayer(
             }?.trim()?.substringAfter(':') ?: "track1"
             val track=if(control.startsWith("rtsp://"))control
                 else URI(base).resolve(control).toString()
-            val setup=request(wire,dst,3,"SETUP",track,
+            val setup=request(wire,dst,2,"SETUP",track,
                 mapOf("Transport" to "RTP/AVP/TCP;unicast;interleaved=0-1"))
             require(setup.code==200) { "SETUP "+setup.code+" "+track }
             val session=setup.header("session").substringBefore(';')
@@ -241,7 +244,7 @@ class DirectRtspPlayer(
                 ?.groupValues?.get(1)?.toIntOrNull() ?: 0
             val earlyMedia = ArrayDeque<ByteArray>()
             var earlyBytes = 0
-            val play=request(wire,dst,4,"PLAY",aggregate,
+            val play=request(wire,dst,3,"PLAY",aggregate,
                 mapOf("Session" to session)) { item ->
                 // Limit retained early RTP data; they may arrive before PLAY reply.
                 if (item.channel == rtpChannel && earlyMedia.size < 24 &&
