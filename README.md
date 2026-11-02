@@ -54,3 +54,8 @@ SDP trả về `Content-Base: rtsp://192.168.0.1/00000011/`, `a=control:*,track1
 ## V0.5.0 · Openpilot/Supercombo audit
 
 Chi tiết báo cáo: [XADAS_DEEP_AUDIT_OPENPILOT_027.md](docs/XADAS_DEEP_AUDIT_OPENPILOT_027.md). Đã xác minh 11 head thuộc tensor 1576 giá trị, mean/std trong graph, có reference YUV temporal packer và JUnit tests. Chưa có model được cấp phép hoặc đủ warp/geometry decoder để công bố AI Openpilot hoạt động thực tế.
+
+
+## V0.6.0 – Parser và mẫu ảnh A500S
+
+Giải mã cấu trúc 4 lane/2 road edge/3 lead, mean/std và logits có JUnit tests. Nút **XUẤT 2 KHUNG HÌNH A500S (ZIP)** giúp lấy mẫu ảnh đang xem từ VLC khi xe dừng, lưu bằng trình chọn tệp Android mà không upload tự động. Xem [báo cáo V0.6](docs/OPENPILOT_V06_PARSER.md) và [hướng dẫn xuất ảnh](docs/V06_A500S_FRAMES.md). **Chưa có warp đã hiệu chuẩn, chưa được kích hoạt cảnh báo khoảng cách neural**.

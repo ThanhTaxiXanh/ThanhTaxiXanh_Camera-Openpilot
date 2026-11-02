@@ -56,6 +56,9 @@ class MainActivity : ComponentActivity() {
     private var compactPreviewHeight = 0
     private var analyzedFrames = 0
     private var lastMetricTime = 0L
+    private var sampleCaptureActive = false
+    private var sampleGeneration = 0
+    private var preparedSample: File? = null
     private lateinit var playerView: PlayerView
     private lateinit var phonePreview: PreviewView
     private lateinit var vlcSurface: VLCVideoLayout
@@ -86,6 +89,28 @@ class MainActivity : ComponentActivity() {
     private var videoRendered = false
     private var retryActive = false
     private lateinit var report: TextView
+    private val exportSample = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        val sample = preparedSample
+        preparedSample = null
+        if (uri == null || sample == null) {
+            sample?.delete()
+            if (::status.isInitialized) show("Đã hủy xuất khung hình.")
+        } else {
+            worker.execute {
+                val result = try {
+                    contentResolver.openOutputStream(uri)?.use { output ->
+                        sample.inputStream().use { it.copyTo(output) }
+                    } ?: error("Không ghi được tệp ZIP")
+                    "Đã xuất hai khung A500S thành ZIP. Bạn có thể gửi tệp để phân tích warp."
+                } catch (e: Exception) {
+                    "Không lưu được ZIP: " + (e.message ?: e.javaClass.simpleName)
+                } finally { sample.delete() }
+                runOnUiThread { if (::status.isInitialized) show(result) }
+            }
+        }
+    }
     private val requestCamera = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         if (it) startPhone() else show("Cần cấp quyền Camera cho nguồn điện thoại")
     }
@@ -257,6 +282,11 @@ class MainActivity : ComponentActivity() {
             textSize = 12f
             setOnClickListener { importOnnx.launch(arrayOf("*/*")) }
         })
+        panel.addView(Button(this).apply {
+            text = "XUẤT 2 KHUNG HÌNH A500S (ZIP) · CHỈ KHI XE DỪNG"
+            textSize = 12f
+            setOnClickListener { exportCameraPair() }
+        })
         val modelButton = Button(this).apply {
             text = "NẠP MODEL XE (.TFLITE) · KHÔNG BẮT BUỘC"
             textSize = 11f
@@ -291,6 +321,8 @@ class MainActivity : ComponentActivity() {
 
     private fun stopSources() {
         source = "none"
+        sampleGeneration++
+        sampleCaptureActive = false
         retryCount = 0
         retryActive = false
         selectedWifi = null
@@ -487,6 +519,86 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Capture two genuinely distinct-time frames from the actual LibVLC surface. */
+    private fun exportCameraPair() {
+        if (source != "rtsp" || !vlcMode || !videoRendered) {
+            show("Cần phát hình bằng nút 70mai / VLC trước khi xuất mẫu.")
+            return
+        }
+        if (sampleCaptureActive || !busy.compareAndSet(false, true)) {
+            show("Bộ xử lý đang bận; hãy thử xuất mẫu lại.")
+            return
+        }
+        val surface = findSurface(vlcSurface)
+        if (surface == null) {
+            sampleCaptureActive = false
+            busy.set(false)
+            show("Không tìm thấy SurfaceView VLC để lấy mẫu.")
+            return
+        }
+        sampleCaptureActive = true
+        val generation = ++sampleGeneration
+        fun capture(done: (Bitmap, Long) -> Unit) {
+            val image = Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888)
+            try {
+                PixelCopy.request(surface, image, { result ->
+                    if (result == PixelCopy.SUCCESS &&
+                        generation == sampleGeneration && source == "rtsp") {
+                        done(image, SystemClock.elapsedRealtime())
+                    } else {
+                        image.recycle()
+                        sampleCaptureActive = false
+                        busy.set(false)
+                        if (generation == sampleGeneration)
+                            show("Không lấy được khung hình (PixelCopy $result).")
+                    }
+                }, handler)
+            } catch (e: Exception) {
+                image.recycle()
+                sampleCaptureActive = false
+                busy.set(false)
+                show("PixelCopy lỗi: " + (e.message ?: "không rõ"))
+            }
+        }
+        show("Đang chụp hai khung hình trên A500S…")
+        capture { previous, firstMs ->
+            handler.postDelayed({
+                if (generation != sampleGeneration || source != "rtsp") {
+                    previous.recycle()
+                    sampleCaptureActive = false
+                    busy.set(false)
+                    return@postDelayed
+                }
+                capture { current, nextMs ->
+                    sampleCaptureActive = false
+                    busy.set(false)
+                    val file = File(cacheDir, "ttx_a500s_sample_" + System.currentTimeMillis() + ".zip")
+                    worker.execute {
+                        val message = try {
+                            CameraFramePairExporter.save(file, previous, current, firstMs, nextMs)
+                            "Đã lấy hai khung, cách nhau " + (nextMs - firstMs) +
+                                " ms. Chọn nơi lưu ZIP trên điện thoại."
+                        } catch (e: Exception) {
+                            file.delete()
+                            "Không tạo được mẫu: " + (e.message ?: e.javaClass.simpleName)
+                        } finally {
+                            previous.recycle()
+                            current.recycle()
+                        }
+                        runOnUiThread {
+                            if (file.isFile && file.length() > 0) {
+                                preparedSample?.delete()
+                                preparedSample = file
+                                show(message)
+                                exportSample.launch(file.name)
+                            } else show(message)
+                        }
+                    }
+                }
+            }, 350L)
+        }
+    }
+
     private fun findSurface(view: View): SurfaceView? {
         if (view is SurfaceView && view.holder.surface.isValid) return view
         if (view is ViewGroup) for (i in 0 until view.childCount) {
@@ -636,6 +748,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        preparedSample?.delete()
         stopSources()
         worker.execute { engine.close() }
         worker.shutdown()
