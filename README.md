@@ -83,3 +83,8 @@ Tắt AI OpenCV mặc định để VLC phát video độc lập. Bật/tắt AI
 ## V0.9.3 – Nhịp video Direct H264
 
 Thêm H264PresentationClock đọc presentation timestamp để điều phối hiển thị qua HandlerThread (bắt đầu với đệm 550ms), tăng hàng đợi compressed H264 lên 48 khung và không tự ý bỏ P-frame. Thêm thống kê hàng đợi, frame trễ và RTP gap. Không thay đổi đường VLC 800ms. Xem tài liệu docs/V093_DIRECT_H264_PACING.md. Chưa xác minh độ mượt trên thiết bị thực.
+
+
+## V0.9.4 – Duy trì phiên A500S và khôi phục Connection reset
+
+Từ ảnh dùng V0.9.3: sau khi phát mượt, Direct RTSP báo Connection reset trong khi RTP gap=0, queue 0/48. Bản này bổ sung RTSP GET_PARAMETER lặp lại theo timeout từ Session SETUP (mặc định 60 giây, gửi tối đa mỗi 15 giây), theo dõi phản hồi và thử SET_PARAMETER nếu GET_PARAMETER bị từ chối. Nếu TCP đóng/RTP im lặng 12 giây, đóng MediaCodec cũ và mở phiên mới bằng DESCRIBE/SETUP/PLAY với URL gốc; giới hạn 6 lần thử với backoff tăng dần. Log gồm keepalive gửi/OK/bị từ chối, số lần reconnect. LibVLC 800ms vẫn giữ nguyên. Chưa xác nhận firmware A500S chấp nhận keepalive cho đến lần thử thực tế. Xem [chẩn đoán V0.9.4](docs/V094_A500S_KEEPALIVE_RECOVERY.md).

@@ -599,6 +599,7 @@ class MainActivity : ComponentActivity() {
         if (source != "rtsp" || !directMode) return
         directGeneration++
         val generation = directGeneration
+        directVideoStartedAtMs = 0L
         directPlayer?.close()
         directPlayer = null
         directSurface?.release()
