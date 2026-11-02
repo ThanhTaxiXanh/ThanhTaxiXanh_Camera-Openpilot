@@ -78,3 +78,8 @@ Tắt AI OpenCV mặc định để VLC phát video độc lập. Bật/tắt AI
 ## V0.9.0 – Bộ phát RTSP/MediaCodec trực tiếp (nghiên cứu xADAS)
 
 Đã xác minh xADAS 0.2.7 đóng gói RTSP client riêng và MediaCodec hardware decode, **không có SDK/native LibVLC**. TTX có thêm nút **70MAI / DIRECT MEDIACODEC · THỬ NGHIỆM** chạy cơ chế độc lập RTP/H264 → MediaCodec → Surface, không dùng LibVLC/PixelCopy. Chế độ **70mai / VLC** (800ms) giữ nguyên như phương án ổn định đã kiểm chứng. Đọc [báo cáo kiểm tra playback xADAS](docs/V09_XADAS_PLAYBACK_AUDIT.md). AI Openpilot thật chưa kích hoạt, chế độ Direct chưa xác minh được trên A500S.
+
+
+## V0.9.3 – Nhịp video Direct H264
+
+Thêm H264PresentationClock đọc presentation timestamp để điều phối hiển thị qua HandlerThread (bắt đầu với đệm 550ms), tăng hàng đợi compressed H264 lên 48 khung và không tự ý bỏ P-frame. Thêm thống kê hàng đợi, frame trễ và RTP gap. Không thay đổi đường VLC 800ms. Xem tài liệu docs/V093_DIRECT_H264_PACING.md. Chưa xác minh độ mượt trên thiết bị thực.

@@ -885,10 +885,14 @@ class MainActivity : ComponentActivity() {
                 val dec = (stats.decoded - lastDirectDecoded).coerceAtLeast(0L)
                 val ren = (stats.rendered - lastDirectRendered).coerceAtLeast(0L)
                 performanceText.text = String.format(java.util.Locale.US,
-                    "Direct H264: %.1f FPS giải mã · %.1f FPS hiển thị\n" +
-                        "RTP mất: %d · YUV AI: %d khung · Có YUV: %s",
-                    dec / elapsed, ren / elapsed, stats.droppedRtp, stats.ai,
-                    if (stats.noYuv) "KHÔNG" else "CHỜ KIỂM TRA")
+                    "Direct H264: %.1f FPS giải mã · %.1f FPS giao Surface\n" +
+                        "RTP gap: %d · frame trễ bỏ: %d · đặt lại clock: %d\n" +
+                        "Hàng đợi: %d/48 · đỉnh: %d · quá tải: %d\n" +
+                        "AI YUV: %d · YUV: %s",
+                    dec / elapsed, ren / elapsed,
+                    stats.droppedRtp, stats.lateDisplayFrames, stats.clockRebases,
+                    stats.queueDepth, stats.peakQueueDepth, stats.overflows,
+                    stats.ai, if (stats.noYuv) "KHÔNG" else "CHỜ KIỂM TRA")
                 lastDirectDecoded = stats.decoded
                 lastDirectRendered = stats.rendered
             }
