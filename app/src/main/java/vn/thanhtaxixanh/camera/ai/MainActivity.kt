@@ -201,7 +201,6 @@ class MainActivity : ComponentActivity() {
             textSize = 12f
         })
         settingsScroll = ScrollView(this).apply {
-            fillViewport = false
             addView(panel)
         }
         contentColumn.addView(settingsScroll, LinearLayout.LayoutParams(-1, 0, 1f))
