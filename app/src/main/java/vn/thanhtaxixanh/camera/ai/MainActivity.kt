@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.os.Handler
@@ -38,6 +39,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.rtsp.RtspMediaSource
 import androidx.media3.ui.PlayerView
 import java.io.File
 import java.util.concurrent.Executors
@@ -68,6 +70,11 @@ class MainActivity : ComponentActivity() {
     private var retryCount = 0
     private var lastFrame = 0L
     private var activeUrl = ""
+    private var selectedWifi: Network? = null
+    private var trialUrls = emptyList<String>()
+    private var videoRendered = false
+    private var retryActive = false
+    private lateinit var report: TextView
     private val requestCamera = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         if (it) startPhone() else show("Cần cấp quyền Camera cho nguồn điện thoại")
     }
@@ -109,6 +116,14 @@ class MainActivity : ComponentActivity() {
             textSize = 14f
         }
         panel.addView(status)
+        report = TextView(this).apply {
+            text = "Kết nối Wi-Fi 70mai, sau đó bấm KIỂM TRA để xem gateway và kết quả RTSP."
+            setTextColor(0xFFBBE3F1.toInt())
+            textSize = 12f
+            setTextIsSelectable(true)
+            maxLines = 8
+        }
+        panel.addView(report)
         urlField = EditText(this).apply {
             setSingleLine()
             setText(getPreferences(MODE_PRIVATE).getString("url", candidates[0]))
@@ -132,6 +147,11 @@ class MainActivity : ComponentActivity() {
         }
         button("Dừng") { stopSources(); show("Đã dừng") }
         panel.addView(controls)
+        panel.addView(Button(this).apply {
+            text = "KIỂM TRA WIFI / RTSP A500S"
+            textSize = 12f
+            setOnClickListener { diagnose70mai() }
+        })
         val modelButton = Button(this).apply {
             text = "NẠP MODEL XE (.TFLITE) · KHÔNG BẮT BUỘC"
             textSize = 11f
@@ -151,7 +171,13 @@ class MainActivity : ComponentActivity() {
     private fun stopSources() {
         source = "none"
         retryCount = 0
+        retryActive = false
+        selectedWifi = null
+        trialUrls = emptyList()
+        videoRendered = false
+        handler.removeCallbacksAndMessages(null)
         cameraProvider?.unbindAll()
+        playerView.player = null
         player?.release()
         player = null
         phonePreview.visibility = View.GONE
@@ -163,80 +189,166 @@ class MainActivity : ComponentActivity() {
         } catch (_: Exception) {}
     }
 
-    private fun bindWifiIfPresent(): Boolean {
-        val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val wifi = manager.allNetworks.firstOrNull { net ->
-            manager.getNetworkCapabilities(net)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-        } ?: return false
-        return manager.bindProcessToNetwork(wifi)
+    private fun diagnose70mai() {
+        show("Đang kiểm tra kết nối Wi-Fi và RTSP…")
+        val manual = urlField.text.toString().trim()
+        worker.execute {
+            val wifi = CameraConnectionCheck.wifi(
+                getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
+            val lines = mutableListOf(wifi.detail)
+            if (wifi.network != null && wifi.gateway != null) {
+                val urls = CameraConnectionCheck.urls(wifi.gateway, manual)
+                for (url in urls) {
+                    val test = CameraConnectionCheck.describe(wifi.network, url)
+                    lines += url + " => " + test.status + " · " + test.note
+                    if (test.ok || test.status.contains(" 401 ") || test.status.contains(" 403 ")) break
+                }
+            }
+            runOnUiThread {
+                report.text = lines.joinToString("\n")
+                show("Hoàn tất kiểm tra. Giữ ngón tay trên báo cáo để sao chép.")
+            }
+        }
     }
 
     private fun startRtsp() {
         stopSources()
         source = "rtsp"
-        phonePreview.visibility = View.GONE
-        playerView.visibility = View.VISIBLE
-        val text = urlField.text.toString().trim()
-        if (!text.startsWith("rtsp://", true) && !text.startsWith("rtsps://", true)) {
-            show("URL RTSP không hợp lệ"); stopSources(); return
+        show("Đang xác định đúng gateway 70mai…")
+        val manual = urlField.text.toString().trim()
+        worker.execute {
+            val wifi = CameraConnectionCheck.wifi(
+                getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
+            if (wifi.network == null || wifi.gateway == null) {
+                runOnUiThread {
+                    if (source == "rtsp") {
+                        show("Không thấy Wi-Fi 70mai. Cần kết nối trước.")
+                        report.text = wifi.detail
+                        stopSources()
+                    }
+                }
+                return@execute
+            }
+            val urls = CameraConnectionCheck.urls(wifi.gateway, manual)
+            val lines = mutableListOf(wifi.detail)
+            if (manual.isNotBlank() && !urls.contains(manual))
+                lines += "Bỏ qua " + manual + ": khác gateway Wi-Fi " + wifi.gateway
+            var found = -1
+            for (i in urls.indices) {
+                if (source != "rtsp") return@execute
+                val test = CameraConnectionCheck.describe(wifi.network, urls[i])
+                lines += test.url + " => " + test.status + " · " + test.note
+                if (test.ok) { found = i; break }
+                if (test.status.contains(" 401 ") || test.status.contains(" 403 ")) break
+            }
+            val selected = found
+            runOnUiThread {
+                if (source != "rtsp") return@runOnUiThread
+                report.text = lines.takeLast(8).joinToString("\n")
+                if (selected < 0) {
+                    show("Không tìm thấy RTSP hợp lệ. Xem báo cáo chẩn đoán.")
+                    stopSources()
+                } else {
+                    selectedWifi = wifi.network
+                    trialUrls = urls
+                    candidateIndex = selected
+                    urlField.setText(urls[selected])
+                    connectRtsp(urls[selected])
+                    handler.postDelayed({ watchdog() }, 1300L)
+                }
+            }
         }
-        val wifi = bindWifiIfPresent()
-        candidateIndex = candidates.indexOf(text)
-        retryCount = 0
-        connectRtsp(text)
-        if (!wifi) show("Không thấy Wi-Fi camera. Kiểm tra kết nối 70mai rồi thử lại.")
-        handler.postDelayed({ watchdog() }, 3500L)
     }
 
     private fun connectRtsp(url: String) {
         if (source != "rtsp") return
+        val network = selectedWifi ?: return
+        playerView.player = null
         player?.release()
+        retryActive = false
+        videoRendered = false
         activeUrl = url
         lastFrame = SystemClock.elapsedRealtime()
+        phonePreview.visibility = View.GONE
+        playerView.visibility = View.VISIBLE
         val p = ExoPlayer.Builder(this).build()
         player = p
         playerView.player = p
         p.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 if (source == "rtsp" && player === p) {
-                    show("Lỗi RTSP: ${error.errorCodeName}; đang thử nguồn kế tiếp")
-                    handler.postDelayed({ tryNextUrl() }, 1500)
+                    report.text = report.text.toString() +
+                        "\nMedia3: " + error.errorCodeName + " / " +
+                        (error.cause?.message ?: error.message)
+                    show("RTSP lỗi giải mã hoặc phiên; đang thử nguồn khác…")
+                    handler.postDelayed({ tryNextUrl() }, 600L)
                 }
             }
             override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_READY && player === p) show("Đã nhận phiên RTSP; đang kiểm tra khung hình…")
+                if (player === p && state == Player.STATE_READY)
+                    show("RTSP đã sẵn sàng, chờ khung hình đầu tiên…")
+            }
+            override fun onRenderedFirstFrame() {
+                if (player === p && source == "rtsp") {
+                    videoRendered = true
+                    lastFrame = SystemClock.elapsedRealtime()
+                    show("ĐÃ NHẬN VIDEO 70MAI · " + activeUrl)
+                }
             }
         })
         try {
-            p.setMediaItem(MediaItem.fromUri(url))
+            val media = MediaItem.fromUri(url)
+            val factory = RtspMediaSource.Factory().setForceUseRtpTcp(true)
+                .setSocketFactory(network.socketFactory).setTimeoutMs(6000)
+            p.setMediaSource(factory.createMediaSource(media))
             p.prepare()
             p.playWhenReady = true
+            show("Đang kết nối RTSP qua Wi-Fi camera: " + url)
         } catch (e: Exception) {
-            show("RTSP lỗi: ${e.message}")
-            handler.postDelayed({ tryNextUrl() }, 1200)
+            report.text = report.text.toString() + "\nRTSP: " + e.message
+            handler.postDelayed({ tryNextUrl() }, 600L)
         }
     }
 
     private fun tryNextUrl() {
-        if (source != "rtsp") return
-        if (retryCount++ >= candidates.size) {
-            show("Không nhận video. Kiểm tra ghép nối, IP gateway hoặc firmware A500S.")
-            stopSources()
-            return
+        if (source != "rtsp" || retryActive) return
+        retryActive = true
+        playerView.player = null
+        player?.release()
+        player = null
+        val network = selectedWifi ?: return
+        val startIndex = candidateIndex + 1
+        worker.execute {
+            var next = -1
+            val lines = mutableListOf<String>()
+            for (i in startIndex until trialUrls.size) {
+                if (source != "rtsp") return@execute
+                val test = CameraConnectionCheck.describe(network, trialUrls[i])
+                lines += test.url + " => " + test.status
+                if (test.ok) { next = i; break }
+            }
+            val index = next
+            runOnUiThread {
+                if (source != "rtsp") return@runOnUiThread
+                report.text = report.text.toString() + "\n" + lines.joinToString("\n")
+                if (index < 0) {
+                    show("Đã thử hết các đường dẫn. Cần kiểm tra kết nối/firmware.")
+                    stopSources()
+                } else {
+                    candidateIndex = index
+                    urlField.setText(trialUrls[index])
+                    connectRtsp(trialUrls[index])
+                }
+            }
         }
-        candidateIndex = (candidateIndex + 1 + candidates.size) % candidates.size
-        val next = candidates[candidateIndex]
-        urlField.setText(next)
-        show("Đang thử: $next")
-        connectRtsp(next)
     }
 
     private fun watchdog() {
         if (source != "rtsp") return
-        val elapsed = SystemClock.elapsedRealtime() - lastFrame
-        if (elapsed > 8000L) {
+        if (SystemClock.elapsedRealtime() - lastFrame > 10500L) {
+            report.text = report.text.toString() + "\nChưa có frame sau 10 giây."
             tryNextUrl()
-        } else {
+        } else if (videoRendered) {
             val surface = playerView.videoSurfaceView
             if (surface is SurfaceView && surface.holder.surface.isValid &&
                 busy.compareAndSet(false, true)) {
@@ -252,11 +364,12 @@ class MainActivity : ComponentActivity() {
                         }
                     }, handler)
                 } catch (_: Exception) {
-                    bitmap.recycle(); busy.set(false)
+                    bitmap.recycle()
+                    busy.set(false)
                 }
             }
         }
-        handler.postDelayed({ watchdog() }, 330L)
+        handler.postDelayed({ watchdog() }, 500L)
     }
 
     private fun startPhone() {
