@@ -259,10 +259,10 @@ class MainActivity : ComponentActivity() {
             setOnClickListener {
                 analysisEnabled = !analysisEnabled
                 if (!analysisEnabled) {
-                    overlay.visibility = View.INVISIBLE
+                    this@MainActivity.overlay.visibility = View.INVISIBLE
                     show("AI tắt: chỉ giải mã và phát video trực tiếp.")
                 } else {
-                    overlay.visibility = View.VISIBLE
+                    this@MainActivity.overlay.visibility = View.VISIBLE
                     lastAnalysisRequestMs = 0L
                     show("AI OpenCV bật: lấy mẫu nhẹ, không được ảnh hưởng phát video.")
                 }
