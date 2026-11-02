@@ -9,8 +9,8 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.4.0"
+        versionCode = 6
+        versionName = "0.5.0"
     }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions {
@@ -36,6 +36,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-rtsp:1.11.1")
     implementation("androidx.media3:media3-ui:1.11.1")
     implementation("org.videolan.android:libvlc-all:3.7.7")
+    testImplementation("junit:junit:4.13.2")
     implementation("org.opencv:opencv:4.11.0")
     implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
 }

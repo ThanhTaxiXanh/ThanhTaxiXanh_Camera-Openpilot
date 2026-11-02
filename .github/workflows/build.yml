@@ -24,7 +24,7 @@ jobs:
         with:
           gradle-version: "8.13"
       - name: Build debug
-        run: gradle --no-daemon :app:assembleDebug --stacktrace
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: TTX-Camera-AI-debug-apk
