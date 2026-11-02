@@ -68,6 +68,17 @@ class MainActivity : ComponentActivity() {
     private val copyHandler = Handler(copyThread.looper)
     private lateinit var aiToggle: Button
     private lateinit var bufferToggle: Button
+    private lateinit var performanceText: TextView
+    private var lastVideoStats: VlcFrameStats? = null
+    private var lastStatsAtMs = 0L
+    private var lastVideoDecodedFps = 0f
+    private var lastVideoDisplayFps = 0f
+    private var lastVideoDropCount = 0L
+    private var nextAnalysisAllowedMs = 0L
+    private var lastPixelCopyTimeMs = 0L
+    private var lastVisionTimeMs = 0L
+    private var automaticThrottles = 0
+    private var lastHudMessageAtMs = 0L
     private var sampleCaptureActive = false
     private var sampleGeneration = 0
     private var preparedSample: File? = null
@@ -264,10 +275,12 @@ class MainActivity : ComponentActivity() {
                 } else {
                     this@MainActivity.overlay.visibility = View.VISIBLE
                     lastAnalysisRequestMs = 0L
-                    show("AI OpenCV bật: lấy mẫu nhẹ, không được ảnh hưởng phát video.")
+                    nextAnalysisAllowedMs = 0L
+                    automaticThrottles = 0
+                    show("AI thử nghiệm bật: lấy mẫu thích ứng; tự tạm nghỉ khi ảnh hưởng VLC.")
                 }
                 text = if (analysisEnabled)
-                    "AI THỬ NGHIỆM: BẬT · LẤY MẪU 1 KHUNG/GIÂY"
+                    "AI THỬ NGHIỆM: BẬT · ƯU TIÊN VIDEO / TỰ GIẢM TẢI"
                 else "AI THỬ NGHIỆM: TẮT · VIDEO ƯU TIÊN MƯỢT"
             }
         }
@@ -284,6 +297,14 @@ class MainActivity : ComponentActivity() {
             }
         }
         panel.addView(bufferToggle)
+        performanceText = TextView(this).apply {
+            text = "VLC FPS: đang chờ · AI: ưu tiên phát video mượt"
+            setTextColor(0xFFB1D5C6.toInt())
+            textSize = 12f
+            setTextIsSelectable(true)
+            setPadding(10, 8, 10, 8)
+        }
+        panel.addView(performanceText)
         panel.addView(Button(this).apply {
             text = "MEDIA3 (SO SÁNH LỖI PLAY 404)"
             textSize = 12f
@@ -374,6 +395,15 @@ class MainActivity : ComponentActivity() {
         copiedFrames = 0
         droppedSamples = 0
         lastAnalysisRequestMs = 0L
+        lastVideoStats = null
+        lastStatsAtMs = 0L
+        lastVideoDropCount = 0L
+        lastVideoDisplayFps = 0f
+        lastVideoDecodedFps = 0f
+        nextAnalysisAllowedMs = 0L
+        lastPixelCopyTimeMs = 0L
+        lastVisionTimeMs = 0L
+        automaticThrottles = 0
         analyzedFrames = 0
         lastMetricTime = 0L
         handler.removeCallbacksAndMessages(null)
@@ -689,43 +719,98 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Keep the RTSP playback independent from experimental OpenCV:
+     *  - sample VLC's native counters at 2-second intervals
+     *  - initiate PixelCopy entirely from a low-priority HandlerThread
+     *  - suspend frame readback on dropped video frames or expensive PixelCopy
+     * This is a protective fallback. True smooth, high-FPS ADAS eventually
+     * needs direct MediaCodec YUV delivery instead of SurfaceView readback.
+     */
     private fun watchdog() {
         if (source != "rtsp") return
         val now = SystemClock.elapsedRealtime()
-        // Critical: do not restart a playing LIVE555 stream just because AI
-        // or PixelCopy did not deliver a new sample. Vout is not per-frame.
         if (!videoRendered && now - lastFrame > 12000L) {
-            report.text = report.text.toString() + "\nVLC chưa tạo được video sau 12 giây."
+            report.text = report.text.toString() + "\nVLC chưa hiển thị hình sau 12 giây."
             tryNextUrl()
-        } else if (analysisEnabled && videoRendered &&
-            now - lastAnalysisRequestMs >= 1000L) {
+            return
+        }
+
+        if (vlcMode && videoRendered && now - lastStatsAtMs >= 2000L) {
+            val current = vlcPlayer?.currentFrameStats()
+            val previous = lastVideoStats
+            if (current != null && previous != null && lastStatsAtMs > 0L) {
+                val elapsed = ((now - lastStatsAtMs).coerceAtLeast(1L)).toFloat() / 1000f
+                val diffDisplayed = (current.displayed - previous.displayed).coerceAtLeast(0L)
+                val diffDecoded = (current.decoded - previous.decoded).coerceAtLeast(0L)
+                lastVideoDropCount = (current.lost - previous.lost).coerceAtLeast(0L)
+                lastVideoDecodedFps = diffDecoded / elapsed
+                lastVideoDisplayFps = diffDisplayed / elapsed
+
+                if (analysisEnabled && lastVideoDropCount >= 2L) {
+                    // Don't let a heavy frame-readback permanently degrade video.
+                    nextAnalysisAllowedMs = maxOf(nextAnalysisAllowedMs, now + 6500L)
+                    automaticThrottles++
+                }
+            }
+            lastVideoStats = current
+            lastStatsAtMs = now
+            if (::performanceText.isInitialized) {
+                val state = if (!analysisEnabled) "AI tắt" else if (now < nextAnalysisAllowedMs)
+                    "AI giảm tải · còn " + ((nextAnalysisAllowedMs - now) / 1000L) + "s"
+                else "AI lấy mẫu ≤0,5 FPS"
+                performanceText.text = String.format(java.util.Locale.US,
+                    "VLC giải mã: %.1f FPS · hiển thị: %.1f FPS · mất: %d/2s\n" +
+                        "PixelCopy: %dms · OpenCV: %dms · %s · giảm tải: %d lần",
+                    lastVideoDecodedFps, lastVideoDisplayFps, lastVideoDropCount,
+                    lastPixelCopyTimeMs, lastVisionTimeMs, state, automaticThrottles)
+            }
+        }
+
+        if (analysisEnabled && videoRendered && now >= nextAnalysisAllowedMs &&
+            now - lastAnalysisRequestMs >= 2000L) {
             val surface = if (vlcMode) findSurface(vlcSurface)
                 else playerView.videoSurfaceView as? SurfaceView
             if (surface != null && surface.holder.surface.isValid &&
                 busy.compareAndSet(false, true)) {
                 lastAnalysisRequestMs = now
-                val bitmap = Bitmap.createBitmap(320, 180, Bitmap.Config.ARGB_8888)
                 val generation = sampleGeneration
-                try {
-                    // Callback now executes OFF the UI thread.
-                    PixelCopy.request(surface, bitmap, { result ->
-                        if (result == PixelCopy.SUCCESS && generation == sampleGeneration &&
-                            source == "rtsp" && analysisEnabled) {
-                            copiedFrames++
-                            processFrame(bitmap)
-                        } else {
-                            droppedSamples++
-                            bitmap.recycle()
-                            busy.set(false)
-                        }
-                    }, copyHandler)
-                } catch (_: Exception) {
-                    droppedSamples++
-                    bitmap.recycle()
-                    busy.set(false)
+                copyHandler.post {
+                    val startedMs = SystemClock.elapsedRealtime()
+                    val bitmap = try {
+                        Bitmap.createBitmap(320, 180, Bitmap.Config.ARGB_8888)
+                    } catch (_: Throwable) {
+                        droppedSamples++
+                        busy.set(false)
+                        return@post
+                    }
+                    try {
+                        // Initiate and handle PixelCopy on non-UI thread.
+                        PixelCopy.request(surface, bitmap, { result ->
+                            val costMs = SystemClock.elapsedRealtime() - startedMs
+                            lastPixelCopyTimeMs = costMs
+                            if (costMs > 48L) {
+                                nextAnalysisAllowedMs =
+                                    maxOf(nextAnalysisAllowedMs, SystemClock.elapsedRealtime() + 7000L)
+                                automaticThrottles++
+                            }
+                            if (result == PixelCopy.SUCCESS &&
+                                generation == sampleGeneration && source == "rtsp" &&
+                                analysisEnabled) {
+                                copiedFrames++
+                                processFrame(bitmap)
+                            } else {
+                                droppedSamples++
+                                bitmap.recycle()
+                                busy.set(false)
+                            }
+                        }, copyHandler)
+                    } catch (_: Exception) {
+                        droppedSamples++
+                        bitmap.recycle()
+                        busy.set(false)
+                    }
                 }
-            } else if (surface != null) {
-                droppedSamples++
             }
         }
         handler.postDelayed({ watchdog() }, 250L)
@@ -770,8 +855,15 @@ class MainActivity : ComponentActivity() {
 
     private fun processFrame(bitmap: Bitmap) {
         worker.execute {
+            val startedMs = SystemClock.elapsedRealtime()
             try {
                 val result = engine.analyze(bitmap)
+                lastVisionTimeMs = SystemClock.elapsedRealtime() - startedMs
+                if (source == "rtsp" && lastVisionTimeMs > 100L) {
+                    nextAnalysisAllowedMs = maxOf(nextAnalysisAllowedMs,
+                        SystemClock.elapsedRealtime() + 6000L)
+                    automaticThrottles++
+                }
                 analyzedFrames++
                 val now = SystemClock.elapsedRealtime()
                 runOnUiThread {

@@ -7,6 +7,13 @@ import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
 
+data class VlcFrameStats(
+    val decoded: Long,
+    val displayed: Long,
+    val lost: Long,
+    val bitrateBitsPerSec: Float
+)
+
 /** Alternative RTSP playback backend for cameras using LIVE555 dynamic Content-Base. */
 class VlcCameraPlayer(
     private val context: Context,
@@ -48,6 +55,28 @@ class VlcCameraPlayer(
             media.release()
         }
         p.play()
+    }
+
+    /**
+     * Native decoder counters. Not the screen-recorder FPS and not AI FPS.
+     * getMedia() provides a retained reference; caller must release it.
+     */
+    fun currentFrameStats(): VlcFrameStats? {
+        val current = player ?: return null
+        val media = try { current.media } catch (_: Exception) { null } ?: return null
+        return try {
+            val counters = media.stats ?: return null
+            VlcFrameStats(
+                decoded = counters.decodedVideo.toLong(),
+                displayed = counters.displayedPictures.toLong(),
+                lost = counters.lostPictures.toLong(),
+                bitrateBitsPerSec = counters.inputBitrate
+            )
+        } catch (_: Exception) {
+            null
+        } finally {
+            media.release()
+        }
     }
 
     fun close() {

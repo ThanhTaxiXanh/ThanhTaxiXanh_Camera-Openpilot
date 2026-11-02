@@ -64,3 +64,12 @@ Giải mã cấu trúc 4 lane/2 road edge/3 lead, mean/std và logits có JUnit 
 ## V0.7.0 – Ưu tiên độ mượt 70mai A500S
 
 Tắt AI OpenCV mặc định để VLC phát video độc lập. Bật/tắt AI bằng nút rõ ràng, khi bật lấy mẫu 320×180 tối đa 1 FPS với PixelCopy callback trên HandlerThread riêng. Có hai preset bộ đệm RTSP 800ms và 300ms để so sánh; không tự reconnect khi VLC đã có video chỉ vì AI không có khung mới. Đọc [chẩn đoán hiệu năng](docs/V07_SMOOTH_PLAYBACK.md).
+
+
+## V0.8.0 – Adaptive playback guard
+
+- Bổ sung đo **FPS giải mã/hiển thị thực và số frame mất** qua thống kê native LibVLC (nếu thiết bị hỗ trợ).
+- PixelCopy được cả khởi tạo và callback trên HandlerThread mức ưu tiên thấp, mặc định tối đa 0,5 Hz. OpenCV chạy riêng và đo thời gian xử lý.
+- Nếu VLC mất từ 2 frame/chu kỳ 2 giây, PixelCopy quá 48 ms, hoặc OpenCV trên 100 ms thì AI tự giảm tải/tạm nghỉ 6–7 giây nhằm bảo vệ độ mượt.
+- Đệm A500S giữ 800 ms mặc định; nút 300 ms chỉ để đối chiếu lỗi. Dự án cần đường YUV từ decoder để đạt AI fps cao mà không dùng PixelCopy.
+- Kiểm tra khi xe dừng; các chỉ số này không chứng minh chất lượng ADAS.
