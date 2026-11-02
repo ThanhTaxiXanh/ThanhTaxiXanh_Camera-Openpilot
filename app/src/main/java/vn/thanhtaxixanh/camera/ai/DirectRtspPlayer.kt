@@ -16,6 +16,7 @@ import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
+import java.net.DatagramPacket
 import java.net.URI
 import java.net.Socket
 import java.nio.ByteBuffer
@@ -38,7 +39,8 @@ class DirectRtspPlayer(
     private val status: (String) -> Unit,
     private val firstPicture: () -> Unit,
     private val onLuma: (ByteArray, Int, Int) -> Unit,
-    private val onSessionInterrupted: (String) -> Unit
+    private val onSessionInterrupted: (String) -> Unit,
+    private val preferUdp: Boolean = false
 ) : AutoCloseable {
     data class Counters(
         val decoded: Long, val rendered: Long, val droppedRtp: Long,
@@ -47,7 +49,8 @@ class DirectRtspPlayer(
         val compressedBytes: Long, val inputWaitMs: Long,
         val queueDepth: Int, val peakQueueDepth: Long, val overflows: Long,
         val keepAliveSent: Long, val keepAliveOk: Long,
-        val keepAliveUnsupported: Long, val reconnectReason: String
+        val keepAliveUnsupported: Long, val reconnectReason: String,
+        val transportName: String, val udpPackets: Long
     )
     private data class Sample(val data: ByteArray, val timestampUs: Long)
     private val alive = AtomicBoolean(false)
@@ -66,6 +69,8 @@ class DirectRtspPlayer(
     private val keepAliveSent = AtomicLong()
     private val keepAliveOk = AtomicLong()
     private val keepAliveUnsupported = AtomicLong()
+    private val udpPackets = AtomicLong()
+    @Volatile private var activeTransportName = "RTSP TCP"
     @Volatile private var lastNetworkFailure = ""
     private val explicitlyClosed = AtomicBoolean(false)
     private val cleanedUp = AtomicBoolean(false)
@@ -77,6 +82,8 @@ class DirectRtspPlayer(
     // Never discard arbitrary P frames: the following frames depend on them.
     private val frames = ArrayBlockingQueue<Sample>(48)
     private var socket: Socket? = null
+    private var udpPorts: A500sUdpPortPair? = null
+    private var udpThread: Thread? = null
     private var codec: MediaCodec? = null
     private var thread: Thread? = null
     private var feeder: Thread? = null
@@ -89,7 +96,7 @@ class DirectRtspPlayer(
         compressedBytes.get(), inputWaitMs.get(),
         frames.size, queuePeak.get(), queueOverflows.get(),
         keepAliveSent.get(), keepAliveOk.get(), keepAliveUnsupported.get(),
-        lastNetworkFailure
+        lastNetworkFailure, activeTransportName, udpPackets.get()
     )
     fun start() {
         check(alive.compareAndSet(false, true)) { "Already started" }
@@ -308,9 +315,27 @@ class DirectRtspPlayer(
             }?.trim()?.substringAfter(':') ?: "track1"
             val track=if(control.startsWith("rtsp://")) control
                 else URI(base).resolve(control).toString()
+            val requestedUdp = if (preferUdp) A500sUdpPortPair.allocate(network) else null
+            udpPorts = requestedUdp
+            val setupHeader = requestedUdp?.transportHeader
+                ?: "RTP/AVP/TCP;unicast;interleaved=0-1"
+            status("SETUP requested " + if (preferUdp) "RTP/UDP" else "RTP/TCP")
             val setup=request(wire,dst,2,"SETUP",track,
-                mapOf("Transport" to "RTP/AVP/TCP;unicast;interleaved=0-1"))
+                mapOf("Transport" to setupHeader))
             require(setup.code==200) { "SETUP "+setup.code+" "+track }
+            val negotiated = setup.header("transport")
+            val useUdp = requestedUdp != null &&
+                RtspTransportNegotiation.isUdpTransport(negotiated)
+            val useTcp = RtspTransportNegotiation.isTcpTransport(negotiated)
+            require(useUdp || useTcp) {
+                "Camera SETUP transport unsupported: "+negotiated.take(120)
+            }
+            activeTransportName = if (useUdp) "RTP/UDP" else "RTP/TCP"
+            if (!useUdp) {
+                requestedUdp?.close()
+                udpPorts = null
+            }
+            status("Camera chọn: " + activeTransportName)
             val sessionHeader = setup.header("session")
             val session = sessionHeader.substringBefore(';').trim()
             require(session.isNotEmpty()){"RTSP session missing"}
@@ -334,7 +359,43 @@ class DirectRtspPlayer(
                 "s · keepalive mỗi "+intervalMs/1000+"s")
             createDecoder(describe.sdp)
             val assemble=Assembler(::enqueue,dropped)
-            earlyMedia.forEach { assemble.accept(it) }
+            if (!useUdp) earlyMedia.forEach { assemble.accept(it) }
+
+            val lastRtpAt = AtomicLong(SystemClock.elapsedRealtime())
+            if (useUdp) {
+                val pair = udpPorts ?: error("UDP negotiation lost socket")
+                val t = Thread({
+                    val buf = ByteArray(65536)
+                    try {
+                        while (alive.get()) {
+                            try {
+                                val packet = pair.receivePacket(buf)
+                                // Bind to the selected Wi-Fi Network and accept
+                                // video packets from the camera host only.
+                                if (packet.address.hostAddress == host && packet.length >= 12) {
+                                    lastRtpAt.set(SystemClock.elapsedRealtime())
+                                    udpPackets.incrementAndGet()
+                                    assemble.accept(packet.data.copyOfRange(
+                                        packet.offset, packet.offset + packet.length))
+                                }
+                            } catch (_: java.net.SocketTimeoutException) {
+                                // Camera may have paused briefly; control thread
+                                // decides when the lack of RTP is fatal.
+                            }
+                        }
+                    } catch (e: Exception) {
+                        if (alive.get()) {
+                            lastNetworkFailure = "RTP UDP receive: " +
+                                (e.message ?: e.javaClass.simpleName)
+                            alive.set(false)
+                            try { socket?.close() } catch (_: Exception) {}
+                        }
+                    }
+                }, "TTX-70mai-RTP-UDP")
+                udpThread = t
+                t.priority = Thread.NORM_PRIORITY + 1
+                t.start()
+            }
 
             var nextSequence = 4
             var nextKeepAliveAt = SystemClock.elapsedRealtime() + intervalMs
@@ -342,10 +403,9 @@ class DirectRtspPlayer(
             var pendingAt = 0L
             var preferredMethod = "GET_PARAMETER"
             var unsupportedBoth = false
-            var lastRtpAt = SystemClock.elapsedRealtime()
             while(alive.get()) {
                 val now=SystemClock.elapsedRealtime()
-                if (now-lastRtpAt>12000L) {
+                if (now-lastRtpAt.get()>12000L) {
                     error("RTP timeout: no H264 packets for 12 seconds")
                 }
                 if (pendingSeq>=0 && now-pendingAt>9000L) {
@@ -371,7 +431,7 @@ class DirectRtspPlayer(
                 when (packet) {
                     is RtspWireReader.Event.Interleaved -> {
                         if (packet.channel == rtpChannel) {
-                            lastRtpAt=SystemClock.elapsedRealtime()
+                            lastRtpAt.set(SystemClock.elapsedRealtime())
                             assemble.accept(packet.payload)
                         }
                     }
@@ -482,6 +542,9 @@ class DirectRtspPlayer(
         if (!cleanedUp.compareAndSet(false,true)) return
         alive.set(false)
         try { socket?.close() } catch (_:Exception) {}
+        udpPorts?.close()
+        udpPorts = null
+        udpThread?.interrupt()
         thread?.interrupt()
         feeder?.interrupt()
         frames.clear()
