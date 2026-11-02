@@ -37,13 +37,16 @@ class DirectRtspPlayer(
     private val isAiEnabled: () -> Boolean,
     private val status: (String) -> Unit,
     private val firstPicture: () -> Unit,
-    private val onLuma: (ByteArray, Int, Int) -> Unit
+    private val onLuma: (ByteArray, Int, Int) -> Unit,
+    private val onSessionInterrupted: (String) -> Unit
 ) : AutoCloseable {
     data class Counters(
         val decoded: Long, val rendered: Long, val droppedRtp: Long,
         val ai: Long, val noYuv: Boolean,
         val lateDisplayFrames: Long, val clockRebases: Long,
-        val queueDepth: Int, val peakQueueDepth: Long, val overflows: Long
+        val queueDepth: Int, val peakQueueDepth: Long, val overflows: Long,
+        val keepAliveSent: Long, val keepAliveOk: Long,
+        val keepAliveUnsupported: Long, val reconnectReason: String
     )
     private data class Sample(val data: ByteArray, val timestampUs: Long)
     private val alive = AtomicBoolean(false)
@@ -57,6 +60,12 @@ class DirectRtspPlayer(
     private val clockRebases = AtomicLong()
     private val queueOverflows = AtomicLong()
     private val queuePeak = AtomicLong()
+    private val keepAliveSent = AtomicLong()
+    private val keepAliveOk = AtomicLong()
+    private val keepAliveUnsupported = AtomicLong()
+    @Volatile private var lastNetworkFailure = ""
+    private val explicitlyClosed = AtomicBoolean(false)
+    private val cleanedUp = AtomicBoolean(false)
     private val presentationClock = H264PresentationClock()
     private val input = ArrayBlockingQueue<Int>(32)
     // 48 complete access units (approximately 1–2 seconds at 25–30fps).
@@ -72,7 +81,9 @@ class DirectRtspPlayer(
     fun counters() = Counters(
         decoded.get(), rendered.get(), dropped.get(), ai.get(), noYuv.get(),
         lateDisplayFrames.get(), clockRebases.get(), frames.size,
-        queuePeak.get(), queueOverflows.get()
+        queuePeak.get(), queueOverflows.get(),
+        keepAliveSent.get(), keepAliveOk.get(), keepAliveUnsupported.get(),
+        lastNetworkFailure
     )
     fun start() {
         check(alive.compareAndSet(false, true)) { "Already started" }
@@ -147,7 +158,8 @@ class DirectRtspPlayer(
                     "x"+f.getInteger(MediaFormat.KEY_HEIGHT))
             }
             override fun onError(c:MediaCodec,e:MediaCodec.CodecException) {
-                status("MediaCodec: "+e.diagnosticInfo)
+                lastNetworkFailure = "MediaCodec: " + e.diagnosticInfo
+                status(lastNetworkFailure)
                 alive.set(false)
                 try { socket?.close() } catch (_:Exception) {}
             }
@@ -265,21 +277,20 @@ class DirectRtspPlayer(
         queuePeak.accumulateAndGet(frames.size.toLong()) { a, b -> maxOf(a,b) }
     }
     private fun run() {
+        var errorMessage = ""
         try {
             val uri=URI(url)
             val host=uri.host ?: error("Missing RTSP host")
             val port=if(uri.port>0)uri.port else 554
             val sock=network.socketFactory.createSocket()
             socket=sock
-            sock.tcpNoDelay=true;sock.soTimeout=6000
+            sock.tcpNoDelay=true
+            sock.keepAlive=true
+            sock.soTimeout=1500
             sock.connect(InetSocketAddress(host,port),4500)
             val src=BufferedInputStream(sock.getInputStream(),65536)
             val wire = RtspWireReader(src)
             val dst=BufferedOutputStream(sock.getOutputStream(),8192)
-            // A500S is known to accept DESCRIBE as the first command on a
-            // fresh socket (same sequence as the verified diagnostics probe).
-            // OPTIONS is optional in RTSP 1.0 and can trigger vendor-specific
-            // binary responses on some firmware revisions.
             val describe=request(wire,dst,1,"DESCRIBE",url,
                 mapOf("Accept" to "application/sdp"))
             require(describe.code==200 && describe.sdp.contains("m=video")) {
@@ -290,22 +301,23 @@ class DirectRtspPlayer(
             val control=videosection.lines().firstOrNull {
                 it.trim().startsWith("a=control:")
             }?.trim()?.substringAfter(':') ?: "track1"
-            val track=if(control.startsWith("rtsp://"))control
+            val track=if(control.startsWith("rtsp://")) control
                 else URI(base).resolve(control).toString()
             val setup=request(wire,dst,2,"SETUP",track,
                 mapOf("Transport" to "RTP/AVP/TCP;unicast;interleaved=0-1"))
             require(setup.code==200) { "SETUP "+setup.code+" "+track }
-            val session=setup.header("session").substringBefore(';')
+            val sessionHeader = setup.header("session")
+            val session = sessionHeader.substringBefore(';').trim()
             require(session.isNotEmpty()){"RTSP session missing"}
+            val timeoutSecs = RtspSessionMaintenance.timeoutSeconds(sessionHeader)
+            val intervalMs = RtspSessionMaintenance.intervalMs(timeoutSecs)
             val aggregate=if(describe.sdp.lines().any { it.trim()=="a=control:*" })base else url
-            // Some firmware negotiates channels other than 0-1.
             val rtpChannel = Regex("interleaved=(\\d+)-").find(setup.header("transport"))
                 ?.groupValues?.get(1)?.toIntOrNull() ?: 0
             val earlyMedia = ArrayDeque<ByteArray>()
             var earlyBytes = 0
             val play=request(wire,dst,3,"PLAY",aggregate,
                 mapOf("Session" to session)) { item ->
-                // Limit retained early RTP data; they may arrive before PLAY reply.
                 if (item.channel == rtpChannel && earlyMedia.size < 24 &&
                     earlyBytes + item.payload.size <= 96 * 1024) {
                     earlyMedia.addLast(item.payload)
@@ -313,28 +325,93 @@ class DirectRtspPlayer(
                 }
             }
             require(play.code==200){ "PLAY "+play.code+" "+aggregate }
-            status("RTSP H264 PLAY 200 · channel=" + rtpChannel +
-                " · pre-PLAY RTP " + earlyMedia.size)
+            status("RTSP PLAY 200 · session timeout="+timeoutSecs+
+                "s · keepalive mỗi "+intervalMs/1000+"s")
             createDecoder(describe.sdp)
             val assemble=Assembler(::enqueue,dropped)
             earlyMedia.forEach { assemble.accept(it) }
+
+            var nextSequence = 4
+            var nextKeepAliveAt = SystemClock.elapsedRealtime() + intervalMs
+            var pendingSeq = -1
+            var pendingAt = 0L
+            var preferredMethod = "GET_PARAMETER"
+            var unsupportedBoth = false
+            var lastRtpAt = SystemClock.elapsedRealtime()
             while(alive.get()) {
+                val now=SystemClock.elapsedRealtime()
+                if (now-lastRtpAt>12000L) {
+                    error("RTP timeout: no H264 packets for 12 seconds")
+                }
+                if (pendingSeq>=0 && now-pendingAt>9000L) {
+                    // Do not block the video reader waiting for keepalive replies.
+                    status("Keepalive CSeq "+pendingSeq+" chưa có phản hồi; tiếp tục nhận RTP")
+                    pendingSeq=-1
+                }
+                if (!unsupportedBoth && pendingSeq<0 && now>=nextKeepAliveAt) {
+                    val seq=nextSequence++
+                    val message=RtspSessionMaintenance.request(
+                        preferredMethod, aggregate, session, seq)
+                    dst.write(message)
+                    dst.flush()
+                    keepAliveSent.incrementAndGet()
+                    pendingSeq=seq
+                    pendingAt=now
+                    nextKeepAliveAt=now+intervalMs
+                    status("RTSP keepalive "+preferredMethod+" CSeq "+seq+" (timeout="+timeoutSecs+"s)")
+                }
+
                 val packet = try { wire.next() }
                 catch (_:java.net.SocketTimeoutException) { continue }
                 when (packet) {
-                    is RtspWireReader.Event.Interleaved ->
-                        if (packet.channel == rtpChannel) assemble.accept(packet.payload)
+                    is RtspWireReader.Event.Interleaved -> {
+                        if (packet.channel == rtpChannel) {
+                            lastRtpAt=SystemClock.elapsedRealtime()
+                            assemble.accept(packet.payload)
+                        }
+                    }
                     is RtspWireReader.Event.Reply -> {
-                        // Camera may transmit keepalive responses on the same TCP socket.
-                        if (packet.code >= 400) status("RTSP server " + packet.code)
+                        val seq=packet.header("cseq").toIntOrNull()
+                        if (seq!=null && seq==pendingSeq) {
+                            pendingSeq=-1
+                            if (packet.code in 200..299) {
+                                keepAliveOk.incrementAndGet()
+                            } else {
+                                keepAliveUnsupported.incrementAndGet()
+                                status("Keepalive "+preferredMethod+" → "+packet.code)
+                                if (preferredMethod=="GET_PARAMETER") {
+                                    preferredMethod="SET_PARAMETER"
+                                    nextKeepAliveAt=SystemClock.elapsedRealtime()+1000L
+                                } else {
+                                    unsupportedBoth=true
+                                    status("Camera từ chối cả 2 keepalive; sẽ tự kết nối lại khi cần")
+                                }
+                            }
+                        } else if (packet.code>=400) {
+                            status("RTSP server "+packet.code+
+                                " (CSeq "+(seq?.toString() ?: "?")+")")
+                        }
                     }
                 }
             }
+            if (!explicitlyClosed.get()) {
+                errorMessage = lastNetworkFailure.ifBlank { "RTSP ended unexpectedly" }
+            }
         } catch (e:Exception) {
-            if(alive.get())status("Direct RTSP: "+(e.message ?: e.javaClass.simpleName))
+            if (!explicitlyClosed.get()) {
+                errorMessage = (e.javaClass.simpleName+": "+
+                    (e.message ?: "No details")).take(200)
+                lastNetworkFailure=errorMessage
+                status("Direct RTSP: "+errorMessage)
+            }
         } finally {
-            alive.set(false)
-            try{socket?.close()}catch(_:Exception){}
+            // Releasing the hardware decoder is mandatory on every TCP reset.
+            cleanup()
+            if (!explicitlyClosed.get()) {
+                onSessionInterrupted(errorMessage.ifBlank {
+                    lastNetworkFailure.ifBlank { "RTSP connection ended" }
+                })
+            }
         }
     }
     private class Assembler(
@@ -396,17 +473,27 @@ class DirectRtspPlayer(
             if(mark)flush()
         }
     }
-    override fun close() {
+    private fun cleanup() {
+        if (!cleanedUp.compareAndSet(false,true)) return
         alive.set(false)
-        try{socket?.close()}catch(_:Exception){}
+        try { socket?.close() } catch (_:Exception) {}
         thread?.interrupt()
         feeder?.interrupt()
-        val c=codec
+        frames.clear()
+        input.clear()
+        val oldCodec=codec
         codec=null
+        val oldThread=codecThread
+        codecThread=null
         Thread({
-            try{c?.stop()}catch(_:Exception){}
-            try{c?.release()}catch(_:Exception){}
-            codecThread?.quitSafely()
+            try { oldCodec?.stop() } catch (_:Exception) {}
+            try { oldCodec?.release() } catch (_:Exception) {}
+            oldThread?.quitSafely()
         },"TTX-CodecClose").start()
+    }
+
+    override fun close() {
+        explicitlyClosed.set(true)
+        cleanup()
     }
 }
