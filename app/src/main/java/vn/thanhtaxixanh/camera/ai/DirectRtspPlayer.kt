@@ -43,7 +43,8 @@ class DirectRtspPlayer(
     data class Counters(
         val decoded: Long, val rendered: Long, val droppedRtp: Long,
         val ai: Long, val noYuv: Boolean,
-        val lateFeedFrames: Long, val clockRebases: Long,
+        val receivedAccessUnits: Long, val submittedAccessUnits: Long,
+        val compressedBytes: Long, val inputWaitMs: Long,
         val queueDepth: Int, val peakQueueDepth: Long, val overflows: Long,
         val keepAliveSent: Long, val keepAliveOk: Long,
         val keepAliveUnsupported: Long, val reconnectReason: String
@@ -56,8 +57,10 @@ class DirectRtspPlayer(
     private val rendered = AtomicLong()
     private val dropped = AtomicLong()
     private val ai = AtomicLong()
-    private val lateFeedFrames = AtomicLong()
-    private val clockRebases = AtomicLong()
+    private val receivedAccessUnits = AtomicLong()
+    private val submittedAccessUnits = AtomicLong()
+    private val compressedBytes = AtomicLong()
+    private val inputWaitMs = AtomicLong()
     private val queueOverflows = AtomicLong()
     private val queuePeak = AtomicLong()
     private val keepAliveSent = AtomicLong()
@@ -66,9 +69,9 @@ class DirectRtspPlayer(
     @Volatile private var lastNetworkFailure = ""
     private val explicitlyClosed = AtomicBoolean(false)
     private val cleanedUp = AtomicBoolean(false)
-    // Pace COMPRESSED input submission, not decoded output buffer release.
-    // Holding decoder output buffers for 550ms exhausted hardware codec slots.
-    private val feedClock = RtpInputPacer()
+    // No artificial PTS wall-clock pacing. On the A500S input timing drifted
+    // over long sessions and the V0.9.5 feeder imposed an additional wait.
+    // We keep the camera's original PTS for MediaCodec and measure actual input.
     private val input = ArrayBlockingQueue<Int>(32)
     // 48 complete access units (approximately 1–2 seconds at 25–30fps).
     // Never discard arbitrary P frames: the following frames depend on them.
@@ -82,8 +85,9 @@ class DirectRtspPlayer(
 
     fun counters() = Counters(
         decoded.get(), rendered.get(), dropped.get(), ai.get(), noYuv.get(),
-        lateFeedFrames.get(), clockRebases.get(), frames.size,
-        queuePeak.get(), queueOverflows.get(),
+        receivedAccessUnits.get(), submittedAccessUnits.get(),
+        compressedBytes.get(), inputWaitMs.get(),
+        frames.size, queuePeak.get(), queueOverflows.get(),
         keepAliveSent.get(), keepAliveOk.get(), keepAliveUnsupported.get(),
         lastNetworkFailure
     )
@@ -150,7 +154,6 @@ class DirectRtspPlayer(
         val t = HandlerThread("TTX-Codec",Process.THREAD_PRIORITY_DISPLAY).apply { start() }
         codecThread=t
         val codecHandler = Handler(t.looper)
-        feedClock.reset()
         val decoder=MediaCodec.createDecoderByType("video/avc")
         codec=decoder
         decoder.setCallback(object:MediaCodec.Callback() {
@@ -205,30 +208,17 @@ class DirectRtspPlayer(
         feeder=Thread({
             try {
                 while (alive.get()) {
-                    // Frames are taken IN RTP ORDER; never drop P-frame
-                    // references merely because input buffers are unavailable.
+                    // V0.9.6 rollback: submit complete H.264 access units
+                    // without sleeping on a PTS clock or accumulating a
+                    // second artificial jitter buffer. Never reorder/drop
+                    // compressed reference pictures.
                     val sample=frames.poll(250,TimeUnit.MILLISECONDS) ?: continue
-                    val pacing=feedClock.plan(sample.timestampUs, System.nanoTime())
-                    if (pacing.rebased) clockRebases.incrementAndGet()
-                    if (pacing.lateByNs > 150_000_000L) {
-                        // Overdue compressed pictures are still fed in order.
-                        // Never drop reference pictures without IDR resync.
-                        lateFeedFrames.incrementAndGet()
-                    }
-
-                    // Sleep only on the dedicated codec input feeder thread.
-                    // Incoming RTSP packets and MediaCodec output callbacks
-                    // remain free to run and to release buffers immediately.
-                    while (alive.get()) {
-                        val remainingNs = pacing.deadlineNs - System.nanoTime()
-                        if (remainingNs <= 0L) break
-                        TimeUnit.NANOSECONDS.sleep(minOf(remainingNs, 20_000_000L))
-                    }
-                    if (!alive.get()) break
-
+                    val waitStart=SystemClock.elapsedRealtime()
                     var index:Int?=null
                     while (alive.get() && index == null)
                         index=input.poll(250,TimeUnit.MILLISECONDS)
+                    inputWaitMs.addAndGet(
+                        (SystemClock.elapsedRealtime()-waitStart).coerceAtLeast(0L))
                     if (!alive.get() || index == null) break
 
                     val dst=decoder.getInputBuffer(index)
@@ -241,6 +231,7 @@ class DirectRtspPlayer(
                     }
                     dst.put(sample.data)
                     decoder.queueInputBuffer(index,0,sample.data.size,sample.timestampUs,0)
+                    submittedAccessUnits.incrementAndGet()
                 }
             } catch (_:InterruptedException) {
                 Thread.currentThread().interrupt()
@@ -286,6 +277,8 @@ class DirectRtspPlayer(
                 "Dừng Direct để tránh bỏ mất H264 P-frame; thử lại hoặc dùng VLC 800 ms."
             )
         }
+        receivedAccessUnits.incrementAndGet()
+        compressedBytes.addAndGet(bytes.size.toLong())
         queuePeak.accumulateAndGet(frames.size.toLong()) { a, b -> maxOf(a,b) }
     }
     private fun run() {

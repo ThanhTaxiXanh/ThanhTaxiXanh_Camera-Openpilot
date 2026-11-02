@@ -93,3 +93,8 @@ Từ ảnh dùng V0.9.3: sau khi phát mượt, Direct RTSP báo Connection rese
 ## V0.9.5 – Ưu tiên video mượt khi xe chạy
 
 Video thử nghiệm A500S 48,07 giây khi di chuyển cho thấy Direct FPS giao Surface có lúc giảm còn ~15 dù RTP gap 0 và RTSP keepalive OK. Mã V0.9.4 giữ decoded output buffers tối đa ~550ms, có thể làm nghẽn MediaCodec. V0.9.5 **trả output buffer ngay lập tức** và đưa nhịp PTS sang thread nạp các Access Units, tách riêng khỏi luồng RTP/codec callback. `RtpInputPacer` dùng đệm khởi đầu 350ms và không rebuffer khi khung tới muộn, cho phép nhanh chóng bắt kịp các đợt RTP dồn. Đếm `frame nạp muộn` thay `frame trễ bỏ`; frames nén không bị loại tùy tiện. Chế độ RTSP keepalive và VLC 800ms không thay đổi. Kết quả còn cần kiểm tra trên điện thoại A500S thực tế.
+
+
+## V0.9.6 – Khắc phục hồi quy Direct MediaCodec V0.9.5
+
+Bộ phát Direct không còn chờ PTS trên thread nạp H264. Thay đổi này nhằm loại bỏ ràng buộc đồng hồ V0.9.5 khiến tốc độ nạp và tốc độ giải mã bị giảm; giữ nguyên thứ tự và PTS gốc, output buffers được release ngay như V0.9.5. Bổ sung bốn chỉ số riêng: Access Units H264 nhận từ camera/s, tốc độ nạp decoder/s, FPS decoded và FPS đưa tới Surface, để phân biệt lỗi firmware/RTP với codec. Không thay đổi RTSP GET_PARAMETER 100% thành công trên các ảnh người dùng, cũng không thay đổi VLC 800 ms. Xem [chẩn đoán V0.9.6](docs/V096_UNPACED_RTSP_ROLLBACK.md). Độ mượt chưa xác minh trên điện thoại.

@@ -94,6 +94,8 @@ class MainActivity : ComponentActivity() {
     private var directMode = false
     private var lastDirectDecoded = 0L
     private var lastDirectRendered = 0L
+    private var lastDirectReceived = 0L
+    private var lastDirectSubmitted = 0L
     private var directGeneration = 0L
     private var directReconnectAttempts = 0
     private var directReconnectPending = false
@@ -440,6 +442,8 @@ class MainActivity : ComponentActivity() {
         directView.visibility = View.GONE
         lastDirectDecoded = 0L
         lastDirectRendered = 0L
+        lastDirectReceived = 0L
+        lastDirectSubmitted = 0L
         vlcPlayer?.close()
         vlcPlayer = null
         vlcSurface.visibility = View.GONE
@@ -747,6 +751,8 @@ class MainActivity : ComponentActivity() {
             lastStatsAtMs = 0L
             lastDirectDecoded = 0
             lastDirectRendered = 0
+            lastDirectReceived = 0
+            lastDirectSubmitted = 0
             connectDirect(url, net) // fresh DESCRIBE, SETUP and PLAY/session id
         }, delay)
     }
@@ -952,20 +958,26 @@ class MainActivity : ComponentActivity() {
                 val elapsed = ((now - lastStatsAtMs).coerceAtLeast(1L)).toFloat() / 1000f
                 val dec = (stats.decoded - lastDirectDecoded).coerceAtLeast(0L)
                 val ren = (stats.rendered - lastDirectRendered).coerceAtLeast(0L)
+                val recv = (stats.receivedAccessUnits - lastDirectReceived).coerceAtLeast(0L)
+                val feed = (stats.submittedAccessUnits - lastDirectSubmitted).coerceAtLeast(0L)
                 performanceText.text = String.format(java.util.Locale.US,
-                    "Direct H264: %.1f FPS giải mã · %.1f FPS giao Surface\n" +
-                        "RTP gap: %d · frame nạp muộn: %d · đặt lại clock: %d\n" +
-                        "Hàng đợi: %d/48 · đỉnh: %d · quá tải: %d\n" +
+                    "H264 camera: %.1f AU/s · nạp: %.1f FPS\n" +
+                        "MediaCodec: %.1f giải mã · %.1f giao Surface\n" +
+                        "RTP gap: %d · Hàng đợi: %d/48 · đỉnh: %d · quá tải: %d\n" +
+                        "Đợi decoder: %d ms tích lũy · Nhận: %.1f MB\n" +
                         "AI YUV: %d · YUV: %s\n" +
                         "RTSP keepalive: %d gửi / %d OK / %d bị từ chối · Reconnect: %d/6",
+                    recv / elapsed, feed / elapsed,
                     dec / elapsed, ren / elapsed,
-                    stats.droppedRtp, stats.lateFeedFrames, stats.clockRebases,
-                    stats.queueDepth, stats.peakQueueDepth, stats.overflows,
+                    stats.droppedRtp, stats.queueDepth, stats.peakQueueDepth, stats.overflows,
+                    stats.inputWaitMs, stats.compressedBytes / 1_000_000.0,
                     stats.ai, if (stats.noYuv) "KHÔNG" else "CHỜ KIỂM TRA",
                     stats.keepAliveSent, stats.keepAliveOk, stats.keepAliveUnsupported,
                     directReconnectAttempts)
                 lastDirectDecoded = stats.decoded
                 lastDirectRendered = stats.rendered
+                lastDirectReceived = stats.receivedAccessUnits
+                lastDirectSubmitted = stats.submittedAccessUnits
             }
             lastStatsAtMs = now
         }
