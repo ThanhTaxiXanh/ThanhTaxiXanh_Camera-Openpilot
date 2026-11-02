@@ -586,6 +586,103 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
+    private fun connectDirect(url: String, net: Network) {
+        if (source != "rtsp" || !directMode) return
+        directPlayer?.close()
+        directPlayer = null
+        directSurface?.release()
+        directSurface = null
+        directView.visibility = View.VISIBLE
+        vlcSurface.visibility = View.GONE
+        playerView.visibility = View.GONE
+        phonePreview.visibility = View.GONE
+        videoRendered = false
+        retryActive = false
+        activeUrl = url
+        lastFrame = SystemClock.elapsedRealtime()
+        show("Direct RTSP: H264 → Android MediaCodec (không VLC)")
+        fun begin() {
+            if (source != "rtsp" || !directMode || !directView.isAvailable) return
+            val texture = directView.surfaceTexture ?: return
+            val target = Surface(texture)
+            directSurface = target
+            val player = DirectRtspPlayer(
+                net, url, target,
+                { analysisEnabled },
+                { message ->
+                    runOnUiThread {
+                        if (source == "rtsp" && directMode) {
+                            report.text = (report.text.toString() +
+                                "\nDirect: " + message).takeLast(1800)
+                            show(message)
+                        }
+                    }
+                },
+                {
+                    runOnUiThread {
+                        if (source == "rtsp" && directMode) {
+                            videoRendered = true
+                            lastFrame = SystemClock.elapsedRealtime()
+                            show("ĐÃ NHẬN VIDEO DIRECT H264 · Không VLC / PixelCopy")
+                        }
+                    }
+                },
+                { luma, width, height ->
+                    if (analysisEnabled && busy.compareAndSet(false, true)) {
+                        worker.execute {
+                            val started = SystemClock.elapsedRealtime()
+                            var bitmap: Bitmap? = null
+                            try {
+                                val pixels = IntArray(width * height) { i ->
+                                    val y = luma[i].toInt() and 255
+                                    (0xff000000L or (y.toLong() shl 16) or
+                                        (y.toLong() shl 8) or y.toLong()).toInt()
+                                }
+                                bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                                bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+                                val result = engine.analyze(bitmap)
+                                lastVisionTimeMs = SystemClock.elapsedRealtime() - started
+                                analyzedFrames++
+                                runOnUiThread {
+                                    if (source == "rtsp" && directMode && analysisEnabled)
+                                        overlay.render(result)
+                                }
+                            } catch (error: Exception) {
+                                runOnUiThread { if (source == "rtsp") show(
+                                    "YUV AI: " + error.javaClass.simpleName) }
+                            } finally {
+                                bitmap?.recycle()
+                                busy.set(false)
+                            }
+                        }
+                    }
+                }
+            )
+            directPlayer = player
+            player.start()
+        }
+        if (directView.isAvailable) {
+            begin()
+        } else {
+            directView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                override fun onSurfaceTextureAvailable(surface: SurfaceTexture, w: Int, h: Int) {
+                    directView.surfaceTextureListener = null
+                    begin()
+                }
+                override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, w: Int, h: Int) {}
+                override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+                    directPlayer?.close()
+                    directPlayer = null
+                    directSurface?.release()
+                    directSurface = null
+                    return true
+                }
+                override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+            }
+        }
+    }
+
     private fun connectVlc(url: String) {
         if (source != "rtsp") return
         vlcPlayer?.close()
@@ -769,6 +866,22 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        if (directMode && videoRendered && now - lastStatsAtMs >= 2000L) {
+            val stats = directPlayer?.counters()
+            if (stats != null) {
+                val elapsed = ((now - lastStatsAtMs).coerceAtLeast(1L)).toFloat() / 1000f
+                val dec = (stats.decoded - lastDirectDecoded).coerceAtLeast(0L)
+                val ren = (stats.rendered - lastDirectRendered).coerceAtLeast(0L)
+                performanceText.text = String.format(java.util.Locale.US,
+                    "Direct H264: %.1f FPS giải mã · %.1f FPS hiển thị\n" +
+                        "RTP mất: %d · YUV AI: %d khung · Có YUV: %s",
+                    dec / elapsed, ren / elapsed, stats.droppedRtp, stats.ai,
+                    if (stats.noYuv) "KHÔNG" else "CHỜ KIỂM TRA")
+                lastDirectDecoded = stats.decoded
+                lastDirectRendered = stats.rendered
+            }
+            lastStatsAtMs = now
+        }
         if (vlcMode && videoRendered && now - lastStatsAtMs >= 2000L) {
             val current = vlcPlayer?.currentFrameStats()
             val previous = lastVideoStats
