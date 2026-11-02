@@ -41,7 +41,7 @@ class VisionEngine(private val context: Context) {
         return try {
             val options = ObjectDetector.ObjectDetectorOptions.builder()
                 .setScoreThreshold(0.45f).setMaxResults(8).build()
-            detector = ObjectDetector.createFromFileAndOptions(context, f, options)
+            detector = ObjectDetector.createFromFileAndOptions(context, f.absolutePath, options)
             "Đã nạp mô hình xe"
         } catch (e: Exception) {
             "Mô hình không tương thích: ${e.message?.take(90)}"

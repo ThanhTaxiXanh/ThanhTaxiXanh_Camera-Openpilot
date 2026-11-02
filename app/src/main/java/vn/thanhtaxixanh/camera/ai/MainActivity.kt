@@ -24,6 +24,8 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -41,6 +43,7 @@ import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
+@OptIn(UnstableApi::class)
 class MainActivity : ComponentActivity() {
     private lateinit var root: FrameLayout
     private lateinit var playerView: PlayerView
