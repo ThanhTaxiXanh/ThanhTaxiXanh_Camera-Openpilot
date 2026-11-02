@@ -98,3 +98,8 @@ Video thử nghiệm A500S 48,07 giây khi di chuyển cho thấy Direct FPS gia
 ## V0.9.6 – Khắc phục hồi quy Direct MediaCodec V0.9.5
 
 Bộ phát Direct không còn chờ PTS trên thread nạp H264. Thay đổi này nhằm loại bỏ ràng buộc đồng hồ V0.9.5 khiến tốc độ nạp và tốc độ giải mã bị giảm; giữ nguyên thứ tự và PTS gốc, output buffers được release ngay như V0.9.5. Bổ sung bốn chỉ số riêng: Access Units H264 nhận từ camera/s, tốc độ nạp decoder/s, FPS decoded và FPS đưa tới Surface, để phân biệt lỗi firmware/RTP với codec. Không thay đổi RTSP GET_PARAMETER 100% thành công trên các ảnh người dùng, cũng không thay đổi VLC 800 ms. Xem [chẩn đoán V0.9.6](docs/V096_UNPACED_RTSP_ROLLBACK.md). Độ mượt chưa xác minh trên điện thoại.
+
+
+## V0.9.7 – Đối chiếu xADAS 0.2.7: RTP/UDP trực tiếp
+
+Bóc tách XAPK xADAS xác định class a5/l3.H() gọi DatagramSocket.receive, setReceiveBufferSize, Transport: RTP/AVP;unicast;client_port= và có cả nhánh RTP/AVP/TCP;unicast;interleaved=0-1. Callback MediaCodec a5/j3.onOutputBufferAvailable sử dụng releaseOutputBuffer(index, boolean), không có overload lập lịch timestamp. TTX nay có nút **70mai / DIRECT UDP · KIẾN TRÚC xADAS**: RTSP kiểm soát qua TCP, RTP video qua UDP unicast trên Wi-Fi A500S, giải mã MediaCodec trực tiếp. Có nút Direct TCP để A/B và VLC 800ms dự phòng. **Đây là tái triển khai độc lập, chưa được xác minh UDP tương thích với firmware A500S hoặc mượt hơn.** Xem docs/V097_XADAS_UDP_PLAYBACK.md.

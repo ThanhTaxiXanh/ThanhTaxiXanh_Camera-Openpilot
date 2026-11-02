@@ -626,7 +626,7 @@ class MainActivity : ComponentActivity() {
         retryActive = false
         activeUrl = url
         lastFrame = SystemClock.elapsedRealtime()
-        show("Direct " + if (directUdpMode) "RTP/UDP" else "RTP/TCP" +
+        show("Direct " + (if (directUdpMode) "RTP/UDP" else "RTP/TCP") +
             " → Android MediaCodec (không VLC)")
         fun begin() {
             if (source != "rtsp" || !directMode || !directView.isAvailable) return
