@@ -59,7 +59,7 @@ object CameraConnectionCheck {
             socket.soTimeout = 3000
             val request = "DESCRIBE " + url + " RTSP/1.0\r\n" +
                 "CSeq: 1\r\nAccept: application/sdp\r\n" +
-                "User-Agent: TTXCameraAI/0.2\r\n\r\n"
+                "User-Agent: TTXCameraAI/0.3\r\n\r\n"
             socket.getOutputStream().write(request.toByteArray(StandardCharsets.US_ASCII))
             socket.getOutputStream().flush()
             val input = socket.getInputStream().bufferedReader(StandardCharsets.US_ASCII)
@@ -72,13 +72,31 @@ object CameraConnectionCheck {
                 if (colon > 0) headers[line.substring(0, colon).lowercase()] =
                     line.substring(colon + 1).trim()
             }
+            val length = headers["content-length"]?.toIntOrNull()?.coerceIn(0, 8192) ?: 0
+            val sdp = if (length > 0) {
+                val chars = CharArray(length)
+                var size = 0
+                while (size < chars.size) {
+                    val read = input.read(chars, size, chars.size - size)
+                    if (read < 0) break
+                    size += read
+                }
+                String(chars, 0, size)
+            } else ""
+            val contentBase = headers["content-base"] ?: "(không có)"
+            val controls = sdp.lineSequence()
+                .filter { it.startsWith("a=control:") }
+                .take(4).joinToString(",") { it.substringAfter(":") }
+            val video = sdp.lineSequence().firstOrNull { it.startsWith("m=video ") } ?: ""
+            val codec = sdp.lineSequence().firstOrNull { it.contains("H264/") } ?: ""
             val good = status.contains(" 200 ") &&
                 headers["content-type"]?.contains("sdp", true) == true
             val message = when {
                 status.contains(" 401 ") || status.contains(" 403 ") ->
                     "Từ chối phiên; kiểm tra ghép nối và xác nhận trên 70mai"
                 status.contains(" 404 ") -> "RTSP mở nhưng đường dẫn sai"
-                good -> "DESCRIBE OK, nhận SDP; có thể thử phát video"
+                good -> "SDP OK · Content-Base=" + contentBase +
+                    " · a=control=" + controls + " · " + video + " · " + codec
                 else -> "Server phản hồi nhưng không xác nhận được SDP video"
             }
             CameraProbe(url, status, message, good)
