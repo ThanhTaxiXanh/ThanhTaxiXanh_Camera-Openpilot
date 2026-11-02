@@ -43,7 +43,7 @@ class DirectRtspPlayer(
     data class Counters(
         val decoded: Long, val rendered: Long, val droppedRtp: Long,
         val ai: Long, val noYuv: Boolean,
-        val lateDisplayFrames: Long, val clockRebases: Long,
+        val lateFeedFrames: Long, val clockRebases: Long,
         val queueDepth: Int, val peakQueueDepth: Long, val overflows: Long,
         val keepAliveSent: Long, val keepAliveOk: Long,
         val keepAliveUnsupported: Long, val reconnectReason: String
@@ -56,7 +56,7 @@ class DirectRtspPlayer(
     private val rendered = AtomicLong()
     private val dropped = AtomicLong()
     private val ai = AtomicLong()
-    private val lateDisplayFrames = AtomicLong()
+    private val lateFeedFrames = AtomicLong()
     private val clockRebases = AtomicLong()
     private val queueOverflows = AtomicLong()
     private val queuePeak = AtomicLong()
@@ -66,7 +66,9 @@ class DirectRtspPlayer(
     @Volatile private var lastNetworkFailure = ""
     private val explicitlyClosed = AtomicBoolean(false)
     private val cleanedUp = AtomicBoolean(false)
-    private val presentationClock = H264PresentationClock()
+    // Pace COMPRESSED input submission, not decoded output buffer release.
+    // Holding decoder output buffers for 550ms exhausted hardware codec slots.
+    private val feedClock = H264PresentationClock()
     private val input = ArrayBlockingQueue<Int>(32)
     // 48 complete access units (approximately 1–2 seconds at 25–30fps).
     // Never discard arbitrary P frames: the following frames depend on them.
@@ -80,7 +82,7 @@ class DirectRtspPlayer(
 
     fun counters() = Counters(
         decoded.get(), rendered.get(), dropped.get(), ai.get(), noYuv.get(),
-        lateDisplayFrames.get(), clockRebases.get(), frames.size,
+        lateFeedFrames.get(), clockRebases.get(), frames.size,
         queuePeak.get(), queueOverflows.get(),
         keepAliveSent.get(), keepAliveOk.get(), keepAliveUnsupported.get(),
         lastNetworkFailure
@@ -147,8 +149,8 @@ class DirectRtspPlayer(
         if (Build.VERSION.SDK_INT >= 30) fmt.setInteger(MediaFormat.KEY_LOW_LATENCY,0)
         val t = HandlerThread("TTX-Codec",Process.THREAD_PRIORITY_DISPLAY).apply { start() }
         codecThread=t
-        val presentationHandler = Handler(t.looper)
-        presentationClock.reset()
+        val codecHandler = Handler(t.looper)
+        feedClock.reset()
         val decoder=MediaCodec.createDecoderByType("video/avc")
         codec=decoder
         decoder.setCallback(object:MediaCodec.Callback() {
@@ -179,37 +181,20 @@ class DirectRtspPlayer(
                             status("MediaCodec Surface không xuất được YUV, vẫn phát video.")
                         }
                     }
-                    // The previous version rendered immediately after decode,
-                    // producing visible bursts even with ~25-30 decoded FPS.
-                    // Schedule Surface submission using the actual RTP PTS.
-                    val plan = presentationClock.plan(
-                        info.presentationTimeUs.coerceAtLeast(0L), System.nanoTime()
-                    )
-                    if (plan.rebased) clockRebases.incrementAndGet()
-                    if (!plan.shouldRender || info.size <= 0) {
-                        c.releaseOutputBuffer(i, false)
-                        if (info.size > 0) lateDisplayFrames.incrementAndGet()
+                    // Critical V0.9.5 change:
+                    // NEVER retain a decoded hardware output buffer while
+                    // waiting for a target PTS. Input frame pacing is handled
+                    // on the feeder thread, preserving codec output slots.
+                    if (info.size > 0) {
+                        c.releaseOutputBuffer(i, true)
+                        rendered.incrementAndGet()
+                        if (shown.compareAndSet(false,true)) firstPicture()
                     } else {
-                        val waitMs = ((plan.targetNs - System.nanoTime()) / 1_000_000L)
-                            .coerceIn(0L, 850L)
-                        val release = Runnable {
-                            if (alive.get()) {
-                                try {
-                                    c.releaseOutputBuffer(i, true)
-                                    rendered.incrementAndGet()
-                                    if (shown.compareAndSet(false,true)) firstPicture()
-                                } catch (error: Exception) {
-                                    if (alive.get()) status(
-                                        "Surface render: " + error.javaClass.simpleName)
-                                }
-                            }
-                        }
-                        if (waitMs <= 1L) release.run()
-                        else presentationHandler.postDelayed(release, waitMs)
+                        c.releaseOutputBuffer(i, false)
                     }
                 } catch (e:Exception) { status("MediaCodec output "+e.javaClass.simpleName) }
             }
-        },presentationHandler)
+        },codecHandler)
         try {
             decoder.configure(fmt,surface,null,0)
         } catch (e:Exception) {
@@ -218,28 +203,54 @@ class DirectRtspPlayer(
         }
         decoder.start()
         feeder=Thread({
-            while (alive.get()) {
-                try {
-                    // Ask for an available decoder slot first, then dequeue
-                    // its frame. A three-frame queue plus inverted waiting
-                    // used to drop reference frames during RTP bursts.
-                    val index=input.poll(500,TimeUnit.MILLISECONDS) ?: continue
-                    val sample=frames.poll(500,TimeUnit.MILLISECONDS)
-                    if (sample == null) {
-                        input.offer(index)
-                        continue
+            try {
+                while (alive.get()) {
+                    // Frames are taken IN RTP ORDER; never drop P-frame
+                    // references merely because input buffers are unavailable.
+                    val sample=frames.poll(250,TimeUnit.MILLISECONDS) ?: continue
+                    val pacing=feedClock.plan(sample.timestampUs, System.nanoTime())
+                    if (pacing.rebased) clockRebases.incrementAndGet()
+                    if (pacing.lateByNs > 150_000_000L) {
+                        // Only a diagnostic: still submit the compressed frame.
+                        lateFeedFrames.incrementAndGet()
                     }
-                    val dest=decoder.getInputBuffer(index) ?: continue
-                    dest.clear()
-                    if (sample.data.size>dest.remaining()) {
-                        dropped.incrementAndGet()
-                        decoder.queueInputBuffer(index,0,0,sample.timestampUs,0)
-                    } else {
-                        dest.put(sample.data)
-                        decoder.queueInputBuffer(index,0,sample.data.size,sample.timestampUs,0)
+
+                    // Sleep only on the dedicated codec input feeder thread.
+                    // Incoming RTSP packets and MediaCodec output callbacks
+                    // remain free to run and to release buffers immediately.
+                    while (alive.get()) {
+                        val remainingNs = pacing.targetNs - System.nanoTime()
+                        if (remainingNs <= 0L) break
+                        TimeUnit.NANOSECONDS.sleep(minOf(remainingNs, 20_000_000L))
                     }
-                } catch (_:InterruptedException) { break }
-                catch (e:Exception) { if (alive.get()) status("Codec feed: "+e.javaClass.simpleName) }
+                    if (!alive.get()) break
+
+                    var index:Int?=null
+                    while (alive.get() && index == null)
+                        index=input.poll(250,TimeUnit.MILLISECONDS)
+                    if (!alive.get() || index == null) break
+
+                    val dst=decoder.getInputBuffer(index)
+                        ?: throw IllegalStateException("MediaCodec returned a null input buffer")
+                    dst.clear()
+                    if (sample.data.size > dst.remaining()) {
+                        throw IllegalStateException(
+                            "H264 access unit exceeds decoder input buffer: "+
+                            sample.data.size+" > "+dst.remaining())
+                    }
+                    dst.put(sample.data)
+                    decoder.queueInputBuffer(index,0,sample.data.size,sample.timestampUs,0)
+                }
+            } catch (_:InterruptedException) {
+                Thread.currentThread().interrupt()
+            } catch (error:Exception) {
+                if (alive.get()) {
+                    lastNetworkFailure = "Codec feed: " +
+                        (error.message ?: error.javaClass.simpleName)
+                    status(lastNetworkFailure)
+                    alive.set(false)
+                    try { socket?.close() } catch (_:Exception) {}
+                }
             }
         },"TTX-CodecFeed").apply{ start() }
     }
