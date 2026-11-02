@@ -17,6 +17,7 @@ import android.os.SystemClock
 import android.view.Gravity
 import android.view.PixelCopy
 import android.view.SurfaceView
+import android.view.ViewGroup
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -41,6 +42,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.rtsp.RtspMediaSource
 import androidx.media3.ui.PlayerView
+import org.videolan.libvlc.util.VLCVideoLayout
 import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -50,6 +52,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var root: FrameLayout
     private lateinit var playerView: PlayerView
     private lateinit var phonePreview: PreviewView
+    private lateinit var vlcSurface: VLCVideoLayout
+    private var vlcPlayer: VlcCameraPlayer? = null
+    private var vlcMode = true
     private lateinit var overlay: AdasOverlay
     private lateinit var status: TextView
     private lateinit var urlField: EditText
@@ -99,9 +104,11 @@ class MainActivity : ComponentActivity() {
         engine.reloadModel()
         root = FrameLayout(this)
         playerView = PlayerView(this).apply { useController = false; visibility = View.GONE }
+        vlcSurface = VLCVideoLayout(this).apply { visibility = View.GONE }
         phonePreview = PreviewView(this).apply { visibility = View.GONE }
         overlay = AdasOverlay(this)
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
+        root.addView(vlcSurface, FrameLayout.LayoutParams(-1, -1))
         root.addView(phonePreview, FrameLayout.LayoutParams(-1, -1))
         root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
 
@@ -139,7 +146,7 @@ class MainActivity : ComponentActivity() {
             controls.addView(Button(this).apply { text = label; textSize = 11f; setOnClickListener { click() } },
                 LinearLayout.LayoutParams(0, -2, weight))
         }
-        button("70mai/RTSP") { startRtsp() }
+        button("70mai / VLC") { startRtsp(true) }
         button("Camera máy") {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
                 PackageManager.PERMISSION_GRANTED) startPhone()
@@ -147,6 +154,11 @@ class MainActivity : ComponentActivity() {
         }
         button("Dừng") { stopSources(); show("Đã dừng") }
         panel.addView(controls)
+        panel.addView(Button(this).apply {
+            text = "MEDIA3 (SO SÁNH LỖI PLAY 404)"
+            textSize = 12f
+            setOnClickListener { startRtsp(false) }
+        })
         panel.addView(Button(this).apply {
             text = "KIỂM TRA WIFI / RTSP A500S"
             textSize = 12f
@@ -177,6 +189,9 @@ class MainActivity : ComponentActivity() {
         videoRendered = false
         handler.removeCallbacksAndMessages(null)
         cameraProvider?.unbindAll()
+        vlcPlayer?.close()
+        vlcPlayer = null
+        vlcSurface.visibility = View.GONE
         playerView.player = null
         player?.release()
         player = null
@@ -211,8 +226,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startRtsp() {
+    private fun startRtsp(useVlc: Boolean) {
         stopSources()
+        vlcMode = useVlc
         source = "rtsp"
         show("Đang xác định đúng gateway 70mai…")
         val manual = urlField.text.toString().trim()
@@ -250,6 +266,14 @@ class MainActivity : ComponentActivity() {
                     stopSources()
                 } else {
                     selectedWifi = wifi.network
+                    if (vlcMode) {
+                        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                        if (!cm.bindProcessToNetwork(wifi.network)) {
+                            show("Không thể ghim luồng VLC vào Wi-Fi 70mai")
+                            stopSources()
+                            return@runOnUiThread
+                        }
+                    }
                     trialUrls = urls
                     candidateIndex = selected
                     urlField.setText(urls[selected])
@@ -263,6 +287,10 @@ class MainActivity : ComponentActivity() {
     private fun connectRtsp(url: String) {
         if (source != "rtsp") return
         val network = selectedWifi ?: return
+        if (vlcMode) {
+            connectVlc(url)
+            return
+        }
         playerView.player = null
         player?.release()
         retryActive = false
@@ -310,12 +338,61 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun connectVlc(url: String) {
+        if (source != "rtsp") return
+        vlcPlayer?.close()
+        vlcPlayer = null
+        playerView.visibility = View.GONE
+        vlcSurface.visibility = View.VISIBLE
+        phonePreview.visibility = View.GONE
+        retryActive = false
+        videoRendered = false
+        activeUrl = url
+        lastFrame = SystemClock.elapsedRealtime()
+        show("VLC đang thiết lập phiên A500S qua Wi-Fi…")
+        try {
+            val client = VlcCameraPlayer(this, vlcSurface) { text, hasVideo ->
+                runOnUiThread {
+                    if (source != "rtsp" || !vlcMode) return@runOnUiThread
+                    if (hasVideo) {
+                        videoRendered = true
+                        lastFrame = SystemClock.elapsedRealtime()
+                        show("ĐÃ NHẬN VIDEO A500S (VLC) · " + activeUrl)
+                    } else if (!videoRendered) {
+                        show(text)
+                        if (text.contains("lỗi") || text.contains("hết luồng")) {
+                            report.text = report.text.toString() + "\n" + text
+                            handler.postDelayed({ tryNextUrl() }, 750L)
+                        }
+                    }
+                }
+            }
+            vlcPlayer = client
+            client.play(url)
+        } catch (e: Exception) {
+            report.text = report.text.toString() + "\nVLC: " + (e.message ?: e.javaClass.simpleName)
+            show("VLC lỗi khởi tạo. Thử nút Media3 để đối chiếu.")
+            handler.postDelayed({ tryNextUrl() }, 700L)
+        }
+    }
+
+    private fun findSurface(view: View): SurfaceView? {
+        if (view is SurfaceView && view.holder.surface.isValid) return view
+        if (view is ViewGroup) for (i in 0 until view.childCount) {
+            val found = findSurface(view.getChildAt(i))
+            if (found != null) return found
+        }
+        return null
+    }
+
     private fun tryNextUrl() {
         if (source != "rtsp" || retryActive) return
         retryActive = true
         playerView.player = null
         player?.release()
         player = null
+        vlcPlayer?.close()
+        vlcPlayer = null
         val network = selectedWifi ?: return
         val startIndex = candidateIndex + 1
         worker.execute {
@@ -349,8 +426,8 @@ class MainActivity : ComponentActivity() {
             report.text = report.text.toString() + "\nChưa có frame sau 10 giây."
             tryNextUrl()
         } else if (videoRendered) {
-            val surface = playerView.videoSurfaceView
-            if (surface is SurfaceView && surface.holder.surface.isValid &&
+            val surface = if (vlcMode) findSurface(vlcSurface) else playerView.videoSurfaceView as? SurfaceView
+            if (surface != null && surface.holder.surface.isValid &&
                 busy.compareAndSet(false, true)) {
                 val bitmap = Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888)
                 try {
@@ -377,6 +454,7 @@ class MainActivity : ComponentActivity() {
         source = "phone"
         phonePreview.visibility = View.VISIBLE
         playerView.visibility = View.GONE
+        vlcSurface.visibility = View.GONE
         show("Camera điện thoại: đang khởi động…")
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
