@@ -1,0 +1,12 @@
+.gradle/
+build/
+**/build/
+local.properties
+.idea/
+*.iml
+*.apk
+*.aab
+*.tflite
+*.onnx
+*.bin
+*.param
