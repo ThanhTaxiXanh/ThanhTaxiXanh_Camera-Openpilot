@@ -35,6 +35,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.11.1")
     implementation("androidx.media3:media3-exoplayer-rtsp:1.11.1")
     implementation("androidx.media3:media3-ui:1.11.1")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
     implementation("org.videolan.android:libvlc-all:3.7.7")
     testImplementation("junit:junit:4.13.2")
     implementation("org.opencv:opencv:4.11.0")
