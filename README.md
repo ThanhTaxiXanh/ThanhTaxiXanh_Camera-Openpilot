@@ -49,3 +49,8 @@ SDP trả về `Content-Base: rtsp://192.168.0.1/00000011/`, `a=control:*,track1
 ## V0.4.0 – Cài đặt ADAS (nghiên cứu)
 
 Đã phân tích video xADAS 0.3.0 dài 152,67 giây (xem `docs/XADAS_VIDEO_0_3_0_REVIEW.md`). Nhấn **CÀI ĐẶT ADAS** để bật/tắt các chức năng HUD có thể áp dụng: vùng làn đường xanh, đường biên, thông tin xe (chỉ khi có model), mũi tên, làm tròn, đơn vị và ẩn thanh trạng thái. Ngưỡng cảnh báo, âm thanh, GPS, hiệu chỉnh, PiP và chia sẻ dữ liệu vẫn chưa có pipeline đủ tin cậy hoặc chưa triển khai; trong cài đặt nêu rõ chỉ lưu tham số hoặc mô tả kế hoạch, không giả làm tính năng hoạt động.
+
+
+## V0.5.0 · Openpilot/Supercombo audit
+
+Chi tiết báo cáo: [XADAS_DEEP_AUDIT_OPENPILOT_027.md](docs/XADAS_DEEP_AUDIT_OPENPILOT_027.md). Đã xác minh 11 head thuộc tensor 1576 giá trị, mean/std trong graph, có reference YUV temporal packer và JUnit tests. Chưa có model được cấp phép hoặc đủ warp/geometry decoder để công bố AI Openpilot hoạt động thực tế.
