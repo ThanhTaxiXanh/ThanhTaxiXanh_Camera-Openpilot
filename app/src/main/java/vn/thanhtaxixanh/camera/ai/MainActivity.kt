@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.graphics.SurfaceTexture
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -18,6 +19,8 @@ import android.os.Process
 import android.os.SystemClock
 import android.view.PixelCopy
 import android.view.SurfaceView
+import android.view.Surface
+import android.view.TextureView
 import android.view.ViewGroup
 import android.view.View
 import android.view.WindowManager
@@ -85,6 +88,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var playerView: PlayerView
     private lateinit var phonePreview: PreviewView
     private lateinit var vlcSurface: VLCVideoLayout
+    private lateinit var directView: TextureView
+    private var directSurface: Surface? = null
+    private var directPlayer: DirectRtspPlayer? = null
+    private var directMode = false
+    private var lastDirectDecoded = 0L
+    private var lastDirectRendered = 0L
     private var vlcPlayer: VlcCameraPlayer? = null
     private var vlcMode = true
     private lateinit var overlay: AdasOverlay
@@ -207,6 +216,7 @@ class MainActivity : ComponentActivity() {
             visibility = View.GONE
         }
         vlcSurface = VLCVideoLayout(this).apply { visibility = View.GONE }
+        directView = TextureView(this).apply { visibility = View.GONE }
         phonePreview = PreviewView(this).apply {
             scaleType = PreviewView.ScaleType.FIT_CENTER
             visibility = View.GONE
@@ -214,6 +224,7 @@ class MainActivity : ComponentActivity() {
         overlay = AdasOverlay(this)
         previewContainer.addView(playerView, FrameLayout.LayoutParams(-1, -1))
         previewContainer.addView(vlcSurface, FrameLayout.LayoutParams(-1, -1))
+        previewContainer.addView(directView, FrameLayout.LayoutParams(-1, -1))
         previewContainer.addView(phonePreview, FrameLayout.LayoutParams(-1, -1))
         previewContainer.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         // Preserve video aspect in compact mode. Tap the picture to enter/exit fullscreen.
@@ -264,6 +275,11 @@ class MainActivity : ComponentActivity() {
         }
         button("Dừng") { stopSources(); show("Đã dừng") }
         panel.addView(controls)
+        panel.addView(Button(this).apply {
+            text = "70MAI / DIRECT MEDIACODEC · THỬ NGHIỆM"
+            textSize = 12f
+            setOnClickListener { startRtsp(false, true) }
+        })
         aiToggle = Button(this).apply {
             text = "AI THỬ NGHIỆM: TẮT · VIDEO ƯU TIÊN MƯỢT"
             textSize = 12f
@@ -408,6 +424,14 @@ class MainActivity : ComponentActivity() {
         lastMetricTime = 0L
         handler.removeCallbacksAndMessages(null)
         cameraProvider?.unbindAll()
+        directPlayer?.close()
+        directPlayer = null
+        directSurface?.release()
+        directSurface = null
+        directView.surfaceTextureListener = null
+        directView.visibility = View.GONE
+        lastDirectDecoded = 0L
+        lastDirectRendered = 0L
         vlcPlayer?.close()
         vlcPlayer = null
         vlcSurface.visibility = View.GONE
@@ -445,9 +469,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startRtsp(useVlc: Boolean) {
+    private fun startRtsp(useVlc: Boolean, useDirect: Boolean = false) {
         stopSources()
         vlcMode = useVlc
+        directMode = useDirect
         source = "rtsp"
         show("Đang xác định đúng gateway 70mai…")
         val manual = urlField.text.toString().trim()
@@ -485,7 +510,7 @@ class MainActivity : ComponentActivity() {
                     stopSources()
                 } else {
                     selectedWifi = wifi.network
-                    if (vlcMode) {
+                    if (vlcMode || directMode) {
                         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
                         if (!cm.bindProcessToNetwork(wifi.network)) {
                             show("Không thể ghim luồng VLC vào Wi-Fi 70mai")
@@ -506,6 +531,10 @@ class MainActivity : ComponentActivity() {
     private fun connectRtsp(url: String) {
         if (source != "rtsp") return
         val network = selectedWifi ?: return
+        if (directMode) {
+            connectDirect(url, network)
+            return
+        }
         if (vlcMode) {
             connectVlc(url)
             return
@@ -692,6 +721,10 @@ class MainActivity : ComponentActivity() {
         player = null
         vlcPlayer?.close()
         vlcPlayer = null
+        directPlayer?.close()
+        directPlayer = null
+        directSurface?.release()
+        directSurface = null
         val network = selectedWifi ?: return
         val startIndex = candidateIndex + 1
         worker.execute {
@@ -767,7 +800,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        if (analysisEnabled && videoRendered && now >= nextAnalysisAllowedMs &&
+        if (!directMode && analysisEnabled && videoRendered && now >= nextAnalysisAllowedMs &&
             now - lastAnalysisRequestMs >= 2000L) {
             val surface = if (vlcMode) findSurface(vlcSurface)
                 else playerView.videoSurfaceView as? SurfaceView
