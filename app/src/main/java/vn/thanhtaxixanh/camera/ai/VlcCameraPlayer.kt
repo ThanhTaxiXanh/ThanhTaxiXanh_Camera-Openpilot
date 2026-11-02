@@ -11,6 +11,7 @@ import org.videolan.libvlc.util.VLCVideoLayout
 class VlcCameraPlayer(
     private val context: Context,
     private val view: VLCVideoLayout,
+    private val cacheMs: Int,
     private val callback: (String, Boolean) -> Unit
 ) {
     private var vlc: LibVLC? = null
@@ -18,7 +19,11 @@ class VlcCameraPlayer(
 
     fun play(url: String) {
         close()
-        val lib = LibVLC(context, arrayListOf("--rtsp-tcp", "--no-audio", "--network-caching=400"))
+        val safeCache = cacheMs.coerceIn(200, 1800)
+        val lib = LibVLC(context, arrayListOf(
+            "--rtsp-tcp", "--no-audio", "--network-caching=$safeCache",
+            "--drop-late-frames", "--skip-frames"
+        ))
         vlc = lib
         val p = MediaPlayer(lib)
         player = p
@@ -37,7 +42,7 @@ class VlcCameraPlayer(
         try {
             media.setHWDecoderEnabled(true, false)
             media.addOption(":rtsp-tcp")
-            media.addOption(":network-caching=400")
+            media.addOption(":network-caching=$safeCache")
             p.setMedia(media)
         } finally {
             media.release()

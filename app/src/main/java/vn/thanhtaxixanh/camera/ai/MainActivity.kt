@@ -13,6 +13,8 @@ import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.HandlerThread
+import android.os.Process
 import android.os.SystemClock
 import android.view.PixelCopy
 import android.view.SurfaceView
@@ -56,6 +58,16 @@ class MainActivity : ComponentActivity() {
     private var compactPreviewHeight = 0
     private var analyzedFrames = 0
     private var lastMetricTime = 0L
+    // Live video has absolute priority over experimental AI analysis.
+    private var analysisEnabled = false
+    private var lastAnalysisRequestMs = 0L
+    private var copiedFrames = 0
+    private var droppedSamples = 0
+    private var vlcBufferMs = 800
+    private val copyThread = HandlerThread("TTX-PixelCopy", Process.THREAD_PRIORITY_BACKGROUND).apply { start() }
+    private val copyHandler = Handler(copyThread.looper)
+    private lateinit var aiToggle: Button
+    private lateinit var bufferToggle: Button
     private var sampleCaptureActive = false
     private var sampleGeneration = 0
     private var preparedSample: File? = null
@@ -241,6 +253,37 @@ class MainActivity : ComponentActivity() {
         }
         button("Dừng") { stopSources(); show("Đã dừng") }
         panel.addView(controls)
+        aiToggle = Button(this).apply {
+            text = "AI THỬ NGHIỆM: TẮT · VIDEO ƯU TIÊN MƯỢT"
+            textSize = 12f
+            setOnClickListener {
+                analysisEnabled = !analysisEnabled
+                if (!analysisEnabled) {
+                    overlay.visibility = View.INVISIBLE
+                    show("AI tắt: chỉ giải mã và phát video trực tiếp.")
+                } else {
+                    overlay.visibility = View.VISIBLE
+                    lastAnalysisRequestMs = 0L
+                    show("AI OpenCV bật: lấy mẫu nhẹ, không được ảnh hưởng phát video.")
+                }
+                text = if (analysisEnabled)
+                    "AI THỬ NGHIỆM: BẬT · LẤY MẪU 1 KHUNG/GIÂY"
+                else "AI THỬ NGHIỆM: TẮT · VIDEO ƯU TIÊN MƯỢT"
+            }
+        }
+        panel.addView(aiToggle)
+        bufferToggle = Button(this).apply {
+            text = "ĐỆM RTSP: 800 MS · ƯU TIÊN ỔN ĐỊNH"
+            textSize = 12f
+            setOnClickListener {
+                vlcBufferMs = if (vlcBufferMs == 800) 300 else 800
+                text = if (vlcBufferMs == 800)
+                    "ĐỆM RTSP: 800 MS · ƯU TIÊN ỔN ĐỊNH"
+                else "ĐỆM RTSP: 300 MS · ƯU TIÊN ĐỘ TRỄ THẤP"
+                if (source == "rtsp" && vlcMode) startRtsp(true)
+            }
+        }
+        panel.addView(bufferToggle)
         panel.addView(Button(this).apply {
             text = "MEDIA3 (SO SÁNH LỖI PLAY 404)"
             textSize = 12f
@@ -328,6 +371,9 @@ class MainActivity : ComponentActivity() {
         selectedWifi = null
         trialUrls = emptyList()
         videoRendered = false
+        copiedFrames = 0
+        droppedSamples = 0
+        lastAnalysisRequestMs = 0L
         analyzedFrames = 0
         lastMetricTime = 0L
         handler.removeCallbacksAndMessages(null)
@@ -340,7 +386,7 @@ class MainActivity : ComponentActivity() {
         player = null
         phonePreview.visibility = View.GONE
         playerView.visibility = View.GONE
-        overlay.visibility = View.VISIBLE
+        overlay.visibility = if (analysisEnabled) View.VISIBLE else View.INVISIBLE
         try {
             (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
                 .bindProcessToNetwork(null)
@@ -494,7 +540,7 @@ class MainActivity : ComponentActivity() {
         lastFrame = SystemClock.elapsedRealtime()
         show("VLC đang thiết lập phiên A500S qua Wi-Fi…")
         try {
-            val client = VlcCameraPlayer(this, vlcSurface) { text, hasVideo ->
+            val client = VlcCameraPlayer(this, vlcSurface, vlcBufferMs) { text, hasVideo ->
                 runOnUiThread {
                     if (source != "rtsp" || !vlcMode) return@runOnUiThread
                     if (hasVideo) {
@@ -645,31 +691,44 @@ class MainActivity : ComponentActivity() {
 
     private fun watchdog() {
         if (source != "rtsp") return
-        if (SystemClock.elapsedRealtime() - lastFrame > 10500L) {
-            report.text = report.text.toString() + "\nChưa có frame sau 10 giây."
+        val now = SystemClock.elapsedRealtime()
+        // Critical: do not restart a playing LIVE555 stream just because AI
+        // or PixelCopy did not deliver a new sample. Vout is not per-frame.
+        if (!videoRendered && now - lastFrame > 12000L) {
+            report.text = report.text.toString() + "\nVLC chưa tạo được video sau 12 giây."
             tryNextUrl()
-        } else if (videoRendered) {
-            val surface = if (vlcMode) findSurface(vlcSurface) else playerView.videoSurfaceView as? SurfaceView
+        } else if (analysisEnabled && videoRendered &&
+            now - lastAnalysisRequestMs >= 1000L) {
+            val surface = if (vlcMode) findSurface(vlcSurface)
+                else playerView.videoSurfaceView as? SurfaceView
             if (surface != null && surface.holder.surface.isValid &&
                 busy.compareAndSet(false, true)) {
-                val bitmap = Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888)
+                lastAnalysisRequestMs = now
+                val bitmap = Bitmap.createBitmap(320, 180, Bitmap.Config.ARGB_8888)
+                val generation = sampleGeneration
                 try {
+                    // Callback now executes OFF the UI thread.
                     PixelCopy.request(surface, bitmap, { result ->
-                        if (result == PixelCopy.SUCCESS) {
-                            lastFrame = SystemClock.elapsedRealtime()
+                        if (result == PixelCopy.SUCCESS && generation == sampleGeneration &&
+                            source == "rtsp" && analysisEnabled) {
+                            copiedFrames++
                             processFrame(bitmap)
                         } else {
-                            busy.set(false)
+                            droppedSamples++
                             bitmap.recycle()
+                            busy.set(false)
                         }
-                    }, handler)
+                    }, copyHandler)
                 } catch (_: Exception) {
+                    droppedSamples++
                     bitmap.recycle()
                     busy.set(false)
                 }
+            } else if (surface != null) {
+                droppedSamples++
             }
         }
-        handler.postDelayed({ watchdog() }, 500L)
+        handler.postDelayed({ watchdog() }, 250L)
     }
 
     private fun startPhone() {
@@ -752,6 +811,7 @@ class MainActivity : ComponentActivity() {
         stopSources()
         worker.execute { engine.close() }
         worker.shutdown()
+        copyThread.quitSafely()
         super.onDestroy()
     }
 }

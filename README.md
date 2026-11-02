@@ -59,3 +59,8 @@ Chi tiết báo cáo: [XADAS_DEEP_AUDIT_OPENPILOT_027.md](docs/XADAS_DEEP_AUDIT_
 ## V0.6.0 – Parser và mẫu ảnh A500S
 
 Giải mã cấu trúc 4 lane/2 road edge/3 lead, mean/std và logits có JUnit tests. Nút **XUẤT 2 KHUNG HÌNH A500S (ZIP)** giúp lấy mẫu ảnh đang xem từ VLC khi xe dừng, lưu bằng trình chọn tệp Android mà không upload tự động. Xem [báo cáo V0.6](docs/OPENPILOT_V06_PARSER.md) và [hướng dẫn xuất ảnh](docs/V06_A500S_FRAMES.md). **Chưa có warp đã hiệu chuẩn, chưa được kích hoạt cảnh báo khoảng cách neural**.
+
+
+## V0.7.0 – Ưu tiên độ mượt 70mai A500S
+
+Tắt AI OpenCV mặc định để VLC phát video độc lập. Bật/tắt AI bằng nút rõ ràng, khi bật lấy mẫu 320×180 tối đa 1 FPS với PixelCopy callback trên HandlerThread riêng. Có hai preset bộ đệm RTSP 800ms và 300ms để so sánh; không tự reconnect khi VLC đã có video chỉ vì AI không có khung mới. Đọc [chẩn đoán hiệu năng](docs/V07_SMOOTH_PLAYBACK.md).

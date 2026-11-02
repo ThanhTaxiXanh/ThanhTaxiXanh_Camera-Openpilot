@@ -41,8 +41,11 @@ object CameraFramePairExporter {
                 }
                 return output.toByteArray()
             }
-            putBytes("frame_01.jpg", encode(previous))
-            putBytes("frame_02.jpg", encode(current))
+            val imageA = encode(previous)
+            val imageB = encode(current)
+            val identical = imageA.contentEquals(imageB)
+            putBytes("frame_01.jpg", imageA)
+            putBytes("frame_02.jpg", imageB)
             val info = JSONObject().apply {
                 put("format", "ttx-camera-ai-frame-pair-v1")
                 put("source", "70mai-A500S-RTSP-LibVLC")
@@ -51,6 +54,10 @@ object CameraFramePairExporter {
                 put("frame1_elapsed_ms", previousElapsedMs)
                 put("frame2_elapsed_ms", currentElapsedMs)
                 put("interval_ms", currentElapsedMs - previousElapsedMs)
+                put("identical_encoded_frames", identical)
+                put("frame_pair_diagnostic", if (identical)
+                    "Identical images: either scene is static, camera had no new frame, or PixelCopy repeated the same buffer"
+                    else "Different images: visual buffer changed between samples")
                 put("warp_calibrated", false)
                 put("scene_export_requires_user_consent", true)
                 put("notes", "PixelCopy frames from video surface; not original camera YUV and not calibrated inputs")
