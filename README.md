@@ -73,3 +73,8 @@ Tắt AI OpenCV mặc định để VLC phát video độc lập. Bật/tắt AI
 - Nếu VLC mất từ 2 frame/chu kỳ 2 giây, PixelCopy quá 48 ms, hoặc OpenCV trên 100 ms thì AI tự giảm tải/tạm nghỉ 6–7 giây nhằm bảo vệ độ mượt.
 - Đệm A500S giữ 800 ms mặc định; nút 300 ms chỉ để đối chiếu lỗi. Dự án cần đường YUV từ decoder để đạt AI fps cao mà không dùng PixelCopy.
 - Kiểm tra khi xe dừng; các chỉ số này không chứng minh chất lượng ADAS.
+
+
+## V0.9.0 – Bộ phát RTSP/MediaCodec trực tiếp (nghiên cứu xADAS)
+
+Đã xác minh xADAS 0.2.7 đóng gói RTSP client riêng và MediaCodec hardware decode, **không có SDK/native LibVLC**. TTX có thêm nút **70MAI / DIRECT MEDIACODEC · THỬ NGHIỆM** chạy cơ chế độc lập RTP/H264 → MediaCodec → Surface, không dùng LibVLC/PixelCopy. Chế độ **70mai / VLC** (800ms) giữ nguyên như phương án ổn định đã kiểm chứng. Đọc [báo cáo kiểm tra playback xADAS](docs/V09_XADAS_PLAYBACK_AUDIT.md). AI Openpilot thật chưa kích hoạt, chế độ Direct chưa xác minh được trên A500S.
