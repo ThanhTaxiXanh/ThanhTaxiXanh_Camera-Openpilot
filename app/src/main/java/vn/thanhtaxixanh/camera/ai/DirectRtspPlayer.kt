@@ -63,53 +63,39 @@ class DirectRtspPlayer(
         check(alive.compareAndSet(false, true)) { "Already started" }
         thread = Thread({ run() }, "TTX-RTSP-H264").apply { start() }
     }
-    private fun line(s: BufferedInputStream): String {
-        val bytes = ByteArrayOutputStream()
-        while (true) {
-            val c = s.read()
-            if (c < 0) error("RTSP socket closed")
-            if (c == 10) break
-            if (c != 13) bytes.write(c)
-            require(bytes.size() < 8192) { "Invalid RTSP header" }
-        }
-        return bytes.toString(Charsets.US_ASCII.name())
-    }
     private data class Reply(val code: Int, val headers: Map<String, String>, val sdp: String) {
         fun header(s: String): String = headers[s.lowercase()].orEmpty()
     }
+
+    /** Responses and RTP share the same TCP stream. This parser never scans
+     * binary RTP bytes for newline delimiters (xADAS A500S: Invalid reply fix).
+     */
     private fun request(
-        src: BufferedInputStream, dst: BufferedOutputStream, seq: Int, verb: String,
-        target: String, headers: Map<String, String> = emptyMap()
+        wire: RtspWireReader, dst: BufferedOutputStream, seq: Int, verb: String,
+        target: String, headers: Map<String, String> = emptyMap(),
+        onEarlyMedia: (RtspWireReader.Event.Interleaved) -> Unit = {}
     ): Reply {
+        status("RTSP " + verb + " (CSeq " + seq + ")…")
         val content = StringBuilder()
         content.append(verb).append(' ').append(target).append(" RTSP/1.0\r\n")
         content.append("CSeq: ").append(seq).append("\r\n")
-        content.append("User-Agent: TTXCameraAI-Direct/0.9\r\n")
+        content.append("User-Agent: TTXCameraAI-Direct/0.9.1\r\n")
         headers.forEach { (k,v) -> content.append(k).append(": ").append(v).append("\r\n") }
         content.append("\r\n")
         dst.write(content.toString().toByteArray(Charsets.US_ASCII))
         dst.flush()
-        var first = line(src)
-        while (first.isBlank()) first = line(src)
-        require(first.startsWith("RTSP/1.")) { "Invalid reply " + first.take(50) }
-        val code = first.split(' ').getOrNull(1)?.toIntOrNull() ?: error("RTSP response invalid")
-        val head = LinkedHashMap<String, String>()
-        for (i in 0..80) {
-            val l = line(src)
-            if (l.isEmpty()) break
-            val colon = l.indexOf(':')
-            if (colon > 0) head[l.substring(0,colon).trim().lowercase()] =
-                l.substring(colon+1).trim()
+
+        var skipped = 0
+        var firstChannel = -1
+        val answer = wire.awaitResponse(seq) { frame ->
+            skipped++
+            if (firstChannel == -1) firstChannel = frame.channel
+            onEarlyMedia(frame)
         }
-        val n = (head["content-length"]?.toIntOrNull() ?: 0).coerceIn(0,65536)
-        val bytes = ByteArray(n)
-        var offset = 0
-        while (offset < n) {
-            val k = src.read(bytes,offset,n-offset)
-            if (k < 0) error("Truncated SDP")
-            offset += k
-        }
-        return Reply(code,head,String(bytes,Charsets.US_ASCII))
+        if (skipped > 0) status("RTSP " + verb + ": bỏ qua " + skipped +
+            " gói nhị phân interleaved trước phản hồi (channel " + firstChannel + ")")
+        status("RTSP " + verb + " → " + answer.code)
+        return Reply(answer.code, answer.headers, answer.text)
     }
     private fun spsPps(sdp: String): Pair<ByteArray?,ByteArray?> {
         val fmtp = sdp.lineSequence().firstOrNull { it.contains("sprop-parameter-sets=") }
@@ -229,9 +215,10 @@ class DirectRtspPlayer(
             sock.tcpNoDelay=true;sock.soTimeout=6000
             sock.connect(InetSocketAddress(host,port),4500)
             val src=BufferedInputStream(sock.getInputStream(),65536)
+            val wire = RtspWireReader(src)
             val dst=BufferedOutputStream(sock.getOutputStream(),8192)
-            require(request(src,dst,1,"OPTIONS",url).code==200){"OPTIONS failed"}
-            val describe=request(src,dst,2,"DESCRIBE",url,
+            require(request(wire,dst,1,"OPTIONS",url).code==200){"OPTIONS failed"}
+            val describe=request(wire,dst,2,"DESCRIBE",url,
                 mapOf("Accept" to "application/sdp"))
             require(describe.code==200 && describe.sdp.contains("m=video")) {
                 "DESCRIBE "+describe.code
@@ -243,33 +230,43 @@ class DirectRtspPlayer(
             }?.trim()?.substringAfter(':') ?: "track1"
             val track=if(control.startsWith("rtsp://"))control
                 else URI(base).resolve(control).toString()
-            val setup=request(src,dst,3,"SETUP",track,
+            val setup=request(wire,dst,3,"SETUP",track,
                 mapOf("Transport" to "RTP/AVP/TCP;unicast;interleaved=0-1"))
             require(setup.code==200) { "SETUP "+setup.code+" "+track }
             val session=setup.header("session").substringBefore(';')
             require(session.isNotEmpty()){"RTSP session missing"}
             val aggregate=if(describe.sdp.lines().any { it.trim()=="a=control:*" })base else url
-            val play=request(src,dst,4,"PLAY",aggregate,mapOf("Session" to session))
+            // Some firmware negotiates channels other than 0-1.
+            val rtpChannel = Regex("interleaved=(\\d+)-").find(setup.header("transport"))
+                ?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val earlyMedia = ArrayDeque<ByteArray>()
+            var earlyBytes = 0
+            val play=request(wire,dst,4,"PLAY",aggregate,
+                mapOf("Session" to session)) { item ->
+                // Limit retained early RTP data; they may arrive before PLAY reply.
+                if (item.channel == rtpChannel && earlyMedia.size < 24 &&
+                    earlyBytes + item.payload.size <= 96 * 1024) {
+                    earlyMedia.addLast(item.payload)
+                    earlyBytes += item.payload.size
+                }
+            }
             require(play.code==200){ "PLAY "+play.code+" "+aggregate }
-            status("RTSP H264 PLAY 200 · MediaCodec trực tiếp (không VLC)")
+            status("RTSP H264 PLAY 200 · channel=" + rtpChannel +
+                " · pre-PLAY RTP " + earlyMedia.size)
             createDecoder(describe.sdp)
             val assemble=Assembler(::enqueue,dropped)
+            earlyMedia.forEach { assemble.accept(it) }
             while(alive.get()) {
-                val marker=try{src.read()}catch(_:java.net.SocketTimeoutException){continue}
-                if(marker<0) break
-                if(marker!=36) continue
-                val channel=src.read()
-                val hi=src.read();val lo=src.read()
-                if(hi<0 || lo<0) break
-                val size=(hi shl 8) or lo
-                val packet=ByteArray(size)
-                var n=0
-                while(n<size) {
-                    val x=src.read(packet,n,size-n)
-                    if(x<0)error("RTP EOF")
-                    n+=x
+                val packet = try { wire.next() }
+                catch (_:java.net.SocketTimeoutException) { continue }
+                when (packet) {
+                    is RtspWireReader.Event.Interleaved ->
+                        if (packet.channel == rtpChannel) assemble.accept(packet.payload)
+                    is RtspWireReader.Event.Reply -> {
+                        // Camera may transmit keepalive responses on the same TCP socket.
+                        if (packet.code >= 400) status("RTSP server " + packet.code)
+                    }
                 }
-                if(channel==0)assemble.accept(packet)
             }
         } catch (e:Exception) {
             if(alive.get())status("Direct RTSP: "+(e.message ?: e.javaClass.simpleName))
