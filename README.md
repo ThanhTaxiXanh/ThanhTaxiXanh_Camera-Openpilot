@@ -44,3 +44,8 @@ SDP trả về `Content-Base: rtsp://192.168.0.1/00000011/`, `a=control:*,track1
 - Lớp vẽ ADAS được căn theo FIT_CENTER (cả letterbox) và có dòng trạng thái vạch trái/phải.
 - Hiển thị số khung hình đã xử lý để xác nhận pipeline PixelCopy → OpenCV đang chạy; không đồng nhất việc có video với việc AI nhận diện thành công.
 - Phát hiện vạch theo Canny/Hough còn là thí nghiệm. Đo khoảng cách chưa hiệu chuẩn, không dùng đưa ra quyết định phanh/lái.
+
+
+## V0.4.0 – Cài đặt ADAS (nghiên cứu)
+
+Đã phân tích video xADAS 0.3.0 dài 152,67 giây (xem `docs/XADAS_VIDEO_0_3_0_REVIEW.md`). Nhấn **CÀI ĐẶT ADAS** để bật/tắt các chức năng HUD có thể áp dụng: vùng làn đường xanh, đường biên, thông tin xe (chỉ khi có model), mũi tên, làm tròn, đơn vị và ẩn thanh trạng thái. Ngưỡng cảnh báo, âm thanh, GPS, hiệu chỉnh, PiP và chia sẻ dữ liệu vẫn chưa có pipeline đủ tin cậy hoặc chưa triển khai; trong cài đặt nêu rõ chỉ lưu tham số hoặc mô tả kế hoạch, không giả làm tính năng hoạt động.

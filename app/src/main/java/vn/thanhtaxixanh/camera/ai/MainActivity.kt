@@ -189,6 +189,11 @@ class MainActivity : ComponentActivity() {
             textSize = 12f
             setOnClickListener { diagnose70mai() }
         })
+        panel.addView(Button(this).apply {
+            text = "CÀI ĐẶT ADAS · HUD / LÀN ĐƯỜNG / CẢNH BÁO"
+            textSize = 12f
+            setOnClickListener { startActivity(Intent(this@MainActivity, AdasSettingsActivity::class.java)) }
+        })
         val modelButton = Button(this).apply {
             text = "NẠP MODEL XE (.TFLITE) · KHÔNG BẮT BUỘC"
             textSize = 11f
@@ -556,6 +561,15 @@ class MainActivity : ComponentActivity() {
                 busy.set(false)
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (AdasPrefs.of(this).getBoolean(AdasPrefs.HIDE_STATUS_BAR, false))
+            window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        if (::overlay.isInitialized) overlay.invalidate()
     }
 
     override fun onDestroy() {

@@ -7,6 +7,7 @@
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <application android:allowBackup="false" android:label="TTX Camera AI"
         android:usesCleartextTraffic="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity android:name=".AdasSettingsActivity" android:exported="false"/>
         <activity android:name=".MainActivity" android:exported="true"
             android:screenOrientation="unspecified">
             <intent-filter>
