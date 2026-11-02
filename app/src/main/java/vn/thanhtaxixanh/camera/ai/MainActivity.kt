@@ -103,6 +103,43 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val importOnnx = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        show("Đang xác minh mô hình ONNX…")
+        worker.execute {
+            val pending = File(filesDir, "ttx_onnx_pending.tmp")
+            val ready = File(filesDir, "ttx_user_model.onnx")
+            val message = try {
+                contentResolver.openInputStream(uri)?.use { source ->
+                    pending.outputStream().use { target ->
+                        val buffer = ByteArray(128 * 1024)
+                        var total = 0L
+                        while (true) {
+                            val n = source.read(buffer)
+                            if (n < 0) break
+                            total += n
+                            check(total <= 250L * 1024 * 1024) { "Model vượt giới hạn 250 MiB" }
+                            target.write(buffer, 0, n)
+                        }
+                    }
+                } ?: error("Không mở được tệp ONNX")
+                OnnxOpenpilotBackend.open(pending).use { }
+                check(pending.length() > 0L)
+                if (ready.exists()) check(ready.delete()) { "Không thay thế được model cũ" }
+                check(pending.renameTo(ready)) { "Không lưu được model" }
+                "ONNX hợp lệ: 2 inputs / 1.576 outputs. Đã lưu offline; CHƯA sử dụng để vẽ ADAS vì thiếu warp/calibration và parser tọa độ."
+            } catch (e: Exception) {
+                "ONNX không tương thích hoặc lỗi: " + (e.message ?: e.javaClass.simpleName)
+            } finally {
+                if (pending.exists()) pending.delete()
+            }
+            runOnUiThread {
+                if (::report.isInitialized) report.text = message
+                if (::status.isInitialized) show("Kiểm tra ONNX hoàn tất")
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -214,6 +251,11 @@ class MainActivity : ComponentActivity() {
             text = "CÀI ĐẶT ADAS · HUD / LÀN ĐƯỜNG / CẢNH BÁO"
             textSize = 12f
             setOnClickListener { startActivity(Intent(this@MainActivity, AdasSettingsActivity::class.java)) }
+        })
+        panel.addView(Button(this).apply {
+            text = "NẠP ONNX CÓ QUYỀN SỬ DỤNG · KIỂM TRA MODEL"
+            textSize = 12f
+            setOnClickListener { importOnnx.launch(arrayOf("*/*")) }
         })
         val modelButton = Button(this).apply {
             text = "NẠP MODEL XE (.TFLITE) · KHÔNG BẮT BUỘC"
