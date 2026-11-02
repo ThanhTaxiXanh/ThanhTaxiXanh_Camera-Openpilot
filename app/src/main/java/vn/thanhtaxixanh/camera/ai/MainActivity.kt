@@ -92,6 +92,7 @@ class MainActivity : ComponentActivity() {
     private var directSurface: Surface? = null
     private var directPlayer: DirectRtspPlayer? = null
     private var directMode = false
+    private var directUdpMode = false
     private var lastDirectDecoded = 0L
     private var lastDirectRendered = 0L
     private var lastDirectReceived = 0L
@@ -282,9 +283,14 @@ class MainActivity : ComponentActivity() {
         button("Dừng") { stopSources(); show("Đã dừng") }
         panel.addView(controls)
         panel.addView(Button(this).apply {
-            text = "70MAI / DIRECT MEDIACODEC · THỬ NGHIỆM"
+            text = "70MAI / DIRECT UDP · KIẾN TRÚC xADAS"
             textSize = 12f
-            setOnClickListener { startRtsp(false, true) }
+            setOnClickListener { startRtsp(false, true, true) }
+        })
+        panel.addView(Button(this).apply {
+            text = "70MAI / DIRECT TCP · ĐỐI CHỨNG"
+            textSize = 12f
+            setOnClickListener { startRtsp(false, true, false) }
         })
         aiToggle = Button(this).apply {
             text = "AI THỬ NGHIỆM: TẮT · VIDEO ƯU TIÊN MƯỢT"
@@ -407,6 +413,7 @@ class MainActivity : ComponentActivity() {
 
     private fun stopSources() {
         source = "none"
+        directUdpMode = false
         directGeneration++
         directReconnectPending = false
         directReconnectAttempts = 0
@@ -481,10 +488,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startRtsp(useVlc: Boolean, useDirect: Boolean = false) {
+    private fun startRtsp(
+        useVlc: Boolean, useDirect: Boolean = false, useUdp: Boolean = false
+    ) {
         stopSources()
         vlcMode = useVlc
         directMode = useDirect
+        directUdpMode = useDirect && useUdp
         source = "rtsp"
         show("Đang xác định đúng gateway 70mai…")
         val manual = urlField.text.toString().trim()
@@ -616,7 +626,8 @@ class MainActivity : ComponentActivity() {
         retryActive = false
         activeUrl = url
         lastFrame = SystemClock.elapsedRealtime()
-        show("Direct RTSP: H264 → Android MediaCodec (không VLC)")
+        show("Direct " + if (directUdpMode) "RTP/UDP" else "RTP/TCP" +
+            " → Android MediaCodec (không VLC)")
         fun begin() {
             if (source != "rtsp" || !directMode || !directView.isAvailable) return
             val texture = directView.surfaceTexture ?: return
@@ -681,7 +692,8 @@ class MainActivity : ComponentActivity() {
                             scheduleDirectReconnect(reason, generation, url, net)
                         }
                     }
-                }
+                },
+                directUdpMode
             )
             directPlayer = player
             player.start()
@@ -961,13 +973,13 @@ class MainActivity : ComponentActivity() {
                 val recv = (stats.receivedAccessUnits - lastDirectReceived).coerceAtLeast(0L)
                 val feed = (stats.submittedAccessUnits - lastDirectSubmitted).coerceAtLeast(0L)
                 performanceText.text = String.format(java.util.Locale.US,
-                    "H264 camera: %.1f AU/s · nạp: %.1f FPS\n" +
+                    "H264 %s: %.1f AU/s · nạp: %.1f FPS\n" +
                         "MediaCodec: %.1f giải mã · %.1f giao Surface\n" +
                         "RTP gap: %d · Hàng đợi: %d/48 · đỉnh: %d · quá tải: %d\n" +
                         "Đợi decoder: %d ms tích lũy · Nhận: %.1f MB\n" +
                         "AI YUV: %d · YUV: %s\n" +
                         "RTSP keepalive: %d gửi / %d OK / %d bị từ chối · Reconnect: %d/6",
-                    recv / elapsed, feed / elapsed,
+                    stats.transportName, recv / elapsed, feed / elapsed,
                     dec / elapsed, ren / elapsed,
                     stats.droppedRtp, stats.queueDepth, stats.peakQueueDepth, stats.overflows,
                     stats.inputWaitMs, stats.compressedBytes / 1_000_000.0,
