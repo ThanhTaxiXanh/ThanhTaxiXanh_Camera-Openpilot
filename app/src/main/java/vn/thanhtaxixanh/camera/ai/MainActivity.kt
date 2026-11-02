@@ -94,6 +94,10 @@ class MainActivity : ComponentActivity() {
     private var directMode = false
     private var lastDirectDecoded = 0L
     private var lastDirectRendered = 0L
+    private var directGeneration = 0L
+    private var directReconnectAttempts = 0
+    private var directReconnectPending = false
+    private var directVideoStartedAtMs = 0L
     private var vlcPlayer: VlcCameraPlayer? = null
     private var vlcMode = true
     private lateinit var overlay: AdasOverlay
@@ -401,6 +405,10 @@ class MainActivity : ComponentActivity() {
 
     private fun stopSources() {
         source = "none"
+        directGeneration++
+        directReconnectPending = false
+        directReconnectAttempts = 0
+        directVideoStartedAtMs = 0L
         sampleGeneration++
         sampleCaptureActive = false
         retryCount = 0
@@ -589,6 +597,8 @@ class MainActivity : ComponentActivity() {
 
     private fun connectDirect(url: String, net: Network) {
         if (source != "rtsp" || !directMode) return
+        directGeneration++
+        val generation = directGeneration
         directPlayer?.close()
         directPlayer = null
         directSurface?.release()
@@ -612,19 +622,20 @@ class MainActivity : ComponentActivity() {
                 { analysisEnabled },
                 { message ->
                     runOnUiThread {
-                        if (source == "rtsp" && directMode) {
+                        if (source == "rtsp" && directMode && generation == directGeneration) {
                             report.text = (report.text.toString() +
-                                "\nDirect: " + message).takeLast(1800)
+                                "\nDirect: " + message).takeLast(3500)
                             show(message)
                         }
                     }
                 },
                 {
                     runOnUiThread {
-                        if (source == "rtsp" && directMode) {
+                        if (source == "rtsp" && directMode && generation == directGeneration) {
                             videoRendered = true
                             lastFrame = SystemClock.elapsedRealtime()
-                            show("ĐÃ NHẬN VIDEO DIRECT H264 · Không VLC / PixelCopy")
+                            directVideoStartedAtMs = lastFrame
+                            show("ĐÃ NHẬN VIDEO DIRECT H264 · Có theo dõi keepalive")
                         }
                     }
                 },
@@ -657,6 +668,14 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                },
+                { reason ->
+                    runOnUiThread {
+                        if (source == "rtsp" && directMode &&
+                            generation == directGeneration) {
+                            scheduleDirectReconnect(reason, generation, url, net)
+                        }
+                    }
                 }
             )
             directPlayer = player
@@ -681,6 +700,54 @@ class MainActivity : ComponentActivity() {
                 override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
             }
         }
+    }
+
+
+    /**
+     * A500S may close its own TCP RTSP session despite keepalive. Do not
+     * alter stream selection, do not restart app, and never retry forever.
+     */
+    private fun scheduleDirectReconnect(
+        reason: String, generation: Long, url: String, net: Network
+    ) {
+        if (source != "rtsp" || !directMode ||
+            generation != directGeneration || directReconnectPending) return
+        val now = SystemClock.elapsedRealtime()
+        if (directVideoStartedAtMs > 0 &&
+            now - directVideoStartedAtMs >= 45_000L) {
+            directReconnectAttempts = 0
+        }
+        directReconnectAttempts++
+        val retry = directReconnectAttempts
+        if (retry > 6) {
+            report.text = (report.text.toString() +
+                "\nDirect: quá 6 lần khôi phục, đã dừng để tránh kết nối liên tục. " +
+                "Lỗi cuối: " + reason).takeLast(3500)
+            show("A500S vẫn mất kết nối. Dùng VLC 800 ms hoặc xem báo cáo.")
+            directPlayer?.close()
+            directPlayer = null
+            videoRendered = false
+            source = "none"
+            return
+        }
+        val delays = longArrayOf(1200, 2200, 4000, 7000, 10000, 12000)
+        val delay = delays[retry - 1]
+        directReconnectPending = true
+        videoRendered = false
+        lastFrame = now
+        report.text = (report.text.toString() +
+            "\nDirect: " + reason +
+            " · thử lại " + retry + "/6 sau " + delay + "ms").takeLast(3500)
+        show("RTSP ngắt: đang khôi phục phiên A500S (" + retry + "/6)")
+        handler.postDelayed({
+            if (source != "rtsp" || !directMode ||
+                generation != directGeneration || !directReconnectPending) return@postDelayed
+            directReconnectPending = false
+            lastStatsAtMs = 0L
+            lastDirectDecoded = 0
+            lastDirectRendered = 0
+            connectDirect(url, net) // fresh DESCRIBE, SETUP and PLAY/session id
+        }, delay)
     }
 
     private fun connectVlc(url: String) {
@@ -860,17 +927,17 @@ class MainActivity : ComponentActivity() {
     private fun watchdog() {
         if (source != "rtsp") return
         val now = SystemClock.elapsedRealtime()
-        if (!videoRendered && now - lastFrame > 12000L) {
+        if (!videoRendered && !directReconnectPending && now - lastFrame > 12000L) {
             if (directMode) {
-                // Keep the exact A500S endpoint and protocol-stage diagnostics.
-                // A failed custom RTSP handshake should not silently switch paths.
-                report.text = (report.text.toString() +
-                    "\nDirect: quá 12 giây chưa có hình; đã dừng thử nghiệm. " +
-                    "Xem bước OPTIONS/DESCRIBE/SETUP/PLAY bên trên.").takeLast(2500)
-                show("Direct chưa nhận video. Kiểm tra báo cáo; VLC 800 ms vẫn hoạt động.")
-                directPlayer?.close()
-                directPlayer = null
-                source = "none"
+                // Decoder can stall without a TCP reset. Apply the same bounded
+                // reconnect policy instead of leaving a frozen Surface.
+                val net = selectedWifi
+                if (net != null) {
+                    val oldGeneration = directGeneration
+                    val oldUrl = activeUrl
+                    scheduleDirectReconnect(
+                        "Không có khung video trong 12 giây", oldGeneration, oldUrl, net)
+                } else show("Mất Wi-Fi camera. Kiểm tra kết nối A500S.")
             } else {
                 report.text = report.text.toString() + "\nChưa có video sau 12 giây."
                 tryNextUrl()
@@ -888,11 +955,14 @@ class MainActivity : ComponentActivity() {
                     "Direct H264: %.1f FPS giải mã · %.1f FPS giao Surface\n" +
                         "RTP gap: %d · frame trễ bỏ: %d · đặt lại clock: %d\n" +
                         "Hàng đợi: %d/48 · đỉnh: %d · quá tải: %d\n" +
-                        "AI YUV: %d · YUV: %s",
+                        "AI YUV: %d · YUV: %s\n" +
+                        "RTSP keepalive: %d gửi / %d OK / %d bị từ chối · Reconnect: %d/6",
                     dec / elapsed, ren / elapsed,
                     stats.droppedRtp, stats.lateDisplayFrames, stats.clockRebases,
                     stats.queueDepth, stats.peakQueueDepth, stats.overflows,
-                    stats.ai, if (stats.noYuv) "KHÔNG" else "CHỜ KIỂM TRA")
+                    stats.ai, if (stats.noYuv) "KHÔNG" else "CHỜ KIỂM TRA",
+                    stats.keepAliveSent, stats.keepAliveOk, stats.keepAliveUnsupported,
+                    directReconnectAttempts)
                 lastDirectDecoded = stats.decoded
                 lastDirectRendered = stats.rendered
             }
