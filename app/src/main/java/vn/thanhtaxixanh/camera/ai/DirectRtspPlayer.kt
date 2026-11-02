@@ -68,7 +68,7 @@ class DirectRtspPlayer(
     private val cleanedUp = AtomicBoolean(false)
     // Pace COMPRESSED input submission, not decoded output buffer release.
     // Holding decoder output buffers for 550ms exhausted hardware codec slots.
-    private val feedClock = H264PresentationClock()
+    private val feedClock = RtpInputPacer()
     private val input = ArrayBlockingQueue<Int>(32)
     // 48 complete access units (approximately 1–2 seconds at 25–30fps).
     // Never discard arbitrary P frames: the following frames depend on them.
@@ -211,7 +211,8 @@ class DirectRtspPlayer(
                     val pacing=feedClock.plan(sample.timestampUs, System.nanoTime())
                     if (pacing.rebased) clockRebases.incrementAndGet()
                     if (pacing.lateByNs > 150_000_000L) {
-                        // Only a diagnostic: still submit the compressed frame.
+                        // Overdue compressed pictures are still fed in order.
+                        // Never drop reference pictures without IDR resync.
                         lateFeedFrames.incrementAndGet()
                     }
 
@@ -219,7 +220,7 @@ class DirectRtspPlayer(
                     // Incoming RTSP packets and MediaCodec output callbacks
                     // remain free to run and to release buffers immediately.
                     while (alive.get()) {
-                        val remainingNs = pacing.targetNs - System.nanoTime()
+                        val remainingNs = pacing.deadlineNs - System.nanoTime()
                         if (remainingNs <= 0L) break
                         TimeUnit.NANOSECONDS.sleep(minOf(remainingNs, 20_000_000L))
                     }

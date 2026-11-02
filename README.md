@@ -88,3 +88,8 @@ Thêm H264PresentationClock đọc presentation timestamp để điều phối h
 ## V0.9.4 – Duy trì phiên A500S và khôi phục Connection reset
 
 Từ ảnh dùng V0.9.3: sau khi phát mượt, Direct RTSP báo Connection reset trong khi RTP gap=0, queue 0/48. Bản này bổ sung RTSP GET_PARAMETER lặp lại theo timeout từ Session SETUP (mặc định 60 giây, gửi tối đa mỗi 15 giây), theo dõi phản hồi và thử SET_PARAMETER nếu GET_PARAMETER bị từ chối. Nếu TCP đóng/RTP im lặng 12 giây, đóng MediaCodec cũ và mở phiên mới bằng DESCRIBE/SETUP/PLAY với URL gốc; giới hạn 6 lần thử với backoff tăng dần. Log gồm keepalive gửi/OK/bị từ chối, số lần reconnect. LibVLC 800ms vẫn giữ nguyên. Chưa xác nhận firmware A500S chấp nhận keepalive cho đến lần thử thực tế. Xem [chẩn đoán V0.9.4](docs/V094_A500S_KEEPALIVE_RECOVERY.md).
+
+
+## V0.9.5 – Ưu tiên video mượt khi xe chạy
+
+Video thử nghiệm A500S 48,07 giây khi di chuyển cho thấy Direct FPS giao Surface có lúc giảm còn ~15 dù RTP gap 0 và RTSP keepalive OK. Mã V0.9.4 giữ decoded output buffers tối đa ~550ms, có thể làm nghẽn MediaCodec. V0.9.5 **trả output buffer ngay lập tức** và đưa nhịp PTS sang thread nạp các Access Units, tách riêng khỏi luồng RTP/codec callback. `RtpInputPacer` dùng đệm khởi đầu 350ms và không rebuffer khi khung tới muộn, cho phép nhanh chóng bắt kịp các đợt RTP dồn. Đếm `frame nạp muộn` thay `frame trễ bỏ`; frames nén không bị loại tùy tiện. Chế độ RTSP keepalive và VLC 800ms không thay đổi. Kết quả còn cần kiểm tra trên điện thoại A500S thực tế.

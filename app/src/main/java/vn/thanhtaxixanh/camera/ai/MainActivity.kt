@@ -954,12 +954,12 @@ class MainActivity : ComponentActivity() {
                 val ren = (stats.rendered - lastDirectRendered).coerceAtLeast(0L)
                 performanceText.text = String.format(java.util.Locale.US,
                     "Direct H264: %.1f FPS giải mã · %.1f FPS giao Surface\n" +
-                        "RTP gap: %d · frame trễ bỏ: %d · đặt lại clock: %d\n" +
+                        "RTP gap: %d · frame nạp muộn: %d · đặt lại clock: %d\n" +
                         "Hàng đợi: %d/48 · đỉnh: %d · quá tải: %d\n" +
                         "AI YUV: %d · YUV: %s\n" +
                         "RTSP keepalive: %d gửi / %d OK / %d bị từ chối · Reconnect: %d/6",
                     dec / elapsed, ren / elapsed,
-                    stats.droppedRtp, stats.lateDisplayFrames, stats.clockRebases,
+                    stats.droppedRtp, stats.lateFeedFrames, stats.clockRebases,
                     stats.queueDepth, stats.peakQueueDepth, stats.overflows,
                     stats.ai, if (stats.noYuv) "KHÔNG" else "CHỜ KIỂM TRA",
                     stats.keepAliveSent, stats.keepAliveOk, stats.keepAliveUnsupported,
