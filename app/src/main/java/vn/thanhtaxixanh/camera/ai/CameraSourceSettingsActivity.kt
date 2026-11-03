@@ -3,6 +3,7 @@ package vn.thanhtaxixanh.camera.ai
 import android.app.Activity
 import android.graphics.Color
 import android.os.Bundle
+import android.net.ConnectivityManager
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
@@ -61,6 +62,41 @@ class CameraSourceSettingsActivity : Activity() {
             }
         })
         body.addView(status)
+        body.addView(Button(this).apply {
+            text = "TÌM RTSP TRÊN WI-FI CAMERA (CHỈ DESCRIBE)"
+            setOnClickListener {
+                isEnabled = false
+                val button = this
+                status.text = "Đang kiểm tra các đường dẫn RTSP phổ biến..."
+                val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+                val wifi = CameraConnectionCheck.wifi(cm)
+                val network = wifi.network
+                val host = wifi.gateway
+                if (network == null || host == null) {
+                    status.text = "Cần kết nối vào Wi-Fi camera"
+                    button.isEnabled = true
+                    return@setOnClickListener
+                }
+                Thread({
+                    val found = try {
+                        RtspCandidateDiscovery.findFirst(network, host)
+                    } catch (_: Exception) { null }
+                    runOnUiThread {
+                        button.isEnabled = true
+                        if (found == null) {
+                            status.text = "Không thấy endpoint trả RTSP 200; hãy nhập URL hợp lệ."
+                        } else {
+                            selector.setSelection(
+                                CameraSourceCatalog.Profile.values().indexOf(
+                                    CameraSourceCatalog.Profile.CUSTOM))
+                            url.setText(found.url)
+                            status.text = "Có SDP tại " + found.url +
+                                ". Nhấn LƯU NGUỒN. Chưa bảo đảm PLAY thành công."
+                        }
+                    }
+                }, "TTX-RTSP-Discovery").start()
+            }
+        })
         body.addView(Button(this).apply {
             text = "TRỞ VỀ"
             setOnClickListener { finish() }
