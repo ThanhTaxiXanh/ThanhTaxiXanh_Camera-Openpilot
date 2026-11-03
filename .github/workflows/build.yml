@@ -35,7 +35,7 @@ jobs:
           print("APK BYTES:",os.path.getsize(p))
           for name,n in sorted(libs,key=lambda x:-x[1])[:15]:print("native",name,n)
           present={x[0].split('/')[-1] for x in libs if x[0].startswith("lib/arm64-v8a/")}
-          required={"libijkplayer.so","libijkffmpeg.so","libijksdl.so"}
+          required={"libijkplayer.so","libijkwdzffmpeg.so","libijksdl.so"}
           missing=required-present
           if missing: raise SystemExit("CRITICAL: missing arm64 IJK native libs: "+str(missing))
           if any("/armeabi-v7a/" in x[0] or "/x86" in x[0] for x in libs):
