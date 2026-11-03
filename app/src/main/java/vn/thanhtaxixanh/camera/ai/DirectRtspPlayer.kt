@@ -382,6 +382,7 @@ class DirectRtspPlayer(
                 val pair = udpPorts ?: error("UDP negotiation lost socket")
                 val t = Thread({
                     val buf = ByteArray(65536)
+                    val loggedUnexpectedSender = AtomicBoolean(false)
                     try {
                         while (alive.get()) {
                             try {
@@ -394,7 +395,7 @@ class DirectRtspPlayer(
                                     assemble.accept(packet.data.copyOfRange(
                                         packet.offset, packet.offset + packet.length))
                                 } else if (packet.length >= 12) {
-                                    if (udpPackets.get() == 0L)
+                                    if (loggedUnexpectedSender.compareAndSet(false, true))
                                         status("UDP gói từ địa chỉ ngoài camera: " +
                                             packet.address.hostAddress +
                                             " · đợi " + host)
@@ -418,6 +419,7 @@ class DirectRtspPlayer(
                 t.start()
             }
 
+            val playStartedMs = SystemClock.elapsedRealtime()
             var nextSequence = 4
             var nextRtcpAt = SystemClock.elapsedRealtime() + 5000L
             var nextKeepAliveAt = SystemClock.elapsedRealtime() + intervalMs
@@ -433,7 +435,7 @@ class DirectRtspPlayer(
                         "negotiated=" + activeTransportName)
                 }
                 if (receivedPackets > 0L && receivedAccessUnits.get() == 0L &&
-                    now - lastRtpAt.get() > 8500L) {
+                    now - playStartedMs > 8500L) {
                     error("RTP/H264 stalled: packets received but zero H264 access units")
                 }
                 if (now-lastRtpAt.get()>12000L) {
