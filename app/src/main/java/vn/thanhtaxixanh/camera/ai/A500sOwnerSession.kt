@@ -56,6 +56,7 @@ class A500sOwnerSession(
         val connection = wifi.openConnection(URL("http://$cameraHost/cgi-bin/$query"))
             as HttpURLConnection
         return try {
+            connection.instanceFollowRedirects = false
             connection.requestMethod = "GET"
             connection.connectTimeout = 2800
             connection.readTimeout = 2800

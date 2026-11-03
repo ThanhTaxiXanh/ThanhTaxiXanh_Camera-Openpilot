@@ -33,6 +33,19 @@ jobs:
           assert "holder.setFormat(PixelFormat.OPAQUE)" in block
           print("SurfaceView transparency regression check OK")
           PY
+      - name: Verify pairing stays opt-in
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          m=Path("app/src/main/java/vn/thanhtaxixanh/camera/ai/MainActivity.kt").read_text()
+          p=Path("app/src/main/java/vn/thanhtaxixanh/camera/ai/A500sOwnerSession.kt").read_text()
+          assert "setOnClickListener { pairA500s() }" in m
+          assert "pairWithPhysicalConfirmation" in p
+          assert 'require(pairedToken.matches' in p
+          assert "instanceFollowRedirects = false" in p
+          assert "Thread.sleep(5000L)" in p
+          print("Owner pairing and heartbeat guard: OK")
+          PY
       - name: Compile and test arm64 APK
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug --stacktrace
       - name: Inspect APK size
