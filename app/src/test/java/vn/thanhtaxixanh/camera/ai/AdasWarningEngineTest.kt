@@ -44,8 +44,9 @@ class AdasWarningEngineTest {
         assertNotNull(w.evaluate(1100,good,60f))
         assertNull(w.evaluate(1200,good,60f))
         assertNull(w.evaluate(1500,good,60f))
-        assertNull(w.evaluate(6200,good,60f)) // first sample after a gap
-        assertNotNull(w.evaluate(6300,good,60f))
+        assertNull(w.evaluate(6200,good,60f)) // gap resets the streak
+        assertNull(w.evaluate(6300,good,60f)) // first fresh warning candidate
+        assertNotNull(w.evaluate(6400,good,60f)) // second fresh candidate
     }
     @Test fun noWarningOnMissingGpsOrOldTimestamp() {
         val w=AdasWarningEngine()
