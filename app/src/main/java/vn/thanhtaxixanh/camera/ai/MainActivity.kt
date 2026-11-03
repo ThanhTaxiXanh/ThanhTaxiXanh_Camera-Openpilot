@@ -97,6 +97,10 @@ class MainActivity : ComponentActivity() {
     private var lastDirectRendered = 0L
     private var lastDirectReceived = 0L
     private var lastDirectSubmitted = 0L
+    private var lastRtpPackets = 0L
+    private var lastRtpMarkers = 0L
+    private var lastRtpTimestamps = 0L
+    private var lastRtpBytes = 0L
     private var directGeneration = 0L
     private var directReconnectAttempts = 0
     private var directReconnectPending = false
@@ -451,6 +455,10 @@ class MainActivity : ComponentActivity() {
         lastDirectRendered = 0L
         lastDirectReceived = 0L
         lastDirectSubmitted = 0L
+        lastRtpPackets = 0L
+        lastRtpMarkers = 0L
+        lastRtpTimestamps = 0L
+        lastRtpBytes = 0L
         vlcPlayer?.close()
         vlcPlayer = null
         vlcSurface.visibility = View.GONE
@@ -765,6 +773,10 @@ class MainActivity : ComponentActivity() {
             lastDirectRendered = 0
             lastDirectReceived = 0
             lastDirectSubmitted = 0
+            lastRtpPackets = 0
+            lastRtpMarkers = 0
+            lastRtpTimestamps = 0
+            lastRtpBytes = 0
             connectDirect(url, net) // fresh DESCRIBE, SETUP and PLAY/session id
         }, delay)
     }
@@ -972,24 +984,33 @@ class MainActivity : ComponentActivity() {
                 val ren = (stats.rendered - lastDirectRendered).coerceAtLeast(0L)
                 val recv = (stats.receivedAccessUnits - lastDirectReceived).coerceAtLeast(0L)
                 val feed = (stats.submittedAccessUnits - lastDirectSubmitted).coerceAtLeast(0L)
+                val rxPackets = (stats.rtp.packets - lastRtpPackets).coerceAtLeast(0L)
+                val rxMarkers = (stats.rtp.markers - lastRtpMarkers).coerceAtLeast(0L)
+                val rxTimestamps = (stats.rtp.timestampChanges - lastRtpTimestamps)
+                    .coerceAtLeast(0L)
+                val rxBytes = (stats.rtp.bytes - lastRtpBytes).coerceAtLeast(0L)
                 performanceText.text = String.format(java.util.Locale.US,
-                    "H264 %s: %.1f AU/s · nạp: %.1f FPS\n" +
-                        "MediaCodec: %.1f giải mã · %.1f giao Surface\n" +
-                        "RTP gap: %d · Hàng đợi: %d/48 · đỉnh: %d · quá tải: %d\n" +
-                        "Đợi decoder: %d ms tích lũy · Nhận: %.1f MB\n" +
-                        "AI YUV: %d · YUV: %s\n" +
-                        "RTSP keepalive: %d gửi / %d OK / %d bị từ chối · Reconnect: %d/6",
-                    stats.transportName, recv / elapsed, feed / elapsed,
-                    dec / elapsed, ren / elapsed,
-                    stats.droppedRtp, stats.queueDepth, stats.peakQueueDepth, stats.overflows,
-                    stats.inputWaitMs, stats.compressedBytes / 1_000_000.0,
-                    stats.ai, if (stats.noYuv) "KHÔNG" else "CHỜ KIỂM TRA",
-                    stats.keepAliveSent, stats.keepAliveOk, stats.keepAliveUnsupported,
-                    directReconnectAttempts)
+                    "%s · RTP %.0f gói/s · H264 %.2f Mb/s\n" +
+                        "Marker %.1f/s · đổi RTP PTS %.1f/s · AU %.1f/s\n" +
+                        "Nạp %.1f/s · giải mã %.1f/s · Surface %.1f/s\n" +
+                        "RTP gap: %d · ghép hỏng: %d · không hợp lệ: %d\n" +
+                        "Hàng đợi: %d/48 · đỉnh: %d · RTCP: %d gửi\n" +
+                        "RTSP: %d/%d keepalive OK · reconnect %d/6",
+                    stats.transportName,
+                    rxPackets / elapsed, rxBytes * 8.0 / elapsed / 1_000_000.0,
+                    rxMarkers / elapsed, rxTimestamps / elapsed, recv / elapsed,
+                    feed / elapsed, dec / elapsed, ren / elapsed,
+                    stats.rtp.sequenceGaps, stats.discardedAccessUnits, stats.rtp.invalid,
+                    stats.queueDepth, stats.peakQueueDepth, stats.rtcpSent,
+                    stats.keepAliveOk, stats.keepAliveSent, directReconnectAttempts)
                 lastDirectDecoded = stats.decoded
                 lastDirectRendered = stats.rendered
                 lastDirectReceived = stats.receivedAccessUnits
                 lastDirectSubmitted = stats.submittedAccessUnits
+                lastRtpPackets = stats.rtp.packets
+                lastRtpMarkers = stats.rtp.markers
+                lastRtpTimestamps = stats.rtp.timestampChanges
+                lastRtpBytes = stats.rtp.bytes
             }
             lastStatsAtMs = now
         }
