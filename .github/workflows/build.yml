@@ -22,6 +22,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
+      - name: Prevent opaque SurfaceView overlay regression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path("app/src/main/java/vn/thanhtaxixanh/camera/ai/MainActivity.kt").read_text()
+          block=src.split("surfaceView = SurfaceView(this).apply",1)[1].split("root.addView(surfaceView",1)[0]
+          assert "setBackgroundColor(Color.BLACK)" not in block, "BLACK background would cover the SurfaceView video hole"
+          assert "background = null" in block, "Video SurfaceView must have no opaque View background"
+          assert "holder.setFormat(PixelFormat.OPAQUE)" in block
+          print("SurfaceView transparency regression check OK")
+          PY
       - name: Compile and test arm64 APK
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug --stacktrace
       - name: Inspect APK size

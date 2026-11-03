@@ -2,6 +2,7 @@ package vn.thanhtaxixanh.camera.ai
 
 import android.app.Activity
 import android.graphics.Color
+import android.graphics.PixelFormat
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Bundle
@@ -11,7 +12,6 @@ import android.os.SystemClock
 import android.view.Gravity
 import android.view.SurfaceHolder
 import android.view.SurfaceView
-import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -70,8 +70,15 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         root.addView(header)
 
         surfaceView = SurfaceView(this).apply {
+            // SurfaceView normally punches a transparent hole through the Activity
+            // window to expose its separate video layer behind the window.
+            // V1.0.1 set an opaque BLACK View background here, painting over
+            // that hole. The decoder actually produced frames, but users saw
+            // a black screen in BOTH IJKPlayer and Direct MediaCodec modes.
+            // Never draw an opaque background onto the SurfaceView itself.
+            background = null
+            holder.setFormat(PixelFormat.OPAQUE)
             holder.addCallback(this@MainActivity)
-            setBackgroundColor(Color.BLACK)
             keepScreenOn = true
         }
         root.addView(surfaceView, LinearLayout.LayoutParams(
@@ -191,7 +198,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             }
             player.setOnInfoListener { _, what, _ ->
                 if (token == generation && backend == Backend.IJK &&
-                    what == 3) showStatus("IJK: nhận khung hình video đầu tiên")
+                    what == 3) showStatus("IJK: decoder đã xuất khung video đầu tiên")
                 false
             }
             player.prepareAsync()
@@ -225,7 +232,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             {
                 runOnUiThread {
                     if (token == generation && backend == Backend.DIRECT)
-                        showStatus("Đã phát H.264 bằng MediaCodec · " +
+                        showStatus("MediaCodec đã xuất khung giải mã · " +
                             if (selectedUdp) "RTP/UDP" else "RTP/TCP")
                 }
             },

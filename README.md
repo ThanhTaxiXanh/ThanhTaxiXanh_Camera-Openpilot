@@ -1,7 +1,7 @@
 # TTX Camera AI — 70mai / xADAS Playback Lite
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.0.1-playback-lite  
+**Version**: 1.0.2-playback-lite  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Two playback tests — nothing else
@@ -38,3 +38,11 @@ The 1.0.0 test build was discarded: legacy `com.mcxiaoke...` Android Maven artif
 
 
 Native validation: the published 0.0.26 ARM64 IJK variant intentionally calls System.loadLibrary("ijkwdzffmpeg") rather than "ijkffmpeg". Verified against its upstream IjkMediaPlayer.java loader. CI checks the matching .so name.
+
+## V1.0.2 — Fix black video surface
+
+Confirmed from the user's 18.87-second recorded V1.0.1 phone screen: RTP ~340 packets/s, H264 ~24 AU/s, decoder ~27–29 fps, yet black. IJKPlayer also reports first video frame at 640x480, yet the screen is black. Both independent decoders fail to *show* frames on the same shared `SurfaceView`.
+
+Root-cause candidate fixed: the V1.0.1 Android `SurfaceView` had `setBackgroundColor(Color.BLACK)` directly on the view. The SurfaceView normally exposes video from a separate layer via a transparent region in the Activity window; drawing an opaque View background can conceal it. Now explicitly `background=null`, `PixelFormat.OPAQUE` for the underlying video surface, leaving the parent layout dark, and adds a CI regression guard.
+
+This is a UI composition correction, not another codec/RTSP/UDP tweak. Success still requires an on-device test: a successful build and decoded frame counters cannot prove displayed image visibility.
