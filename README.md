@@ -103,3 +103,8 @@ Bộ phát Direct không còn chờ PTS trên thread nạp H264. Thay đổi nà
 ## V0.9.7 – Đối chiếu xADAS 0.2.7: RTP/UDP trực tiếp
 
 Bóc tách XAPK xADAS xác định class a5/l3.H() gọi DatagramSocket.receive, setReceiveBufferSize, Transport: RTP/AVP;unicast;client_port= và có cả nhánh RTP/AVP/TCP;unicast;interleaved=0-1. Callback MediaCodec a5/j3.onOutputBufferAvailable sử dụng releaseOutputBuffer(index, boolean), không có overload lập lịch timestamp. TTX nay có nút **70mai / DIRECT UDP · KIẾN TRÚC xADAS**: RTSP kiểm soát qua TCP, RTP video qua UDP unicast trên Wi-Fi A500S, giải mã MediaCodec trực tiếp. Có nút Direct TCP để A/B và VLC 800ms dự phòng. **Đây là tái triển khai độc lập, chưa được xác minh UDP tương thích với firmware A500S hoặc mượt hơn.** Xem docs/V097_XADAS_UDP_PLAYBACK.md.
+
+
+## V0.9.8 – Đo trực tiếp lưu lượng RTP và báo cáo RTCP theo xADAS
+
+Người dùng xác nhận video vẫn giật khi xe di chuyển với VLC, Direct TCP và Direct UDP. Phân tích video Direct UDP dài 31,63 giây thấy AU/s biến động từ khoảng 8–22 dù báo RTP gap 0. Bản này bổ sung đo độc lập RTP packet/s, marker/s, RTP timestamp changes/s, bitrate Mbps, AU/s, nạp/giải mã/Surface và số AU bị loại. Thêm RTCP Receiver Report compound (RR+SDES) khoảng 5 giây/lần khi đã có RTP, phù hợp với dấu vết xADAS và RFC3550. Không thay đổi kiểu giữ nhịp/decoder đã thử, không chép mã/thư viện xADAS. Hiệu quả thực tế chưa được xác minh; chỉ số mới để xác định camera gửi không đều hay bộ ghép RTP làm mất hình. Xem docs/V098_RTP_SOURCE_DIAGNOSTICS.md.
