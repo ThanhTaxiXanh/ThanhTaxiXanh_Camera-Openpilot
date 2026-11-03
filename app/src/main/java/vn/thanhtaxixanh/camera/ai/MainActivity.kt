@@ -366,10 +366,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     val shown = (s.rendered - previousRendered).coerceAtLeast(0L)
                     detailView.text = String.format(Locale.US,
                         "%s · RTP %.1f/s · AU %.1f/s · giải mã %.1f/s · Surface %.1f/s\n" +
-                            "RTP gap %d · H264 hỏng %d · đệm %d/48 · heartbeat %d/%d OK · reset %d/3",
+                            "RTP gap %d · H264 hỏng %d · đệm %d/48\n" +
+                            "UDP đến lệch: %d · khôi phục %d · thiếu %d gói\n" +
+                            "RTSP heartbeat %d/%d OK · reconnect %d/3",
                         s.transportName, packets / dt, au / dt, decoded / dt, shown / dt,
-                        s.rtp.sequenceGaps, s.discardedAccessUnits,
-                        s.queueDepth, s.keepAliveOk, s.keepAliveSent, retryCount)
+                        s.rtp.sequenceGaps, s.discardedAccessUnits, s.queueDepth,
+                        s.udpReordered, s.udpRecovered, s.udpSkipped,
+                        s.keepAliveOk, s.keepAliveSent, retryCount)
                     previousPackets = s.rtp.packets
                     previousAccessUnits = s.receivedAccessUnits
                     previousDecoded = s.decoded
@@ -420,7 +423,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     detailView.text = "Chỉ gồm hai bộ phát: IJKPlayer và Direct MediaCodec."
                 }
             }
-            ui.postDelayed(this, 2000L)
+            ui.postDelayed(this, 1000L)
         }
     }
 

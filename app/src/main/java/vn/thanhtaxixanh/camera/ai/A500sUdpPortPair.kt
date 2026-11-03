@@ -35,7 +35,7 @@ class A500sUdpPortPair private constructor(
                     a = DatagramSocket(null)
                     network.bindSocket(a)
                     a.bind(InetSocketAddress(evenPort))
-                    a.soTimeout = 1100
+                    a.soTimeout = 100
                     a.receiveBufferSize = 2 * 1024 * 1024
 
                     b = DatagramSocket(null)

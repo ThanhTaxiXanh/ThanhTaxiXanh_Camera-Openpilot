@@ -18,12 +18,16 @@ class RtpJitterQueue(
     private val pending = HashMap<Int, Stored>()
     private var nextSequence: Int? = null
 
+    @Volatile
     var outOfOrderPackets: Long = 0L
         private set
+    @Volatile
     var recoveredOutOfOrderPackets: Long = 0L
         private set
+    @Volatile
     var oldOrDuplicatePackets: Long = 0L
         private set
+    @Volatile
     var skippedMissingPackets: Long = 0L
         private set
 

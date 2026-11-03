@@ -1,7 +1,7 @@
 # TTX Camera AI — 70mai / xADAS Playback Lite
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.0.2-playback-lite  
+**Version**: 1.0.3-playback-lite  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Two playback tests — nothing else
@@ -46,3 +46,12 @@ Confirmed from the user's 18.87-second recorded V1.0.1 phone screen: RTP ~340 pa
 Root-cause candidate fixed: the V1.0.1 Android `SurfaceView` had `setBackgroundColor(Color.BLACK)` directly on the view. The SurfaceView normally exposes video from a separate layer via a transparent region in the Activity window; drawing an opaque View background can conceal it. Now explicitly `background=null`, `PixelFormat.OPAQUE` for the underlying video surface, leaving the parent layout dark, and adds a CI regression guard.
 
 This is a UI composition correction, not another codec/RTSP/UDP tweak. Success still requires an on-device test: a successful build and decoded frame counters cannot prove displayed image visibility.
+
+
+## V1.0.3 — A500S playback recovery and UDP packet jitter
+
+The owner reports that IJK/FFmpeg is smooth but stops after ~30 seconds, while xADAS-style MediaCodec continues but stutters about once per second.
+
+- IJK keeps the exact successful V1.0.2 decoder/RTSP settings. It now detects OnCompletion, OnError, and native video output FPS stalls. Old native playback is released before opening a new RTSP session with bounded retries. HUD reports FPS, cache duration, stream age and failure cause. This is recovery, not confirmed uninterrupted streaming; A500S registration heartbeat still needs verification.
+- Direct MediaCodec adds a bounded 55 ms UDP RTP reorder window, up to 32 packets, ahead of the H264 FU-A assembler. Late packets can fill a gap before the AU is discarded. The TCP mode is unchanged.
+- The diagnostic HUD now reports out-of-order, recovered and missing packets every second. No heavy native dependencies or AI are added; APK remains ARM64 playback-only.
