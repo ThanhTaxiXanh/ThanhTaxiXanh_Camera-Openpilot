@@ -52,10 +52,10 @@ class AdasSettingsActivity : Activity() {
             setOnClickListener { finish() }
         }
         page.addView(back)
-        info("BẢN NGHIÊN CỨU", "Các tùy chọn đang hoạt động được đánh dấu “Đã áp dụng”. Những chức năng phụ thuộc AI/GPS chỉ là cấu hình dự kiến; không phát cảnh báo an toàn khi chưa kiểm định.")
+        info("BẢN NGHIÊN CỨU", "Chỉ có cấu hình nguồn và video đang hoạt động. Parser AI đã phục hồi nhưng inference, hiệu chuẩn và cảnh báo vẫn chưa kích hoạt.")
 
         heading("Camera và nhận diện")
-        info("70mai A500S", "Phát RTSP qua VLC/LIVE555 đã được xác nhận bằng video người dùng. Chọn nguồn và kiểm tra kết nối tại màn hình chính.")
+        info("70mai A500S", "Phát IJK/FFmpeg và Direct RTSP/MediaCodec. Các profile khác chỉ bật khi adapter đã được kiểm tra.")
         info("Nhận diện xe và khoảng cách", "Chưa có mô hình phát hiện xe mặc định. Khoảng cách tính từ mô hình tự nạp chỉ là ước lượng và chưa hiệu chuẩn.")
         action("Trở về màn hình camera") { finish() }
 
@@ -72,9 +72,9 @@ class AdasSettingsActivity : Activity() {
         heading("Hiển thị khi lái · Đã áp dụng")
         toggle("Vẽ vùng làn đường xanh", "Đa giác chỉ xuất hiện khi có hai biên hợp lý; kết quả thử nghiệm, không bảo đảm chính xác.",
             AdasPrefs.LANE_AREA, true)
-        toggle("Vẽ đường biên làn", "Chỉ vẽ đoạn biên phát hiện được từ OpenCV Canny/Hough.",
+        toggle("Vẽ đường biên làn", "Chỉ có hiệu lực sau khi có model AI được cấp quyền, ảnh YUV và hiệu chuẩn hợp lệ.",
             AdasPrefs.LANE_LINES, true)
-        toggle("Hiển thị khoảng cách xe", "Chỉ xuất hiện khi có mô hình xe tương thích; luôn ghi chưa hiệu chuẩn.",
+        toggle("Hiển thị khoảng cách xe", "Chỉ hiển thị khi có mô hình hoạt động và kết quả hiệu chuẩn hợp lệ.",
             AdasPrefs.SHOW_LEAD, true)
         toggle("Mũi tên chỉ xe phía trước", "Chỉ hiển thị khi có phát hiện xe thực sự, không vẽ mục tiêu giả.",
             AdasPrefs.LEAD_ARROW, true)
