@@ -282,6 +282,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun begin(mode: Backend) {
+        // Source selection is independent from the RTSP transport.
+        if (CameraSourceCatalog.selected(this) == CameraSourceCatalog.Profile.PHONE) {
+            stopPlayback()
+            startActivity(Intent(this, PhoneCameraActivity::class.java))
+            return
+        }
         stopPlayback()
         val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
         val wifi = CameraConnectionCheck.wifi(cm)

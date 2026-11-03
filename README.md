@@ -104,3 +104,8 @@ PiP button now enters Android's supported windowed-video mode when IJK is active
 ### Optional RTSP endpoint discovery (v1.1.2)
 
 The camera source screen can probe only six read-only DESCRIBE requests that were found in the uploaded xADAS APK (`/livestream/12`, `/livestream/0`, `/liveRTSP/av4`, `/liveRTSP/av2`, `/liveRTSP/av1`, `/liveRTSP/v1`). A response 200 supplies a suggested URL that the user must explicitly save. It does not indicate rear-view support or guarantee SETUP/PLAY. No change to camera firmware or CGI configuration is performed.
+
+
+### Phone camera source / Camera2
+
+Selecting **Camera điện thoại** in the source manager routes playback to an independent Android Camera2 preview with a parallel YUV_420_888 capture Surface. CAMERA runtime permission is requested only when using the phone source. The YUV ImageReader consumes the latest frame without blocking preview; Openpilot inference and safety warnings are OFF until calibrated models are verified. This is groundwork for xADAS phone-camera support, not confirmed hardware compatibility on every Android phone.

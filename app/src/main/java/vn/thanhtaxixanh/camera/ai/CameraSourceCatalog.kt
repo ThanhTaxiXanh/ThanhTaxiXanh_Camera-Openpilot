@@ -21,7 +21,7 @@ object CameraSourceCatalog {
         VIETMAP_V740("VIETMAP V740 – chưa hỗ trợ", false),
         AZCAM("AZCAM – chưa hỗ trợ", false),
         USB_UVC("USB / UVC – chưa hỗ trợ", false),
-        PHONE("Camera điện thoại – chưa hỗ trợ", false)
+        PHONE("Camera điện thoại / YUV420", true)
     }
 
     fun selected(context: Context): Profile {
