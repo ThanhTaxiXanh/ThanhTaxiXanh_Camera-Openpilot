@@ -94,3 +94,8 @@ The owner requested restoring the **complete xADAS feature set** instead of cont
 ### GPS live speed (owner opt-in)
 
 GPS button requests runtime precise location permission and reads only Android GPS_PROVIDER speed. The HUD hides stale values after 3.5s; GPS is used for local display only and no history or coordinates are saved. It does not activate automatic distance warnings without calibrated AI lead detection.
+
+
+### Picture-in-Picture test
+
+PiP button now enters Android's supported windowed-video mode when IJK is active. Non-video control views are hidden while PiP is open; on returning they reappear. The SurfaceHolder is reattached on Surface recreation. Direct MediaCodec PiP is intentionally not enabled until its Surface lifecycle is validated. This is a first implementation; it requires on-device testing and is not guaranteed to preserve uninterrupted live RTSP on all Android vendors.

@@ -6,6 +6,10 @@ import android.content.pm.PackageManager
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.app.PictureInPictureParams
+import android.content.res.Configuration
+import android.util.Rational
+import android.view.View
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Bundle
@@ -44,6 +48,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var adasHud: AdasHudView
     private lateinit var gpsMonitor: GpsSpeedMonitor
     private var gpsEnabled = false
+    private var pipTransitioning = false
     private lateinit var statusView: TextView
     private lateinit var detailView: TextView
     private lateinit var ijkButton: Button
@@ -173,6 +178,31 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             setOnClickListener { pairA500s() }
         }
         root.addView(pairButton)
+
+        root.addView(Button(this).apply {
+            text = "PiP · CỬA SỔ VIDEO NHỎ"
+            textSize = 11f
+            setOnClickListener {
+                if (backend != Backend.IJK || ijk == null) {
+                    showStatus("PiP thử nghiệm chỉ bật khi đang phát IJK.")
+                    return@setOnClickListener
+                }
+                if (!packageManager.hasSystemFeature(
+                        PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+                    showStatus("Thiết bị không hỗ trợ Picture-in-Picture.")
+                    return@setOnClickListener
+                }
+                try {
+                    pipTransitioning = true
+                    enterPictureInPictureMode(
+                        PictureInPictureParams.Builder()
+                            .setAspectRatio(Rational(4, 3)).build())
+                } catch (e: Exception) {
+                    pipTransitioning = false
+                    showStatus("PiP không thể mở: " + e.javaClass.simpleName)
+                }
+            }
+        })
 
         stopButton = Button(this).apply {
             text = "DỪNG PHÁT"
@@ -676,9 +706,36 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         url = null
     }
 
-    override fun surfaceCreated(holder: SurfaceHolder) {}
+    override fun surfaceCreated(holder: SurfaceHolder) {
+        if (backend == Backend.IJK) {
+            try { ijk?.setDisplay(holder) } catch (_: Throwable) {}
+        }
+    }
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
-    override fun surfaceDestroyed(holder: SurfaceHolder) { stopPlayback() }
+    override fun surfaceDestroyed(holder: SurfaceHolder) {
+        if (pipTransitioning || isInPictureInPictureMode) {
+            try { ijk?.setDisplay(null) } catch (_: Throwable) {}
+        } else stopPlayback()
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean, newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        pipTransitioning = false
+        val content = findViewById<android.view.ViewGroup>(android.R.id.content)
+        val root = content?.getChildAt(0) as? LinearLayout ?: return
+        for (i in 0 until root.childCount) {
+            val child = root.getChildAt(i)
+            // Keep the preview/video surface only while in PiP.
+            child.visibility =
+                if (isInPictureInPictureMode && child !is FrameLayout) View.GONE
+                else View.VISIBLE
+        }
+        if (backend == Backend.IJK && surfaceView.holder.surface.isValid) {
+            try { ijk?.setDisplay(surfaceView.holder) } catch (_: Throwable) {}
+        }
+    }
 
     override fun onDestroy() {
         ui.removeCallbacksAndMessages(null)
