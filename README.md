@@ -1,7 +1,7 @@
 # TTX Camera AI — 70mai / xADAS Playback Lite
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.1.0-xadas-rebuild  
+**Version**: 1.1.1-xadas-rebuild  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Two playback tests — nothing else

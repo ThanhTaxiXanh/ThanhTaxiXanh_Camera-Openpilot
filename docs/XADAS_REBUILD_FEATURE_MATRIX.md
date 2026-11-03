@@ -24,9 +24,10 @@ Source: user's xADAS XAPK (package com.kaibatech.drivedeck.xadas, v0.2.7, vCode4
 | Transparent ADAS HUD | AdasHudView | UI only; no fake lane/distance estimates |
 | NCNN native + ONNX runtime | Not bundled | Missing |
 | Geometric projection / virtual warp | Not bundled | Missing, blocks meaningful distances |
-| GPS speed & alerts | Not yet connected | Missing |
+| GPS speed | GpsSpeedMonitor + AdasHudView | Opt-in GPS_PROVIDER; speed hidden after 3.5s without valid fix |
 | CameraX / USB UVC | Not bundled | Missing |
-| PiP / background notifications | Not bundled | Missing |
+| Picture-in-Picture (IJK) | MainActivity + Android PiP mode | Implemented experiment; requires on-device Surface lifecycle test |
+| Background service/notifications | Not bundled | Missing |
 | Other vendor protocols | Catalog only | Missing |
 
 ## Why not ship the two xADAS models
@@ -40,7 +41,7 @@ The user's APK contains independently packaged 92.9MB ONNX and 92.2MB NCNN asset
 5. Implement real GPS and warning audio only after measurement pipeline is validated. No brake/steering/CAN actuation.
 
 ## Engineering sequence
-- Functional shell and tests (v1.1.0)
+- Functional shell, source catalog, GPS and PiP experiments (v1.1.1)
 - Camera source adapters and RTSP 30s live session robustness
 - Licensed model inference and decoder YUV; model consistency tests
 - Full calibrated HUD, GPS, alerts and confidence behavior
