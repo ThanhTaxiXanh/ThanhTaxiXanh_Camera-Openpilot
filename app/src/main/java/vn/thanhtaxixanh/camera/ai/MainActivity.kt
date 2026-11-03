@@ -43,6 +43,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var directButton: Button
     private lateinit var stopButton: Button
     private lateinit var pairButton: Button
+    private lateinit var latencyButton: Button
+    private var ijkProfile = IjkPlaybackProfile.SMOOTH
 
     private var backend: Backend? = null
     private var direct: DirectRtspPlayer? = null
@@ -113,8 +115,25 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         buttons.addView(directButton, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(buttons)
 
+        latencyButton = Button(this).apply {
+            text = ijkProfile.buttonTitle
+            textSize = 11f
+            setOnClickListener {
+                ijkProfile = ijkProfile.next()
+                text = ijkProfile.buttonTitle
+                if (backend == Backend.IJK) {
+                    showStatus("Đã chọn " + ijkProfile.shortLabel +
+                        ". Bấm 70MAI · IJK/FFMPEG để mở lại với cấu hình mới.")
+                } else {
+                    showStatus("IJK sẽ dùng " + ijkProfile.shortLabel +
+                        " khi bắt đầu phát. Chế độ mượt ban đầu không bị thay đổi.")
+                }
+            }
+        }
+        root.addView(latencyButton)
+
         pairButton = Button(this).apply {
-            text = "GHÉP ĐÔI & DUY TRÌ CAMERA A500S"
+            text = "GHÉP ĐÔI & HEARTBEAT A500S (KHÔNG GIẢM TRỄ)"
             textSize = 11f
             setOnClickListener { pairA500s() }
         }
@@ -288,19 +307,31 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         try {
             val player = IjkMediaPlayer()
             ijk = player
-            // Keep the exact V1.0.2 settings reported as smooth.
+            // The SMOOTH profile is byte-for-byte equivalent in settings to
+            // V1.0.2/V1.0.4, the one already reported smooth by the user.
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_transport", "tcp")
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 1L)
-            player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 1L)
+            player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER,
+                "packet-buffering", ijkProfile.packetBuffering)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1L)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 1000000L)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 32768L)
+            if (ijkProfile == IjkPlaybackProfile.LOW_LATENCY) {
+                // Experimental: reduce app-side buffering only. A500S may
+                // already be encoding with a multi-second GOP/stream delay.
+                // Do not enable nobuffer/skip_frame/codec_low_delay here:
+                // combinations can corrupt H264 playback on some devices.
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "min-frames", 5L)
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER,
+                    "max_cached_duration", 600L)
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "max_delay", 300000L)
+            }
             player.setDisplay(surfaceView.holder)
             player.setDataSource(currentUrl)
             player.setOnPreparedListener {
                 if (token == generation && backend == Backend.IJK && ijk === player) {
                     it.start()
-                    showStatus("70mai IJK: đang phát (phiên mới)")
+                    showStatus("70mai IJK: đang phát (" + ijkProfile.shortLabel + ")")
                 }
             }
             player.setOnCompletionListener {
@@ -513,11 +544,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         }
                     }
                     detailView.text = String.format(Locale.US,
-                        "IJK/FFmpeg · %d×%d · giải mã %.1f FPS · xuất %.1f FPS\n" +
-                            "Đệm %dms · đang phát %s · phiên %ds · khôi phục %d/5\n" +
+                        "IJK/FFmpeg [%s] · %d×%d · giải mã %.1f FPS · xuất %.1f FPS\n" +
+                            "Đệm nội bộ %.0f ms · đang phát %s · phiên %ds · khôi phục %d/5\n" +
                             "A500S CGI: %d/%d OK · %s\nLỗi cuối: %s",
+                        ijkProfile.shortLabel,
                         media?.videoWidth ?: 0, media?.videoHeight ?: 0,
-                        decodeFps, outputFps, cachedMs,
+                        decodeFps, outputFps, cachedMs.toDouble(),
                         if (nativePlaying) "CÓ" else "KHÔNG",
                         (now - ijkOpenedAtMs).coerceAtLeast(0L) / 1000L,
                         ijkRetryCount, ownerSession?.ok ?: 0L,
