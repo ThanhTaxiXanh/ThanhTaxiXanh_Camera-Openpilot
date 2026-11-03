@@ -197,7 +197,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
             else 0
         if (::adasHud.isInitialized)
-            adasHud.enabled = prefs.getBoolean(AdasPrefs.SHOW_LOGO, true)
+            adasHud.hudVisible = prefs.getBoolean(AdasPrefs.SHOW_LOGO, true)
     }
 
     private fun label(text: String, size: Float, color: Int) = TextView(this).apply {

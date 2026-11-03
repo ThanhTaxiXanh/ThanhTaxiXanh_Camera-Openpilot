@@ -13,7 +13,7 @@ class AdasHudView(context: Context) : View(context) {
         color = Color.rgb(184, 229, 190)
         setShadowLayer(3f, 1f, 1f, Color.BLACK)
     }
-    var enabled = true
+    var hudVisible = true
         set(value) { field = value; invalidate() }
 
     init {
@@ -24,7 +24,7 @@ class AdasHudView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (!enabled) return
+        if (!hudVisible) return
         canvas.drawText("TTX Camera AI · VIDEO / ADAS", 12f,
             (height - 24).coerceAtLeast(30).toFloat(), label)
     }

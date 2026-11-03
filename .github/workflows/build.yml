@@ -27,7 +27,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           src=Path("app/src/main/java/vn/thanhtaxixanh/camera/ai/MainActivity.kt").read_text()
-          block=src.split("surfaceView = SurfaceView(this).apply",1)[1].split("root.addView(surfaceView",1)[0]
+          block=src.split("surfaceView = SurfaceView(this).apply",1)[1].split("val videoContainer = FrameLayout",1)[0]
           assert "setBackgroundColor(Color.BLACK)" not in block, "BLACK background would cover the SurfaceView video hole"
           assert "background = null" in block, "Video SurfaceView must have no opaque View background"
           assert "holder.setFormat(PixelFormat.OPAQUE)" in block
