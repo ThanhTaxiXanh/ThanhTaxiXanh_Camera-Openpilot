@@ -1,0 +1,113 @@
+package vn.thanhtaxixanh.camera.ai
+
+import android.app.Activity
+import android.content.Intent
+import android.graphics.Color
+import android.os.Bundle
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import java.io.File
+import java.security.MessageDigest
+
+/**
+ * User-authorized optional ONNX import: no model data is bundled or uploaded.
+ * Only file retention and SHA-256 validation. Inference/ADAS remains disabled
+ * until a verified native backend and camera calibration exist.
+ */
+class VisionModelActivity : Activity() {
+    private lateinit var statusView: TextView
+    private val requestCode = 204
+    private val limitBytes = 250L * 1024L * 1024L
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(26, 24, 26, 24)
+            setBackgroundColor(Color.rgb(12, 17, 23))
+        }
+        fun label(value: String, sp: Float = 15f) = TextView(this).apply {
+            text = value
+            textSize = sp
+            setTextColor(Color.WHITE)
+            setPadding(0, 14, 0, 14)
+        }
+        body.addView(label("Openpilot Vision · Model", 22f))
+        body.addView(label(
+            "Đã khôi phục parser xADAS: 2 input [1,12,128,256], " +
+                "đầu ra [1,1576] gồm lanes, road edges, lead, pose. " +
+                "Đây là hợp đồng dữ liệu, không phải một mô hình đang chạy."))
+        val dest = File(filesDir, "models/vision.onnx")
+        statusView = label(if (dest.exists())
+            "Có model tự nhập (" + dest.length()/1048576L + " MiB). AI chưa kích hoạt."
+            else "Chưa nhập model. AI nhận diện làn và khoảng cách chưa kích hoạt.")
+        body.addView(statusView)
+        body.addView(Button(this).apply {
+            text = "NHẬP MODEL ONNX ĐƯỢC PHÉP SỬ DỤNG"
+            setOnClickListener {
+                startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                }, requestCode)
+            }
+        })
+        body.addView(label(
+            "Model được lưu cục bộ, không upload. Cần kiểm tra preprocessing YUV, " +
+                "virtual warp và hiệu chuẩn camera trước khi hiển thị khoảng cách. " +
+                "Không trích xuất hoặc phân phối trọng số xADAS mà chưa có quyền.", 13f))
+        body.addView(Button(this).apply {
+            text = "TRỞ VỀ"
+            setOnClickListener { finish() }
+        })
+        setContentView(ScrollView(this).apply { addView(body) })
+    }
+
+    @Deprecated("Used only for a local Storage Access Framework import")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != this.requestCode || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        statusView.text = "Đang xác minh và lưu model..."
+        Thread({
+            var temp: File? = null
+            try {
+                val dest = File(filesDir, "models/vision.onnx")
+                dest.parentFile?.mkdirs()
+                val working = File(dest.parentFile, "vision.onnx.part")
+                temp = working
+                val sha = MessageDigest.getInstance("SHA-256")
+                var count = 0L
+                val source = contentResolver.openInputStream(uri)
+                    ?: throw IllegalArgumentException("Không đọc được model")
+                source.use { input ->
+                    working.outputStream().use { output ->
+                        val bytes = ByteArray(65536)
+                        while (true) {
+                            val n = input.read(bytes)
+                            if (n < 0) break
+                            count += n
+                            require(count <= limitBytes) { "Model vượt giới hạn 250 MiB" }
+                            sha.update(bytes, 0, n)
+                            output.write(bytes, 0, n)
+                        }
+                    }
+                }
+                require(count > 1024) { "Tệp model không hợp lệ hoặc rỗng" }
+                if (dest.exists()) dest.delete()
+                check(working.renameTo(dest)) { "Không thể lưu model" }
+                val hex = sha.digest().joinToString("") {
+                    "%02x".format(it.toInt() and 255)
+                }
+                runOnUiThread {
+                    statusView.text = "Đã lưu cục bộ " + count/1048576L + " MiB, SHA256 " +
+                        hex.take(16) + "…; CHƯA chạy inference."
+                }
+            } catch (e: Exception) {
+                temp?.delete()
+                runOnUiThread { statusView.text = "Lỗi nhập model: " + e.message }
+            }
+        }, "TTX-Local-Model-Import").start()
+    }
+}
