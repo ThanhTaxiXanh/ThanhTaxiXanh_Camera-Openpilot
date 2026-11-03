@@ -16,6 +16,9 @@ import java.nio.ByteOrder
  * coordinate units and calibration have been validated separately.
  */
 object VisionModelBackend : VisionRuntimeContract {
+    /** Only the AI flavor can load an authorized model for true CPU inference. */
+    fun openEngine(model: File): VisionInferenceEngine = OnnxVisionEngine.open(model)
+
     override fun inspect(modelFile: File): ModelContractReport {
         if (!modelFile.isFile || modelFile.length() == 0L)
             return ModelContractReport(true, false, "Chưa có model ONNX để kiểm tra")

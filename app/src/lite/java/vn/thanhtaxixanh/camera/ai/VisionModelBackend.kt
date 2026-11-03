@@ -7,6 +7,9 @@ import java.io.File
  * Never claims a model is executing or produces fabricated predictions.
  */
 object VisionModelBackend : VisionRuntimeContract {
+    /** Lite intentionally cannot execute neural inference. */
+    fun openEngine(model: File): VisionInferenceEngine? = null
+
     override fun inspect(modelFile: File) = ModelContractReport(
         runtimeAvailable = false,
         validGraph = false,
