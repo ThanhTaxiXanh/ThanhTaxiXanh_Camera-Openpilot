@@ -45,6 +45,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var pairButton: Button
     private lateinit var latencyButton: Button
     private var ijkProfile = IjkPlaybackProfile.SMOOTH
+    private var activeIjkProfile = IjkPlaybackProfile.SMOOTH
 
     private var backend: Backend? = null
     private var direct: DirectRtspPlayer? = null
@@ -195,7 +196,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         retryCount = 0
         preferUdp = true
         startedAt = SystemClock.elapsedRealtime()
-        if (mode == Backend.IJK) launchOwnerHeartbeat(wifi.network, gw)
+        if (mode == Backend.IJK) {
+            // Apply selected profile ONLY when a new playback session starts.
+            // Internal reconnects must preserve the active profile, even if
+            // the user has changed the profile selector meanwhile.
+            activeIjkProfile = ijkProfile
+            launchOwnerHeartbeat(wifi.network, gw)
+        }
         ijkRetryCount = 0
         ijkRecoveryPending = false
         ijkLastStopCause = "Chưa có"
@@ -312,11 +319,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_transport", "tcp")
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 1L)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER,
-                "packet-buffering", ijkProfile.packetBuffering)
+                "packet-buffering", activeIjkProfile.packetBuffering)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1L)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 1000000L)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 32768L)
-            if (ijkProfile == IjkPlaybackProfile.LOW_LATENCY) {
+            if (activeIjkProfile == IjkPlaybackProfile.LOW_LATENCY) {
                 // Experimental: reduce app-side buffering only. A500S may
                 // already be encoding with a multi-second GOP/stream delay.
                 // Do not enable nobuffer/skip_frame/codec_low_delay here:
@@ -331,7 +338,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             player.setOnPreparedListener {
                 if (token == generation && backend == Backend.IJK && ijk === player) {
                     it.start()
-                    showStatus("70mai IJK: đang phát (" + ijkProfile.shortLabel + ")")
+                    showStatus("70mai IJK: đang phát (" + activeIjkProfile.shortLabel + ")")
                 }
             }
             player.setOnCompletionListener {
@@ -547,7 +554,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         "IJK/FFmpeg [%s] · %d×%d · giải mã %.1f FPS · xuất %.1f FPS\n" +
                             "Đệm nội bộ %.0f ms · đang phát %s · phiên %ds · khôi phục %d/5\n" +
                             "A500S CGI: %d/%d OK · %s\nLỗi cuối: %s",
-                        ijkProfile.shortLabel,
+                        activeIjkProfile.shortLabel,
                         media?.videoWidth ?: 0, media?.videoHeight ?: 0,
                         decodeFps, outputFps, cachedMs.toDouble(),
                         if (nativePlaying) "CÓ" else "KHÔNG",
