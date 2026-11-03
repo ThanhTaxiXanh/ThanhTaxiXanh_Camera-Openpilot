@@ -316,14 +316,16 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             ijk = player
             // The SMOOTH profile is byte-for-byte equivalent in settings to
             // V1.0.2/V1.0.4, the one already reported smooth by the user.
-            player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_transport", "tcp")
+            // For UDP_SMOOTH change ONLY transport, keep the smooth cache/codec.
+            player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_transport",
+                activeIjkProfile.rtspTransport)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 1L)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER,
                 "packet-buffering", activeIjkProfile.packetBuffering)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1L)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 1000000L)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 32768L)
-            if (activeIjkProfile == IjkPlaybackProfile.LOW_LATENCY) {
+            if (activeIjkProfile.experimentalLowLatency) {
                 // Experimental: reduce app-side buffering only. A500S may
                 // already be encoding with a multi-second GOP/stream delay.
                 // Do not enable nobuffer/skip_frame/codec_low_delay here:
@@ -338,7 +340,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             player.setOnPreparedListener {
                 if (token == generation && backend == Backend.IJK && ijk === player) {
                     it.start()
-                    showStatus("70mai IJK: đang phát (" + activeIjkProfile.shortLabel + ")")
+                    showStatus("70mai IJK: đang phát (" + activeIjkProfile.shortLabel +
+                        ", yêu cầu RTP/" + activeIjkProfile.rtspTransport.uppercase(Locale.US) + ")")
                 }
             }
             player.setOnCompletionListener {

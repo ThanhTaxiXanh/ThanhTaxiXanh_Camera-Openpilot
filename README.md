@@ -1,7 +1,7 @@
 # TTX Camera AI — 70mai / xADAS Playback Lite
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.0.5-playback-lite  
+**Version**: 1.0.6-playback-lite  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Two playback tests — nothing else
@@ -77,3 +77,8 @@ A500S owner reports both plain IJK and owner-paired IJK output with the **same 3
 The IJK playback screen now adds a **profile selector**, default **MƯỢT · ĐỆM MẶC ĐỊNH** (same packet-buffering, codec and RTSP options as V1.0.4) or **THỬ TRỄ THẤP** (turns player-side packet-buffering off, min-frames=5, max_cached_duration=600ms, FFmpeg RTSP max_delay=300000µs; unverified with A500S). Selecting a mode while video runs does not mutate the active IJK instance: press the 70mai play button to restart with new settings. The experiment may increase freezes/stuttering. The previously smooth profile remains one tap away. IJK HUD prints the selected mode and native videoCachedDuration (internal queue only; not physical camera-to-screen delay). No AI and no extra native dependencies added.
 
 **Measure true latency** by briefly moving an object in front of the parked camera while viewing the phone and comparing timing, not solely comparing the camera OSD clock to phone time (the clocks may be unsynchronized). If low-latency sacrifices smoothness, return to MƯỢT. Also report whether paired CGI success prevents the former ~30s RTSP OnCompletion.
+
+
+## V1.0.6 - Controlled RTSP transport A/B
+
+Official 70mai 4.5.0 is ~1 second behind reality, TTX IJK both TCP profiles ~3 seconds on the same camera and phone. The earlier profiles both force RTSP/TCP. This build adds a third option: IJK/FFmpeg RTP/UDP with otherwise unchanged SMOOTH settings (packet buffering enabled, MediaCodec unchanged). It is a hypothesis test and NOT a claim that 70mai official uses UDP or that the delay will fall to one second. The selector cycles MƯỢT TCP, TRỄ THẤP TCP, THỬ RTP/UDP (GIỮ ĐỆM), then back. Restart playback to apply; automatic reconnect preserves the active selection. UDP may not work or may stutter: use SMOOTH TCP to return. No extra native libraries or AI.

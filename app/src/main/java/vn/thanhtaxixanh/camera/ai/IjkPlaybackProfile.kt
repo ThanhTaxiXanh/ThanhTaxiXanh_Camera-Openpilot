@@ -1,20 +1,16 @@
 package vn.thanhtaxixanh.camera.ai
 
-/**
- * Experimental IJK playback selection for a live 70mai A500S feed.
- * SMOOTH keeps the existing verified player settings unchanged.
- *
- * LOW_LATENCY reduces only the application's playback buffer. Actual
- * camera-to-phone delay must be measured with a real-world visual event;
- * getVideoCachedDuration does not measure sensor/encoder/Wi-Fi delay.
- */
+/** Isolated A/B: UDP_SMOOTH changes only FFmpeg RTSP transport vs SMOOTH. */
 enum class IjkPlaybackProfile(
     val shortLabel: String,
     val buttonTitle: String,
-    val packetBuffering: Long
+    val rtspTransport: String,
+    val packetBuffering: Long,
+    val experimentalLowLatency: Boolean
 ) {
-    SMOOTH("MƯỢT", "IJK: MƯỢT · ĐỆM MẶC ĐỊNH", 1L),
-    LOW_LATENCY("THỬ TRỄ THẤP", "IJK: THỬ TRỄ THẤP · CÓ THỂ GIẬT", 0L);
+    SMOOTH("MƯỢT TCP", "IJK: MƯỢT TCP · ĐỆM MẶC ĐỊNH", "tcp", 1L, false),
+    LOW_LATENCY("TRỄ THẤP TCP", "IJK: TRỄ THẤP TCP · CÓ THỂ GIẬT", "tcp", 0L, true),
+    UDP_SMOOTH("THỬ UDP / GIỮ ĐỆM", "IJK: THỬ RTP/UDP · GIỮ ĐỆM MƯỢT", "udp", 1L, false);
 
-    fun next() = if (this == SMOOTH) LOW_LATENCY else SMOOTH
+    fun next(): IjkPlaybackProfile = values()[(ordinal + 1) % values().size]
 }
