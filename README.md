@@ -108,3 +108,10 @@ Bóc tách XAPK xADAS xác định class a5/l3.H() gọi DatagramSocket.receive,
 ## V0.9.8 – Đo trực tiếp lưu lượng RTP và báo cáo RTCP theo xADAS
 
 Người dùng xác nhận video vẫn giật khi xe di chuyển với VLC, Direct TCP và Direct UDP. Phân tích video Direct UDP dài 31,63 giây thấy AU/s biến động từ khoảng 8–22 dù báo RTP gap 0. Bản này bổ sung đo độc lập RTP packet/s, marker/s, RTP timestamp changes/s, bitrate Mbps, AU/s, nạp/giải mã/Surface và số AU bị loại. Thêm RTCP Receiver Report compound (RR+SDES) khoảng 5 giây/lần khi đã có RTP, phù hợp với dấu vết xADAS và RFC3550. Không thay đổi kiểu giữ nhịp/decoder đã thử, không chép mã/thư viện xADAS. Hiệu quả thực tế chưa được xác minh; chỉ số mới để xác định camera gửi không đều hay bộ ghép RTP làm mất hình. Xem docs/V098_RTP_SOURCE_DIAGNOSTICS.md.
+
+
+## V0.9.9 – Đối chiếu 2 video TTX và xADAS, khôi phục UDP không phát dữ liệu
+
+Hai bản ghi do người dùng cung cấp: TTX V0.9.8 50.43 giây, xADAS 87.53 giây, đều ghi màn hình 512x1136/30fps. Trong bản ghi TTX, lúc khoảng 5 và 22 giây, bảng trạng thái ghi RTP 0 packets/s, H264 AU 0/s, decoder 0fps, xuất hiện camera từ chối cả hai keepalive và reconnect. Từ 15–25 giây, timestamp trong hình 70mai giữ nguyên 11:11:55. xADAS tiếp tục hiển thị đường và HUD động khi xe đang chạy; hai cảnh khác nhau nên không dùng pixel diff để suy ra cùng FPS camera.
+
+V0.9.9 phát hiện trước trường hợp RTSP PLAY=200 nhưng sau 5 giây không nhận RTP, rồi tự chuyển Direct UDP sang Direct TCP trên phiên RTSP mới; có unit tests để tránh chuyển khi lỗi keepalive đơn thuần. Thay phương án keepalive sau GET_PARAMETER bị từ chối từ SET_PARAMETER sang OPTIONS (chỉ đọc). Thêm log Transport của SETUP và gói UDP ngoài địa chỉ camera. Không thay đổi VLC 800ms. Đây là bản sửa trạng thái mất luồng, chưa xác nhận xử lý giật khi video đang thực sự truyền. Xem docs/V099_TTX_XADAS_VIDEO_COMPARISON.md.
