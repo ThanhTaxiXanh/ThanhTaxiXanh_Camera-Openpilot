@@ -35,4 +35,19 @@ class RtspSessionMaintenanceTest {
             fail("Session ID must reject line breaks")
         } catch (_: IllegalArgumentException) { }
     }
+    @Test fun optionsIsReadOnlyKeepaliveFallback() {
+        val r = String(RtspSessionMaintenance.request(
+            "OPTIONS", "rtsp://192.168.0.1/00000039/",
+            "SESSION", 7), Charsets.US_ASCII)
+        assertTrue(r.startsWith("OPTIONS rtsp://192.168.0.1/00000039/ RTSP/1.0"))
+        assertTrue(r.contains("Session: SESSION"))
+    }
+
+    @Test fun setParameterIsNotUsedAsKeepalive() {
+        try {
+            RtspSessionMaintenance.request("SET_PARAMETER",
+                "rtsp://192.168.0.1/00000039/", "SESSION", 7)
+            fail("Do not change camera configuration with keepalive")
+        } catch (_: IllegalArgumentException) { }
+    }
 }

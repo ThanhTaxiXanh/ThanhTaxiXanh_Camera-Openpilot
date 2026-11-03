@@ -15,7 +15,7 @@ object RtspSessionMaintenance {
         sessionId: String,
         sequence: Int
     ): ByteArray {
-        require(method == "GET_PARAMETER" || method == "SET_PARAMETER") {
+        require(method == "GET_PARAMETER" || method == "OPTIONS") {
             "Only supported keepalive methods are allowed"
         }
         require(sessionId.isNotBlank() && sessionId.none { it == '\r' || it == '\n' })

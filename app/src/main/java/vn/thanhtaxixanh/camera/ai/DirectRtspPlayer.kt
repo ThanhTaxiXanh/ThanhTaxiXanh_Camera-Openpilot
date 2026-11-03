@@ -344,7 +344,8 @@ class DirectRtspPlayer(
                 requestedUdp?.close()
                 udpPorts = null
             }
-            status("Camera chọn: " + activeTransportName)
+            status("Camera chọn: " + activeTransportName +
+                " · Transport: " + negotiated.take(190))
             val sessionHeader = setup.header("session")
             val session = sessionHeader.substringBefore(';').trim()
             require(session.isNotEmpty()){"RTSP session missing"}
@@ -392,6 +393,11 @@ class DirectRtspPlayer(
                                     udpPackets.incrementAndGet()
                                     assemble.accept(packet.data.copyOfRange(
                                         packet.offset, packet.offset + packet.length))
+                                } else if (packet.length >= 12) {
+                                    if (udpPackets.get() == 0L)
+                                        status("UDP gói từ địa chỉ ngoài camera: " +
+                                            packet.address.hostAddress +
+                                            " · đợi " + host)
                                 }
                             } catch (_: java.net.SocketTimeoutException) {
                                 // Camera may have paused briefly; control thread
@@ -421,6 +427,15 @@ class DirectRtspPlayer(
             var unsupportedBoth = false
             while(alive.get()) {
                 val now=SystemClock.elapsedRealtime()
+                val receivedPackets = rtpDiagnostics.snapshot().packets
+                if (receivedPackets == 0L && now - lastRtpAt.get() > 5000L) {
+                    error("RTP timeout: PLAY 200 but zero video packets for 5 seconds; " +
+                        "negotiated=" + activeTransportName)
+                }
+                if (receivedPackets > 0L && receivedAccessUnits.get() == 0L &&
+                    now - lastRtpAt.get() > 8500L) {
+                    error("RTP/H264 stalled: packets received but zero H264 access units")
+                }
                 if (now-lastRtpAt.get()>12000L) {
                     error("RTP timeout: no H264 packets for 12 seconds")
                 }
@@ -488,11 +503,15 @@ class DirectRtspPlayer(
                                 keepAliveUnsupported.incrementAndGet()
                                 status("Keepalive "+preferredMethod+" → "+packet.code)
                                 if (preferredMethod=="GET_PARAMETER") {
-                                    preferredMethod="SET_PARAMETER"
+                                    // OPTIONS is a read-only RTSP capability
+                                    // query. SET_PARAMETER can change camera
+                                    // state and was rejected on this A500S.
+                                    preferredMethod="OPTIONS"
                                     nextKeepAliveAt=SystemClock.elapsedRealtime()+1000L
                                 } else {
                                     unsupportedBoth=true
-                                    status("Camera từ chối cả 2 keepalive; sẽ tự kết nối lại khi cần")
+                                    status("Camera từ chối GET_PARAMETER và OPTIONS; " +
+                                        "tắt keepalive, không gửi lệnh thay đổi cấu hình")
                                 }
                             }
                         } else if (packet.code>=400) {
