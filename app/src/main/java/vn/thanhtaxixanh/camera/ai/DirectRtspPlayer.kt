@@ -54,7 +54,8 @@ class DirectRtspPlayer(
         val keepAliveUnsupported: Long, val reconnectReason: String,
         val transportName: String, val udpPackets: Long,
         val rtp: RtpReceiverDiagnostics.Snapshot,
-        val rtcpSent: Long, val discardedAccessUnits: Long
+        val rtcpSent: Long, val discardedAccessUnits: Long,
+        val udpReordered: Long, val udpRecovered: Long, val udpSkipped: Long
     )
     private data class Sample(val data: ByteArray, val timestampUs: Long)
     private val alive = AtomicBoolean(false)
@@ -92,6 +93,7 @@ class DirectRtspPlayer(
     private var socket: Socket? = null
     private var udpPorts: A500sUdpPortPair? = null
     private var udpThread: Thread? = null
+    @Volatile private var udpReorder: RtpJitterQueue? = null
     private var codec: MediaCodec? = null
     private var thread: Thread? = null
     private var feeder: Thread? = null
@@ -105,7 +107,10 @@ class DirectRtspPlayer(
         frames.size, queuePeak.get(), queueOverflows.get(),
         keepAliveSent.get(), keepAliveOk.get(), keepAliveUnsupported.get(),
         lastNetworkFailure, activeTransportName, udpPackets.get(),
-        rtpDiagnostics.snapshot(), rtcpSent.get(), discardedAccessUnits.get()
+        rtpDiagnostics.snapshot(), rtcpSent.get(), discardedAccessUnits.get(),
+        udpReorder?.outOfOrderPackets ?: 0,
+        udpReorder?.recoveredOutOfOrderPackets ?: 0,
+        udpReorder?.skippedMissingPackets ?: 0
     )
     fun start() {
         check(alive.compareAndSet(false, true)) { "Already started" }
@@ -380,9 +385,12 @@ class DirectRtspPlayer(
             val lastRtpAt = AtomicLong(SystemClock.elapsedRealtime())
             if (useUdp) {
                 val pair = udpPorts ?: error("UDP negotiation lost socket")
+                val reorder = RtpJitterQueue(capacity = 32, maxDelayMs = 55L)
+                udpReorder = reorder
                 val t = Thread({
                     val buf = ByteArray(65536)
                     val loggedUnexpectedSender = AtomicBoolean(false)
+                    val deliver:(ByteArray)->Unit = { assemble.accept(it) }
                     try {
                         while (alive.get()) {
                             try {
@@ -392,8 +400,10 @@ class DirectRtspPlayer(
                                 if (packet.address.hostAddress == host && packet.length >= 12) {
                                     lastRtpAt.set(SystemClock.elapsedRealtime())
                                     udpPackets.incrementAndGet()
-                                    assemble.accept(packet.data.copyOfRange(
-                                        packet.offset, packet.offset + packet.length))
+                                    reorder.accept(
+                                        packet.data.copyOfRange(packet.offset,
+                                            packet.offset + packet.length),
+                                        SystemClock.elapsedRealtime(), deliver)
                                 } else if (packet.length >= 12) {
                                     if (loggedUnexpectedSender.compareAndSet(false, true))
                                         status("UDP gói từ địa chỉ ngoài camera: " +
@@ -401,8 +411,9 @@ class DirectRtspPlayer(
                                             " · đợi " + host)
                                 }
                             } catch (_: java.net.SocketTimeoutException) {
-                                // Camera may have paused briefly; control thread
-                                // decides when the lack of RTP is fatal.
+                                // Release a buffered gap after a short deadline
+                                // rather than keeping H264 waiting indefinitely.
+                                reorder.tick(SystemClock.elapsedRealtime(), deliver)
                             }
                         }
                     } catch (e: Exception) {
@@ -616,6 +627,7 @@ class DirectRtspPlayer(
         udpPorts?.close()
         udpPorts = null
         udpThread?.interrupt()
+        udpReorder = null
         thread?.interrupt()
         feeder?.interrupt()
         frames.clear()
