@@ -1,7 +1,7 @@
 # TTX Camera AI — 70mai / xADAS Playback Lite
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.1.1-xadas-rebuild  
+**Version**: 1.1.2-xadas-rebuild  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Two playback tests — nothing else
@@ -99,3 +99,8 @@ GPS button requests runtime precise location permission and reads only Android G
 ### Picture-in-Picture test
 
 PiP button now enters Android's supported windowed-video mode when IJK is active. Non-video control views are hidden while PiP is open; on returning they reappear. The SurfaceHolder is reattached on Surface recreation. Direct MediaCodec PiP is intentionally not enabled until its Surface lifecycle is validated. This is a first implementation; it requires on-device testing and is not guaranteed to preserve uninterrupted live RTSP on all Android vendors.
+
+
+### Optional RTSP endpoint discovery (v1.1.2)
+
+The camera source screen can probe only six read-only DESCRIBE requests that were found in the uploaded xADAS APK (`/livestream/12`, `/livestream/0`, `/liveRTSP/av4`, `/liveRTSP/av2`, `/liveRTSP/av1`, `/liveRTSP/v1`). A response 200 supplies a suggested URL that the user must explicitly save. It does not indicate rear-view support or guarantee SETUP/PLAY. No change to camera firmware or CGI configuration is performed.

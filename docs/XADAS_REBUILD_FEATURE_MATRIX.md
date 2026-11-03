@@ -17,7 +17,7 @@ Source: user's xADAS XAPK (package com.kaibatech.drivedeck.xadas, v0.2.7, vCode4
 | 70mai A500S live view | IjkMediaPlayer + RTC support, previously user-tested | Playback works smooth but ~3s behind official, RTSP completion ~30s |
 | Independent xADAS-style RTP | DirectRtspPlayer | Plays, intermittent stutter observed |
 | 70mai physical owner pairing | A500sOwnerSession | Owner confirmed CGI 7/7 OK, does not eliminate RTSP OnCompletion |
-| Source picker | CameraSourceCatalog/CameraSourceSettingsActivity | A500S+custom RTSP active; other adapters listed, not implemented |
+| Source picker + RTSP discovery | CameraSourceCatalog, CameraSourceSettingsActivity, RtspCandidateDiscovery | A500S+custom RTSP active; read-only DESCRIBE on known paths; other vendor adapters remain unsupported |
 | ADAS settings | AdasPrefs/AdasSettingsActivity | Prefs saved; AI-dependent ones not yet executable |
 | Openpilot contract/parser | SupercomboV027Contract, OpenpilotVisionDecoder, OpenpilotYuvPacker | Pure code + unit tests, **not connected to live decoder** |
 | User model file | VisionModelActivity | Import locally only; inference not enabled |
@@ -41,7 +41,7 @@ The user's APK contains independently packaged 92.9MB ONNX and 92.2MB NCNN asset
 5. Implement real GPS and warning audio only after measurement pipeline is validated. No brake/steering/CAN actuation.
 
 ## Engineering sequence
-- Functional shell, source catalog, GPS and PiP experiments (v1.1.1)
+- Functional shell, RTSP discovery, GPS and PiP experiments (v1.1.2)
 - Camera source adapters and RTSP 30s live session robustness
 - Licensed model inference and decoder YUV; model consistency tests
 - Full calibrated HUD, GPS, alerts and confidence behavior
