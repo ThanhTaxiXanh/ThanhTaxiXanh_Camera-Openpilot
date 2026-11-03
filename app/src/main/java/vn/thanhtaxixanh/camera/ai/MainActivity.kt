@@ -1,6 +1,7 @@
 package vn.thanhtaxixanh.camera.ai
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.net.ConnectivityManager
@@ -13,6 +14,7 @@ import android.view.Gravity
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import tv.danmaku.ijk.media.player.IjkMediaPlayer
@@ -37,6 +39,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private val ui = Handler(Looper.getMainLooper())
     private lateinit var surfaceView: SurfaceView
+    private lateinit var adasHud: AdasHudView
     private lateinit var statusView: TextView
     private lateinit var detailView: TextView
     private lateinit var ijkButton: Button
@@ -82,7 +85,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             setBackgroundColor(Color.rgb(12, 16, 22))
             setPadding(12, 10, 12, 10)
         }
-        val header = label("TTX CAMERA AI · VIDEO BENCHMARK", 17f, Color.WHITE)
+        val header = label("TTX CAMERA AI · xADAS REBUILD", 17f, Color.WHITE)
         header.gravity = Gravity.CENTER
         root.addView(header)
 
@@ -98,7 +101,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             holder.addCallback(this@MainActivity)
             keepScreenOn = true
         }
-        root.addView(surfaceView, LinearLayout.LayoutParams(
+        val videoContainer = FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK)
+            addView(surfaceView, FrameLayout.LayoutParams(-1, -1))
+        }
+        adasHud = AdasHudView(this)
+        videoContainer.addView(adasHud, FrameLayout.LayoutParams(-1, -1))
+        root.addView(videoContainer, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
         val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -115,6 +124,21 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         buttons.addView(ijkButton, LinearLayout.LayoutParams(0, -2, 1f))
         buttons.addView(directButton, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(buttons)
+
+        val navigation = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        fun nav(title: String, target: Class<out Activity>): Button =
+            Button(this).apply {
+                text = title
+                textSize = 10f
+                setOnClickListener { startActivity(Intent(this@MainActivity, target)) }
+            }
+        navigation.addView(nav("NGUỒN CAMERA", CameraSourceSettingsActivity::class.java),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        navigation.addView(nav("CÀI ĐẶT ADAS", AdasSettingsActivity::class.java),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        navigation.addView(nav("OPENPILOT", VisionModelActivity::class.java),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        root.addView(navigation)
 
         latencyButton = Button(this).apply {
             text = ijkProfile.buttonTitle
@@ -152,16 +176,28 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
         statusView = label("Kết nối Wi-Fi 70mai A500S để thử phát trực tiếp", 13f,
             Color.rgb(168, 220, 200))
-        detailView = label("Chỉ thử nghiệm phát video. AI/Openpilot đã tạm loại khỏi APK.", 12f,
+        detailView = label(
+            "Đã phục hồi cài đặt và parser Openpilot. Chưa có suy luận AI thực tế.", 12f,
             Color.LTGRAY)
         root.addView(statusView)
         root.addView(detailView)
         root.addView(label(
-            "70mai = IJKPlayer nguồn mở (không phải bản quyền 70mai 4.5.0)." +
-                " xADAS = bộ phát RTSP/MediaCodec tự triển khai.", 10f,
+            "RTSP/IJK + MediaCodec; các bộ phân tích AI cần model được phép dùng " +
+                "và hiệu chuẩn, không hiển thị khoảng cách suy đoán.", 10f,
             Color.rgb(149, 155, 161)))
         setContentView(root)
         ui.post(statusTicker)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val prefs = AdasPrefs.of(this)
+        window.decorView.systemUiVisibility =
+            if (prefs.getBoolean(AdasPrefs.HIDE_STATUS_BAR, false))
+                android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+            else 0
+        if (::adasHud.isInitialized)
+            adasHud.enabled = prefs.getBoolean(AdasPrefs.SHOW_LOGO, true)
     }
 
     private fun label(text: String, size: Float, color: Int) = TextView(this).apply {
@@ -191,7 +227,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             return
         }
         network = wifi.network
-        url = "rtsp://" + gw + ":554/livestream/12"
+        val source = CameraSourceCatalog.selected(this)
+        url = try {
+            CameraSourceCatalog.resolve(this, gw)
+        } catch (e: Exception) {
+            showStatus("Nguồn camera chưa sẵn sàng: " + (e.message ?: "Lỗi URL"))
+            return
+        }
         backend = mode
         retryCount = 0
         preferUdp = true
@@ -201,7 +243,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             // Internal reconnects must preserve the active profile, even if
             // the user has changed the profile selector meanwhile.
             activeIjkProfile = ijkProfile
-            launchOwnerHeartbeat(wifi.network, gw)
+            if (source == CameraSourceCatalog.Profile.A500S)
+                launchOwnerHeartbeat(wifi.network, gw)
         }
         ijkRetryCount = 0
         ijkRecoveryPending = false
