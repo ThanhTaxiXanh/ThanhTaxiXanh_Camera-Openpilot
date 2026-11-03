@@ -9,10 +9,16 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 19
-        versionName = "0.9.9"
+        versionCode = 20
+        versionName = "1.0.0-playback-lite"
+        ndk {
+            // Modern A500S Android test device: one CPU architecture only.
+            abiFilters += "arm64-v8a"
+        }
     }
-    buildTypes { release { isMinifyEnabled = false } }
+    buildTypes {
+        getByName("debug") { isMinifyEnabled = false }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -21,23 +27,13 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
-            pickFirsts += "**/libc++_shared.so"
         }
     }
 }
 dependencies {
-    implementation("androidx.core:core-ktx:1.16.0")
-    implementation("androidx.activity:activity-ktx:1.10.1")
-    implementation("androidx.camera:camera-core:1.6.2")
-    implementation("androidx.camera:camera-camera2:1.6.2")
-    implementation("androidx.camera:camera-lifecycle:1.6.2")
-    implementation("androidx.camera:camera-view:1.6.2")
-    implementation("androidx.media3:media3-exoplayer:1.11.1")
-    implementation("androidx.media3:media3-exoplayer-rtsp:1.11.1")
-    implementation("androidx.media3:media3-ui:1.11.1")
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
-    implementation("org.videolan.android:libvlc-all:3.7.7")
+    // Public LGPL IJKPlayer build. 0.6.2 is NOT proven identical to the
+    // library inside the official 70mai 4.5.0 APK.
+    implementation("com.mcxiaoke.ijk.media:ijkplayer-java:0.6.2")
+    implementation("com.mcxiaoke.ijk.media:ijkplayer-arm64:0.6.2")
     testImplementation("junit:junit:4.13.2")
-    implementation("org.opencv:opencv:4.11.0")
-    implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
 }

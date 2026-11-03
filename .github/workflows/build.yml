@@ -1,4 +1,4 @@
-name: Build Android Debug APK
+name: TTX A500S Playback Lite – arm64 APK
 on:
   workflow_dispatch:
   push:
@@ -14,8 +14,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - name: Setup Android SDK (skip removed legacy tools package)
-        uses: android-actions/setup-android@v4
+      - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools'
       - name: Install SDK
@@ -23,9 +22,25 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
-      - name: Build debug
+      - name: Compile and test arm64 APK
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug --stacktrace
+      - name: Inspect APK size
+        run: |
+          ls -lh app/build/outputs/apk/debug/*.apk
+          python3 - <<'PY'
+          import glob,os,zipfile
+          p=glob.glob('app/build/outputs/apk/debug/*.apk')[0]
+          with zipfile.ZipFile(p) as z:
+              libs=[(x.filename,x.compress_size) for x in z.infolist() if x.filename.endswith('.so')]
+          print("APK BYTES:",os.path.getsize(p))
+          for name,n in sorted(libs,key=lambda x:-x[1])[:15]:print("native",name,n)
+          PY
+      # An APK is already ZIP compressed. Gzip at level 9 adds little benefit;
+      # the actual savings come from dropping heavyweight dependencies and ABIs.
       - uses: actions/upload-artifact@v4
         with:
-          name: TTX-Camera-AI-debug-apk
+          name: TTX-A500S-70mai-xADAS-ARM64
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          compression-level: 9
+          retention-days: 14
