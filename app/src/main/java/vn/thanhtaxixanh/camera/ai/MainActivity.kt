@@ -17,6 +17,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import tv.danmaku.ijk.media.player.IjkMediaPlayer
 import java.util.Locale
+import java.net.Inet4Address
+import java.security.SecureRandom
 
 /**
  * TTX Camera AI — compact PLAYBACK BENCHMARK ONLY.
@@ -40,12 +42,14 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var ijkButton: Button
     private lateinit var directButton: Button
     private lateinit var stopButton: Button
+    private lateinit var pairButton: Button
 
     private var backend: Backend? = null
     private var direct: DirectRtspPlayer? = null
     private var ijk: IjkMediaPlayer? = null
     private var network: Network? = null
     private var url: String? = null
+    private var ownerSession: A500sOwnerSession? = null
     private var generation = 0
     private var retryCount = 0
     private var preferUdp = true
@@ -107,6 +111,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         buttons.addView(directButton, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(buttons)
 
+        pairButton = Button(this).apply {
+            text = "GHÉP ĐÔI & DUY TRÌ CAMERA A500S"
+            textSize = 11f
+            setOnClickListener { pairA500s() }
+        }
+        root.addView(pairButton)
+
         stopButton = Button(this).apply {
             text = "DỪNG PHÁT"
             textSize = 12f
@@ -163,6 +174,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         retryCount = 0
         preferUdp = true
         startedAt = SystemClock.elapsedRealtime()
+        if (mode == Backend.IJK) launchOwnerHeartbeat(wifi.network, gw)
         ijkRetryCount = 0
         ijkRecoveryPending = false
         ijkLastStopCause = "Chưa có"
@@ -170,6 +182,85 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         when (mode) {
             Backend.IJK -> startIjk(generation)
             Backend.DIRECT -> startDirect(generation)
+        }
+    }
+
+
+    /**
+     * Explicit owner interaction only. This workflow requires the physical
+     * confirmation button on the A500S and stores a session token privately.
+     * Re-pair if the camera was reset or a registration reply is rejected.
+     */
+    private fun pairA500s() {
+        stopPlayback()
+        val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val wifi = CameraConnectionCheck.wifi(cm)
+        val net = wifi.network
+        val host = wifi.gateway
+        val localIp = net?.let {
+            cm.getLinkProperties(it)?.linkAddresses?.mapNotNull { address ->
+                (address.address as? Inet4Address)?.hostAddress
+            }?.firstOrNull()
+        }
+        if (net == null || host == null || localIp == null) {
+            showStatus("Kết nối Wi-Fi A500S trước khi ghép đôi")
+            return
+        }
+        val token = generation
+        val session = A500sOwnerSession(net, host, localIp) { msg ->
+            runOnUiThread {
+                if (generation == token) showStatus(msg)
+            }
+        }
+        ownerSession = session
+        pairButton.isEnabled = false
+        showStatus("Đang gửi yêu cầu ghép đôi. Hãy chuẩn bị xác nhận trên camera.")
+        val userId = (1_000_000 + SecureRandom().nextInt(8_000_000)).toString()
+        Thread({
+            try {
+                val pairedToken = session.pairWithPhysicalConfirmation(userId)
+                runOnUiThread {
+                    if (generation == token) {
+                        getSharedPreferences("a500s_owner", MODE_PRIVATE)
+                            .edit().putString("paired_token", pairedToken).apply()
+                        showStatus("Ghép đôi A500S thành công; bật heartbeat 5 giây")
+                        pairButton.isEnabled = true
+                        begin(Backend.IJK)
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    if (generation == token) {
+                        pairButton.isEnabled = true
+                        showStatus("Ghép đôi thất bại: " +
+                            (e.message ?: e.javaClass.simpleName).take(180))
+                    }
+                }
+            }
+        }, "TTX-A500S-Physical-Pair").start()
+    }
+
+    private fun launchOwnerHeartbeat(wifi: Network, host: String) {
+        val storedToken = getSharedPreferences("a500s_owner", MODE_PRIVATE)
+            .getString("paired_token", null) ?: return
+        val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val phoneIp = cm.getLinkProperties(wifi)?.linkAddresses?.mapNotNull {
+            (it.address as? Inet4Address)?.hostAddress
+        }?.firstOrNull()
+        if (phoneIp == null) {
+            showStatus("Không tìm được địa chỉ Wi-Fi điện thoại cho đăng ký 70mai")
+            return
+        }
+        try {
+            val session = A500sOwnerSession(wifi, host, phoneIp) { msg ->
+                runOnUiThread {
+                    if (backend == Backend.IJK) showStatus(msg)
+                }
+            }
+            ownerSession = session
+            session.beginRegistration(storedToken)
+        } catch (e: Exception) {
+            showStatus("Không bật được owner heartbeat: " + e.javaClass.simpleName)
         }
     }
 
@@ -413,12 +504,16 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     detailView.text = String.format(Locale.US,
                         "IJK/FFmpeg · %d×%d · giải mã %.1f FPS · xuất %.1f FPS\n" +
                             "Đệm %dms · đang phát %s · phiên %ds · khôi phục %d/5\n" +
-                            "Lỗi cuối: %s",
+                            "A500S CGI: %d/%d OK · %s\nLỗi cuối: %s",
                         media?.videoWidth ?: 0, media?.videoHeight ?: 0,
                         decodeFps, outputFps, cachedMs,
                         if (nativePlaying) "CÓ" else "KHÔNG",
                         (now - ijkOpenedAtMs).coerceAtLeast(0L) / 1000L,
-                        ijkRetryCount, ijkLastStopCause)
+                        ijkRetryCount, ownerSession?.ok ?: 0L,
+                        ownerSession?.sent ?: 0L,
+                        (ownerSession?.failure ?: "").ifBlank {
+                            if (ownerSession == null) "chưa ghép đôi" else "đang duy trì"
+                        }, ijkLastStopCause)
                 } else {
                     detailView.text = "Chỉ gồm hai bộ phát: IJKPlayer và Direct MediaCodec."
                 }
@@ -430,6 +525,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private fun stopPlayback() {
         generation++
         backend = null
+        ownerSession?.close()
+        ownerSession = null
+        if (::pairButton.isInitialized) pairButton.isEnabled = true
         direct?.close()
         direct = null
         ijkRecoveryPending = false
