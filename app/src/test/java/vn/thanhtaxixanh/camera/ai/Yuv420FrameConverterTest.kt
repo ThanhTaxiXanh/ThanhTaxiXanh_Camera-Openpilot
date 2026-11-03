@@ -18,7 +18,7 @@ class Yuv420FrameConverterTest {
 
     @Test fun handlesInterleavedUvAndPaddedRows() {
         val yy=byteArrayOf(81,81,0,81,81,0)
-        val u=byteArrayOf(90,240,10)
+        val u=byteArrayOf(90,240.toByte(),10)
         val v=byteArrayOf(240.toByte(),90,10)
         val f=Yuv420FrameConverter.Frame(
             2,2,Yuv420FrameConverter.Plane(yy,3,1),
