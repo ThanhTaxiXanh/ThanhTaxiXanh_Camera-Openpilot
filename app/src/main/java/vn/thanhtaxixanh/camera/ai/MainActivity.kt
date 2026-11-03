@@ -55,6 +55,14 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private var previousAccessUnits = 0L
     private var previousDecoded = 0L
     private var previousRendered = 0L
+    private var ijkRecoveryPending = false
+    private var ijkRetryCount = 0
+    private var ijkOpenedAtMs = 0L
+    private var ijkFirstVideoAtMs = 0L
+    private var ijkLastHealthyMs = 0L
+    private var ijkHadFps = false
+    private var ijkZeroFpsSamples = 0
+    private var ijkLastStopCause = "Chưa có"
     private var lastMessage = "Chưa kết nối"
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -155,6 +163,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         retryCount = 0
         preferUdp = true
         startedAt = SystemClock.elapsedRealtime()
+        ijkRetryCount = 0
+        ijkRecoveryPending = false
+        ijkLastStopCause = "Chưa có"
         showStatus(wifi.detail + " · " + url)
         when (mode) {
             Backend.IJK -> startIjk(generation)
@@ -163,19 +174,28 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun startIjk(token: Int) {
+        if (token != generation || backend != Backend.IJK) return
         val currentUrl = url ?: return
         val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
         val wifi = network ?: return
-        // IJKPlayer's native sockets do not accept Android Network; bind only
-        // while this player is active, then restore the normal process route.
+        if (!surfaceView.holder.surface.isValid) {
+            showStatus("Surface không còn khả dụng; đang dừng IJK.")
+            return
+        }
         if (!cm.bindProcessToNetwork(wifi)) {
-            showStatus("Không thể gắn IJKPlayer vào Wi-Fi camera")
+            showStatus("Không thể gắn IJK/FFmpeg vào Wi-Fi camera")
             backend = null
             return
         }
+        ijkOpenedAtMs = SystemClock.elapsedRealtime()
+        ijkFirstVideoAtMs = 0L
+        ijkLastHealthyMs = 0L
+        ijkZeroFpsSamples = 0
+        ijkHadFps = false
         try {
             val player = IjkMediaPlayer()
             ijk = player
+            // Keep the exact V1.0.2 settings reported as smooth.
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_transport", "tcp")
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 1L)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 1L)
@@ -185,29 +205,86 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             player.setDisplay(surfaceView.holder)
             player.setDataSource(currentUrl)
             player.setOnPreparedListener {
-                if (token == generation && backend == Backend.IJK) {
+                if (token == generation && backend == Backend.IJK && ijk === player) {
                     it.start()
-                    showStatus("IJKPlayer đã chuẩn bị H.264, đang nhận hình")
+                    showStatus("70mai IJK: đang phát (phiên mới)")
                 }
             }
+            player.setOnCompletionListener {
+                if (token == generation && backend == Backend.IJK && ijk === player)
+                    recoverIjk(token, "RTSP kết thúc (OnCompletion)")
+            }
             player.setOnErrorListener { _, what, extra ->
-                if (token == generation && backend == Backend.IJK)
-                    showStatus("IJK lỗi " + what + "/" + extra +
-                        " – thử xADAS hoặc kiểm tra Wi-Fi")
+                if (token == generation && backend == Backend.IJK && ijk === player)
+                    recoverIjk(token, "IJK OnError=$what/$extra")
                 true
             }
             player.setOnInfoListener { _, what, _ ->
-                if (token == generation && backend == Backend.IJK &&
-                    what == 3) showStatus("IJK: decoder đã xuất khung video đầu tiên")
+                if (token == generation && backend == Backend.IJK && ijk === player) {
+                    when (what) {
+                        3 -> {
+                            ijkFirstVideoAtMs = SystemClock.elapsedRealtime()
+                            ijkLastHealthyMs = ijkFirstVideoAtMs
+                            showStatus("IJK: đã nhận khung hình đầu tiên")
+                        }
+                        701 -> showStatus("IJK: đang đệm dữ liệu...")
+                        702 -> showStatus("IJK: tiếp tục phát sau đệm")
+                    }
+                }
                 false
             }
             player.prepareAsync()
         } catch (error: Throwable) {
-            if (token == generation) showStatus(
-                "Không thể mở IJK native: " + error.javaClass.simpleName +
-                    ": " + (error.message ?: "").take(180))
-            stopPlayback()
+            if (token == generation && backend == Backend.IJK) {
+                recoverIjk(token, "Khởi tạo IJK: " +
+                    error.javaClass.simpleName + ": " + (error.message ?: "").take(100))
+            }
         }
+    }
+
+    /**
+     * Recovery for a camera ending an IJK RTSP session at approximately 30s.
+     * Does not claim to fix missing authenticated camera CGI heartbeat.
+     * Old native IJK is released BEFORE opening a new session.
+     */
+    private fun recoverIjk(token: Int, reason: String) {
+        if (token != generation || backend != Backend.IJK || ijkRecoveryPending) return
+        ijkRecoveryPending = true
+        ijkLastStopCause = reason.take(140)
+        val now = SystemClock.elapsedRealtime()
+        if (ijkFirstVideoAtMs > 0L && now - ijkFirstVideoAtMs >= 15_000L)
+            ijkRetryCount = 0
+        ijkRetryCount++
+        if (ijkRetryCount > 5) {
+            showStatus("IJK dừng sau 5 lần lỗi liên tiếp: " + reason)
+            val old = ijk
+            ijk = null
+            backend = null
+            ijkRecoveryPending = false
+            Thread({ releaseIjk(old) }, "TTX-IJK-Release").start()
+            return
+        }
+        val delay = longArrayOf(500L, 1200L, 2500L, 4000L, 6000L)[ijkRetryCount-1]
+        val old = ijk
+        ijk = null
+        showStatus("IJK ngắt sau " + ((now - ijkOpenedAtMs)/1000) +
+            "s · " + reason + " · khôi phục " + ijkRetryCount + "/5")
+        Thread({
+            releaseIjk(old)
+            ui.postDelayed({
+                if (token != generation || backend != Backend.IJK ||
+                    !ijkRecoveryPending) return@postDelayed
+                ijkRecoveryPending = false
+                startIjk(token)
+            }, delay)
+        },"TTX-IJK-Release").start()
+    }
+
+    private fun releaseIjk(player: IjkMediaPlayer?) {
+        if (player == null) return
+        try { player.setDisplay(null) } catch (_: Throwable) {}
+        try { player.stop() } catch (_: Throwable) {}
+        try { player.release() } catch (_: Throwable) {}
     }
 
     private fun startDirect(token: Int) {
@@ -300,10 +377,45 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     previousSampleTime = now
                 } else if (backend == Backend.IJK) {
                     val media = ijk
-                    detailView.text = "IJK/FFmpeg · " +
-                        (media?.videoWidth ?: 0) + "×" + (media?.videoHeight ?: 0) +
-                        " · RTSP/TCP · MediaCodec ưu tiên · " +
-                        ((SystemClock.elapsedRealtime() - startedAt) / 1000) + "s"
+                    val now = SystemClock.elapsedRealtime()
+                    var decodeFps = 0f
+                    var outputFps = 0f
+                    var cachedMs = 0L
+                    var nativePlaying = false
+                    if (media != null) {
+                        try {
+                            decodeFps = media.videoDecodeFramesPerSecond
+                            outputFps = media.videoOutputFramesPerSecond
+                            cachedMs = media.videoCachedDuration
+                            nativePlaying = media.isPlaying
+                        } catch (_: Throwable) {}
+                    }
+                    if (!ijkRecoveryPending && media != null) {
+                        if (outputFps > 2f) {
+                            ijkHadFps = true
+                            ijkLastHealthyMs = now
+                            ijkZeroFpsSamples = 0
+                        } else if (ijkHadFps && now - ijkLastHealthyMs > 5500L) {
+                            ijkZeroFpsSamples++
+                            if (ijkZeroFpsSamples >= 2)
+                                recoverIjk(generation,
+                                    "Không còn khung IJK >5 giây (decode=" +
+                                    "%.1f/output=%.1f)".format(
+                                        Locale.US, decodeFps, outputFps))
+                        } else if (ijkFirstVideoAtMs == 0L &&
+                            now - ijkOpenedAtMs > 12000L) {
+                            recoverIjk(generation, "IJK chưa xuất khung sau 12 giây")
+                        }
+                    }
+                    detailView.text = String.format(Locale.US,
+                        "IJK/FFmpeg · %d×%d · giải mã %.1f FPS · xuất %.1f FPS\n" +
+                            "Đệm %dms · đang phát %s · phiên %ds · khôi phục %d/5\n" +
+                            "Lỗi cuối: %s",
+                        media?.videoWidth ?: 0, media?.videoHeight ?: 0,
+                        decodeFps, outputFps, cachedMs,
+                        if (nativePlaying) "CÓ" else "KHÔNG",
+                        (now - ijkOpenedAtMs).coerceAtLeast(0L) / 1000L,
+                        ijkRetryCount, ijkLastStopCause)
                 } else {
                     detailView.text = "Chỉ gồm hai bộ phát: IJKPlayer và Direct MediaCodec."
                 }
@@ -317,13 +429,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         backend = null
         direct?.close()
         direct = null
+        ijkRecoveryPending = false
         val old = ijk
         ijk = null
-        if (old != null) {
-            try { old.setDisplay(null) } catch (_: Throwable) {}
-            try { old.stop() } catch (_: Throwable) {}
-            try { old.release() } catch (_: Throwable) {}
-        }
+        if (old != null) Thread({ releaseIjk(old) }, "TTX-IJK-Stop").start()
         val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
         cm.bindProcessToNetwork(null)
         network = null
