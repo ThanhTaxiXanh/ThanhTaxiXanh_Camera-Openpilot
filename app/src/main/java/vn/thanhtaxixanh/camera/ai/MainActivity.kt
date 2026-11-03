@@ -56,6 +56,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private var startedAt = 0L
     private var previousSampleTime = 0L
     private var previousPackets = 0L
+    private var previousMarkers = 0L
+    private var previousRtpClocks = 0L
     private var previousAccessUnits = 0L
     private var previousDecoded = 0L
     private var previousRendered = 0L
@@ -384,6 +386,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         if (!surfaceView.holder.surface.isValid) return
         previousSampleTime = 0L
         previousPackets = 0L
+        previousMarkers = 0L
+        previousRtpClocks = 0L
         previousAccessUnits = 0L
         previousDecoded = 0L
         previousRendered = 0L
@@ -452,19 +456,26 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     val dt = if (previousSampleTime == 0L) 2.0
                         else (now - previousSampleTime).coerceAtLeast(1L) / 1000.0
                     val packets = (s.rtp.packets - previousPackets).coerceAtLeast(0L)
+                    val markers = (s.rtp.markers - previousMarkers).coerceAtLeast(0L)
+                    val rtpClocks = (s.rtp.timestampChanges - previousRtpClocks)
+                        .coerceAtLeast(0L)
                     val au = (s.receivedAccessUnits - previousAccessUnits).coerceAtLeast(0L)
                     val decoded = (s.decoded - previousDecoded).coerceAtLeast(0L)
                     val shown = (s.rendered - previousRendered).coerceAtLeast(0L)
                     detailView.text = String.format(Locale.US,
                         "%s · RTP %.1f/s · AU %.1f/s · giải mã %.1f/s · Surface %.1f/s\n" +
+                            "Nguồn RTP: marker %.1f/s · đổi PTS %.1f/s · jitter %.1fms\n" +
                             "RTP gap %d · H264 hỏng %d · đệm %d/48\n" +
                             "UDP đến lệch: %d · khôi phục %d · thiếu %d gói\n" +
                             "RTSP heartbeat %d/%d OK · reconnect %d/3",
                         s.transportName, packets / dt, au / dt, decoded / dt, shown / dt,
+                        markers / dt, rtpClocks / dt, s.rtp.jitterTicks / 90.0,
                         s.rtp.sequenceGaps, s.discardedAccessUnits, s.queueDepth,
                         s.udpReordered, s.udpRecovered, s.udpSkipped,
                         s.keepAliveOk, s.keepAliveSent, retryCount)
                     previousPackets = s.rtp.packets
+                    previousMarkers = s.rtp.markers
+                    previousRtpClocks = s.rtp.timestampChanges
                     previousAccessUnits = s.receivedAccessUnits
                     previousDecoded = s.decoded
                     previousRendered = s.rendered
