@@ -745,9 +745,9 @@ class MainActivity : ComponentActivity() {
         // The user's V0.9.8 recording shows PLAY/SETUP OK but RTP=0,
         // H264 AU=0, codec FPS=0 in UDP. Reconnecting UDP repeatedly is
         // not a recovery. Automatically try a fresh TCP SETUP instead.
-        val missingVideo = reason.contains("zero video packets", ignoreCase = true) ||
-            reason.contains("zero H264 access units", ignoreCase = true)
-        if (directUdpMode && missingVideo) {
+        if (CameraRtspFailoverPolicy.shouldTryTcp(
+                directUdpMode, directPlayer?.counters()?.transportName, reason
+            )) {
             directUdpMode = false
             report.text = (report.text.toString() +
                 "\nA500S UDP không nhận hình · tự chuyển DIRECT TCP " +
