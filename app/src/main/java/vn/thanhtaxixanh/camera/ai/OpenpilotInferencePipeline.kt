@@ -139,9 +139,15 @@ class OpenpilotInferencePipeline(
             // must never be released from the codec or main UI thread.
             Thread({
                 try {
-                    executor.awaitTermination(2500L,
-                        java.util.concurrent.TimeUnit.MILLISECONDS)
+                    // Native ONNX execution may ignore interruption. Never
+                    // release its session while an inference call is running.
+                    while (!executor.awaitTermination(
+                            1L, java.util.concurrent.TimeUnit.SECONDS)) {
+                        // Detached daemon thread: no UI/codec thread is blocked.
+                    }
                     engine.close()
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
                 } catch (_: Exception) {}
             }, "TTX-Openpilot-Shutdown").start()
         }
