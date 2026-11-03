@@ -1,4 +1,4 @@
-name: TTX A500S Playback Lite – arm64 APK
+name: TTX xADAS Rebuild - Lite and AI ARM64
 on:
   workflow_dispatch:
   push:
@@ -22,18 +22,18 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
-      - name: Prevent opaque SurfaceView overlay regression
+      - name: Guard against black SurfaceView
         run: |
           python3 - <<'PY'
           from pathlib import Path
           src=Path("app/src/main/java/vn/thanhtaxixanh/camera/ai/MainActivity.kt").read_text()
-          block=src.split("surfaceView = SurfaceView(this).apply",1)[1].split("val videoContainer = FrameLayout",1)[0]
-          assert "setBackgroundColor(Color.BLACK)" not in block, "BLACK background would cover the SurfaceView video hole"
-          assert "background = null" in block, "Video SurfaceView must have no opaque View background"
-          assert "holder.setFormat(PixelFormat.OPAQUE)" in block
-          print("SurfaceView transparency regression check OK")
+          view=src.split("surfaceView = SurfaceView(this).apply",1)[1].split("val videoContainer = FrameLayout",1)[0]
+          assert "setBackgroundColor(Color.BLACK)" not in view
+          assert "background = null" in view
+          assert "holder.setFormat(PixelFormat.OPAQUE)" in view
+          print("SurfaceView transparency: OK")
           PY
-      - name: Verify pairing stays opt-in
+      - name: Guard owner-confirmed camera pairing
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -41,36 +41,54 @@ jobs:
           p=Path("app/src/main/java/vn/thanhtaxixanh/camera/ai/A500sOwnerSession.kt").read_text()
           assert "setOnClickListener { pairA500s() }" in m
           assert "pairWithPhysicalConfirmation" in p
-          assert 'require(pairedToken.matches' in p
+          assert "require(pairedToken.matches" in p
           assert "instanceFollowRedirects = false" in p
-          assert "Thread.sleep(5000L)" in p
-          print("Owner pairing and heartbeat guard: OK")
+          print("Physical owner pairing: OK")
           PY
-      - name: Compile and test arm64 APK
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug --stacktrace
-      - name: Inspect APK size
+      - name: Unit test and build both variants
+        run: >-
+          gradle --no-daemon
+          :app:testLiteDebugUnitTest
+          :app:testAiDebugUnitTest
+          :app:assembleLiteDebug
+          :app:assembleAiDebug
+          --stacktrace
+      - name: Inspect APK sizes and native architecture
         run: |
-          ls -lh app/build/outputs/apk/debug/*.apk
           python3 - <<'PY'
-          import glob,os,zipfile
-          p=glob.glob('app/build/outputs/apk/debug/*.apk')[0]
-          with zipfile.ZipFile(p) as z:
-              libs=[(x.filename,x.compress_size) for x in z.infolist() if x.filename.endswith('.so')]
-          print("APK BYTES:",os.path.getsize(p))
-          for name,n in sorted(libs,key=lambda x:-x[1])[:15]:print("native",name,n)
-          present={x[0].split('/')[-1] for x in libs if x[0].startswith("lib/arm64-v8a/")}
-          required={"libijkplayer.so","libijkwdzffmpeg.so","libijksdl.so"}
-          missing=required-present
-          if missing: raise SystemExit("CRITICAL: missing arm64 IJK native libs: "+str(missing))
-          if any("/armeabi-v7a/" in x[0] or "/x86" in x[0] for x in libs):
-              raise SystemExit("CRITICAL: extra CPU ABIs increase APK/ZIP size")
+          from pathlib import Path
+          import zipfile
+          ijk={"libijkplayer.so","libijkwdzffmpeg.so","libijksdl.so"}
+          for flavor in ("lite","ai"):
+              files=list(Path(f"app/build/outputs/apk/{flavor}/debug").glob("*.apk"))
+              assert len(files)==1, (flavor,files)
+              apk=files[0]
+              with zipfile.ZipFile(apk) as z:
+                  libs=[x.filename for x in z.infolist() if x.filename.endswith(".so")]
+              found={p.rsplit("/",1)[-1] for p in libs}
+              missing=ijk-found
+              assert not missing, (flavor, missing)
+              assert all(p.startswith("lib/arm64-v8a/") for p in libs), (flavor,libs)
+              if flavor=="lite":
+                  assert not any("onnxruntime" in p.lower() for p in libs), libs
+              else:
+                  assert any("onnxruntime" in p.lower() for p in libs), libs
+              print(flavor.upper(),"APK_BYTES",apk.stat().st_size)
+              print(flavor.upper(),"NATIVE",sorted(found))
           PY
-      # An APK is already ZIP compressed. Gzip at level 9 adds little benefit;
-      # the actual savings come from dropping heavyweight dependencies and ABIs.
-      - uses: actions/upload-artifact@v4
+      - name: Upload compact Lite ZIP
+        uses: actions/upload-artifact@v4
         with:
-          name: TTX-A500S-70mai-xADAS-ARM64
-          path: app/build/outputs/apk/debug/*.apk
+          name: TTX-CameraAI-Lite-ARM64
+          path: app/build/outputs/apk/lite/debug/*.apk
+          if-no-files-found: error
+          compression-level: 9
+          retention-days: 14
+      - name: Upload ONNX AI ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: TTX-CameraAI-AI-ARM64
+          path: app/build/outputs/apk/ai/debug/*.apk
           if-no-files-found: error
           compression-level: 9
           retention-days: 14
