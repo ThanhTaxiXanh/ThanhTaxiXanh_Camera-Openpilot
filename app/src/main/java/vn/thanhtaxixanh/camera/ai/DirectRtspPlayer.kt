@@ -17,6 +17,8 @@ import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
 import java.net.DatagramPacket
+import java.net.InetAddress
+import java.security.SecureRandom
 import java.net.URI
 import java.net.Socket
 import java.nio.ByteBuffer
@@ -50,7 +52,9 @@ class DirectRtspPlayer(
         val queueDepth: Int, val peakQueueDepth: Long, val overflows: Long,
         val keepAliveSent: Long, val keepAliveOk: Long,
         val keepAliveUnsupported: Long, val reconnectReason: String,
-        val transportName: String, val udpPackets: Long
+        val transportName: String, val udpPackets: Long,
+        val rtp: RtpReceiverDiagnostics.Snapshot,
+        val rtcpSent: Long, val discardedAccessUnits: Long
     )
     private data class Sample(val data: ByteArray, val timestampUs: Long)
     private val alive = AtomicBoolean(false)
@@ -70,6 +74,10 @@ class DirectRtspPlayer(
     private val keepAliveOk = AtomicLong()
     private val keepAliveUnsupported = AtomicLong()
     private val udpPackets = AtomicLong()
+    private val rtpDiagnostics = RtpReceiverDiagnostics()
+    private val discardedAccessUnits = AtomicLong()
+    private val rtcpSent = AtomicLong()
+    private val rtcpReporterSsrc = SecureRandom().nextInt()
     @Volatile private var activeTransportName = "RTSP TCP"
     @Volatile private var lastNetworkFailure = ""
     private val explicitlyClosed = AtomicBoolean(false)
@@ -96,7 +104,8 @@ class DirectRtspPlayer(
         compressedBytes.get(), inputWaitMs.get(),
         frames.size, queuePeak.get(), queueOverflows.get(),
         keepAliveSent.get(), keepAliveOk.get(), keepAliveUnsupported.get(),
-        lastNetworkFailure, activeTransportName, udpPackets.get()
+        lastNetworkFailure, activeTransportName, udpPackets.get(),
+        rtpDiagnostics.snapshot(), rtcpSent.get(), discardedAccessUnits.get()
     )
     fun start() {
         check(alive.compareAndSet(false, true)) { "Already started" }
@@ -342,8 +351,14 @@ class DirectRtspPlayer(
             val timeoutSecs = RtspSessionMaintenance.timeoutSeconds(sessionHeader)
             val intervalMs = RtspSessionMaintenance.intervalMs(timeoutSecs)
             val aggregate=if(describe.sdp.lines().any { it.trim()=="a=control:*" })base else url
-            val rtpChannel = Regex("interleaved=(\\d+)-").find(setup.header("transport"))
+            val rtpChannel = Regex("interleaved=(\\d+)-").find(negotiated)
                 ?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val rtcpChannel = Regex("interleaved=\\d+-(\\d+)").find(negotiated)
+                ?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            val serverRtcpPort = Regex("server_port=\\d+-(\\d+)").find(negotiated)
+                ?.groupValues?.get(1)?.toIntOrNull()
+            if (useUdp && serverRtcpPort == null)
+                status("SETUP UDP không trả server_port cho RTCP: chỉ đo RTP")
             val earlyMedia = ArrayDeque<ByteArray>()
             var earlyBytes = 0
             val play=request(wire,dst,3,"PLAY",aggregate,
@@ -358,7 +373,7 @@ class DirectRtspPlayer(
             status("RTSP PLAY 200 · session timeout="+timeoutSecs+
                 "s · keepalive mỗi "+intervalMs/1000+"s")
             createDecoder(describe.sdp)
-            val assemble=Assembler(::enqueue,dropped)
+            val assemble=Assembler(::enqueue,dropped,rtpDiagnostics,discardedAccessUnits)
             if (!useUdp) earlyMedia.forEach { assemble.accept(it) }
 
             val lastRtpAt = AtomicLong(SystemClock.elapsedRealtime())
@@ -398,6 +413,7 @@ class DirectRtspPlayer(
             }
 
             var nextSequence = 4
+            var nextRtcpAt = SystemClock.elapsedRealtime() + 5000L
             var nextKeepAliveAt = SystemClock.elapsedRealtime() + intervalMs
             var pendingSeq = -1
             var pendingAt = 0L
@@ -407,6 +423,33 @@ class DirectRtspPlayer(
                 val now=SystemClock.elapsedRealtime()
                 if (now-lastRtpAt.get()>12000L) {
                     error("RTP timeout: no H264 packets for 12 seconds")
+                }
+                // xADAS 0.2.7 also issues RTCP receiver reports every
+                // approximately five seconds. This is feedback, not a
+                // guarantee that the camera will increase its frame rate.
+                if (now >= nextRtcpAt) {
+                    nextRtcpAt = now + 5000L
+                    val feedback = RtcpReceiverReport.compound(
+                        rtcpReporterSsrc, rtpDiagnostics.snapshot())
+                    if (feedback.isNotEmpty()) {
+                        try {
+                            if (useUdp && serverRtcpPort != null) {
+                                udpPorts?.rtcp?.send(DatagramPacket(
+                                    feedback, feedback.size,
+                                    InetAddress.getByName(host), serverRtcpPort))
+                                rtcpSent.incrementAndGet()
+                            } else if (!useUdp && rtcpChannel in 0..255) {
+                                val header = byteArrayOf(0x24, rtcpChannel.toByte(),
+                                    (feedback.size ushr 8).toByte(), feedback.size.toByte())
+                                dst.write(header)
+                                dst.write(feedback)
+                                dst.flush()
+                                rtcpSent.incrementAndGet()
+                            }
+                        } catch (e: Exception) {
+                            status("RTCP feedback lỗi: " + e.javaClass.simpleName)
+                        }
+                    }
                 }
                 if (pendingSeq>=0 && now-pendingAt>9000L) {
                     // Do not block the video reader waiting for keepalive replies.
@@ -480,7 +523,10 @@ class DirectRtspPlayer(
         }
     }
     private class Assembler(
-        val emit:(ByteArray,Long)->Unit, val lost:AtomicLong
+        val emit:(ByteArray,Long)->Unit,
+        val lost:AtomicLong,
+        val meter:RtpReceiverDiagnostics,
+        val discarded:AtomicLong
     ) {
         private val out=ByteArrayOutputStream(65536)
         private var ts=-1L
@@ -492,10 +538,14 @@ class DirectRtspPlayer(
             out.write(prefix);out.write(packet,offset,length)
         }
         private fun flush() {
-            if(out.size()>0 && !broken)emit(out.toByteArray(),ts)
+            if (out.size()>0) {
+                if (!broken) emit(out.toByteArray(),ts)
+                else discarded.incrementAndGet()
+            }
             out.reset();broken=false
         }
         fun accept(p:ByteArray) {
+            meter.observe(p)
             if(p.size<13 || (p[0].toInt() and 0xC0)!=0x80)return
             val cc=p[0].toInt() and 15
             var o=12+4*cc
