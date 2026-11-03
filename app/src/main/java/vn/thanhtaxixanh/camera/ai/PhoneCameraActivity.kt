@@ -15,6 +15,8 @@ import android.media.ImageReader
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
+import java.io.File
 import android.view.Gravity
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -40,6 +42,11 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
     private var reader: ImageReader? = null
     private var started = false
     private val framesReceived = AtomicLong(0L)
+    @Volatile private var vision: OpenpilotInferencePipeline? = null
+    private var lastVisionCaptureMs = 0L
+    private var previousVisionFrame: IntArray? = null
+    private lateinit var aiButton: Button
+    private var loadingAi = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -64,11 +71,107 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
             setPadding(10,12,10,12)
         }
         body.addView(status)
+        aiButton=Button(this).apply {
+            text="AI: TẮT · CHẨN ĐOÁN TENSOR"
+            setOnClickListener { toggleVisionDiagnostics() }
+        }
+        body.addView(aiButton)
         body.addView(Button(this).apply {
             text="ĐÓNG CAMERA"
             setOnClickListener { finish() }
         })
         setContentView(body)
+    }
+
+
+    /**
+     * Toggle real ONNX inference of an authorized user model.
+     * Reconstructed camera warp is NOT calibrated: raw diagnostics only,
+     * never lanes/distance/warnings. The Lite variant has no runtime.
+     */
+    private fun toggleVisionDiagnostics() {
+        if (loadingAi) return
+        if (vision != null) {
+            vision?.close()
+            vision=null
+            previousVisionFrame=null
+            aiButton.text="AI: TẮT · CHẨN ĐOÁN TENSOR"
+            status.text="Đã tắt suy luận AI thử nghiệm."
+            return
+        }
+        val model=File(filesDir,"models/vision.onnx")
+        if (!model.isFile) {
+            status.text="Hãy nhập model ONNX được phép sử dụng từ màn hình Openpilot."
+            return
+        }
+        loadingAi=true
+        aiButton.isEnabled=false
+        status.text="Đang mở ONNX và xác minh model (không hiệu chuẩn)..."
+        Thread({
+            var candidate: OpenpilotInferencePipeline?=null
+            var failure: String?=null
+            try {
+                val runner=VisionModelBackend.openEngine(model)
+                    ?: error("Bản Lite không có runtime; cần bản TTX AI")
+                // Synthetic center cropping for structural pipeline testing
+                // only; the physical camera intrinsics/warp are NOT verified.
+                val mainWarp=VirtualCameraWarp.Matrix(doubleArrayOf(
+                    1.0,0.0,64.0,0.0,1.0,112.0,0.0,0.0,1.0))
+                val wideWarp=VirtualCameraWarp.Matrix(doubleArrayOf(
+                    1.2,0.0,13.0,0.0,1.2,86.0,0.0,0.0,1.0))
+                candidate=OpenpilotInferencePipeline(
+                    runner,mainWarp,wideWarp,
+                    calibration=null,sourceWidth=640,sourceHeight=480,
+                    nowMs={ SystemClock.elapsedRealtime() }) { result ->
+                    runOnUiThread {
+                        if (vision != null && !isFinishing)
+                            status.text="Openpilot RAW: " + result.status +
+                                " · inference " + result.runtimeMs + "ms" +
+                                " · lane metric: CHƯA HIỆU CHUẨN"
+                    }
+                }
+            } catch (e:Exception) {
+                failure=e.message ?: e.javaClass.simpleName
+            }
+            val newPipeline=candidate
+            runOnUiThread {
+                loadingAi=false
+                aiButton.isEnabled=true
+                if (isFinishing || isDestroyed) {
+                    newPipeline?.close()
+                } else if (failure!=null) {
+                    status.text="Không mở được AI: " + failure
+                    newPipeline?.close()
+                } else {
+                    vision=newPipeline
+                    previousVisionFrame=null
+                    aiButton.text="AI: RAW ONNX ĐANG CHẠY · BẤM ĐỂ TẮT"
+                    status.text="AI ONNX thử nghiệm trên YUV điện thoại; " +
+                        "không dùng kết quả để cảnh báo."
+                }
+            }
+        },"TTX-Openpilot-Load").start()
+    }
+
+    /** Camera callback performs at most one YUV copy every ~350ms. */
+    private fun acceptYuv(image: android.media.Image) {
+        framesReceived.incrementAndGet()
+        val current=vision ?: return
+        val now=SystemClock.elapsedRealtime()
+        if (now-lastVisionCaptureMs<350L) return
+        lastVisionCaptureMs=now
+        try {
+            val argb=Yuv420FrameConverter.argb(AndroidYuvImageBridge.snapshot(image))
+            val prev=previousVisionFrame
+            previousVisionFrame=argb
+            if (prev!=null) {
+                current.offer(OpenpilotInferencePipeline.PairSample(prev,argb,now))
+            }
+        } catch (e:Exception) {
+            runOnUiThread {
+                status.text="Khung YUV không hợp lệ: "+e.javaClass.simpleName
+            }
+        }
     }
 
     override fun onResume() {
@@ -126,12 +229,7 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
             val yuv=ImageReader.newInstance(640,480,ImageFormat.YUV_420_888,3)
             reader=yuv
             yuv.setOnImageAvailableListener({ source ->
-                source.acquireLatestImage()?.use {
-                    // The raw YUV source is now wired for a separate AI worker.
-                    // Decoding/warping is intentionally off until a validated
-                    // permitted model is enabled; never block the camera thread.
-                    framesReceived.incrementAndGet()
-                }
+                source.acquireLatestImage()?.use { acceptYuv(it) }
             },handler)
             val surfaces=listOf(preview.holder.surface,yuv.surface)
             device.createCaptureSession(surfaces,
@@ -197,6 +295,11 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun onPause() {
+        vision?.close()
+        vision=null
+        previousVisionFrame=null
+        if (::aiButton.isInitialized)
+            aiButton.text="AI: TẮT · CHẨN ĐOÁN TENSOR"
         closeCamera()
         if (::worker.isInitialized) {
             worker.quitSafely()
