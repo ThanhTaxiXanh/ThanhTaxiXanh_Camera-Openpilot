@@ -1,6 +1,8 @@
 package vn.thanhtaxixanh.camera.ai
 
 import android.app.Activity
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -40,6 +42,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private val ui = Handler(Looper.getMainLooper())
     private lateinit var surfaceView: SurfaceView
     private lateinit var adasHud: AdasHudView
+    private lateinit var gpsMonitor: GpsSpeedMonitor
+    private var gpsEnabled = false
     private lateinit var statusView: TextView
     private lateinit var detailView: TextView
     private lateinit var ijkButton: Button
@@ -80,6 +84,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        gpsMonitor = GpsSpeedMonitor(this)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.rgb(12, 16, 22))
@@ -138,6 +143,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             LinearLayout.LayoutParams(0, -2, 1f))
         navigation.addView(nav("OPENPILOT", VisionModelActivity::class.java),
             LinearLayout.LayoutParams(0, -2, 1f))
+        navigation.addView(Button(this).apply {
+            text = "GPS"
+            textSize = 10f
+            setOnClickListener { toggleGps() }
+        }, LinearLayout.LayoutParams(0, -2, 0.6f))
         root.addView(navigation)
 
         latencyButton = Button(this).apply {
@@ -198,6 +208,34 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             else 0
         if (::adasHud.isInitialized)
             adasHud.hudVisible = prefs.getBoolean(AdasPrefs.SHOW_LOGO, true)
+    }
+
+    private fun toggleGps() {
+        if (gpsEnabled) {
+            gpsMonitor.stop()
+            gpsEnabled = false
+            adasHud.speedKmh = null
+            showStatus("GPS đã dừng")
+            return
+        }
+        if (!gpsMonitor.hasPermission()) {
+            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 815)
+            return
+        }
+        gpsEnabled = gpsMonitor.start()
+        showStatus(if (gpsEnabled) "GPS bật, chờ tốc độ từ vệ tinh"
+            else "Không thể mở GPS. Hãy kiểm tra vị trí thiết bị.")
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 815) {
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED)
+                toggleGps()
+            else showStatus("Chưa cấp quyền GPS, không thể hiển thị tốc độ")
+        }
     }
 
     private fun label(text: String, size: Float, color: Int) = TextView(this).apply {
@@ -532,6 +570,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private val statusTicker = object : Runnable {
         override fun run() {
+            if (::adasHud.isInitialized && ::gpsMonitor.isInitialized)
+                adasHud.speedKmh = if (gpsEnabled) gpsMonitor.currentSpeed() else null
             if (::detailView.isInitialized) {
                 val d = direct
                 if (backend == Backend.DIRECT && d != null) {
@@ -642,6 +682,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onDestroy() {
         ui.removeCallbacksAndMessages(null)
+        gpsMonitor.stop()
         stopPlayback()
         super.onDestroy()
     }

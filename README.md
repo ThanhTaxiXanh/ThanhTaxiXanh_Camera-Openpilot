@@ -89,3 +89,8 @@ Official 70mai 4.5.0 is ~1 second behind reality, TTX IJK both TCP profiles ~3 s
 The owner requested restoring the **complete xADAS feature set** instead of continuing playback-only experiments. This build restores independent modules from earlier TTX development history: settings, 11-head Openpilot result contract (1576 float values), lane/lead/road edge output parser, 12-channel temporal YUV packing, and their unit tests. It adds three active navigation entries: camera sources (A500S RTSP and validated custom URL; other xADAS adapter types documented but disabled), ADAS settings, and Openpilot model status / private ONNX import. App ID stays vn.thanhtaxixanh.camera.ai. Both IJK/FFmpeg and custom RTSP/MediaCodec playback remain; no proprietary xADAS code, model weights or graphics are packaged.
 
 **Not a complete xADAS clone yet:** the ONNX import only stores a user-authorized file, not neural inference. The xADAS ONNX/NCNN runtime, direct YUV-to-virtual-warp pipeline, calibrated lane/lead projection, multi-brand camera handshake, GPS, PiP, audio warnings and UVC/CameraX still need independent implementation and validation. The HUD must never fabricate a lane or a distance. Full audited scope and acceptance criteria: docs/XADAS_REBUILD_FEATURE_MATRIX.md. Do not use the app as a safety control device.
+
+
+### GPS live speed (owner opt-in)
+
+GPS button requests runtime precise location permission and reads only Android GPS_PROVIDER speed. The HUD hides stale values after 3.5s; GPS is used for local display only and no history or coordinates are saved. It does not activate automatic distance warnings without calibrated AI lead detection.

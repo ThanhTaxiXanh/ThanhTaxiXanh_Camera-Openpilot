@@ -13,6 +13,8 @@ class AdasHudView(context: Context) : View(context) {
         color = Color.rgb(184, 229, 190)
         setShadowLayer(3f, 1f, 1f, Color.BLACK)
     }
+    var speedKmh: Float? = null
+        set(value) { field = value; invalidate() }
     var hudVisible = true
         set(value) { field = value; invalidate() }
 
@@ -25,6 +27,11 @@ class AdasHudView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (!hudVisible) return
+        speedKmh?.let { speed ->
+            if (speed.isFinite() && speed >= 0f)
+                canvas.drawText("%.0f km/h".format(java.util.Locale.US, speed),
+                    12f, 42f, label)
+        }
         canvas.drawText("TTX Camera AI · VIDEO / ADAS", 12f,
             (height - 24).coerceAtLeast(30).toFloat(), label)
     }
