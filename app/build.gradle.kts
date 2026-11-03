@@ -9,8 +9,8 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 20
-        versionName = "1.0.0-playback-lite"
+        versionCode = 21
+        versionName = "1.0.1-playback-lite"
         ndk {
             // Modern A500S Android test device: one CPU architecture only.
             abiFilters += "arm64-v8a"
@@ -31,9 +31,9 @@ android {
     }
 }
 dependencies {
-    // Public LGPL IJKPlayer build. 0.6.2 is NOT proven identical to the
+    // Public LGPL IJKPlayer build. 0.0.26 is NOT proven identical to the
     // library inside the official 70mai 4.5.0 APK.
-    implementation("com.mcxiaoke.ijk.media:ijkplayer-java:0.6.2")
-    implementation("com.mcxiaoke.ijk.media:ijkplayer-arm64:0.6.2")
+    implementation("io.github.jdpxiaoming:ijkplayer-java:0.0.26")
+    implementation("io.github.jdpxiaoming:ijkplayer-arm64:0.0.26")
     testImplementation("junit:junit:4.13.2")
 }

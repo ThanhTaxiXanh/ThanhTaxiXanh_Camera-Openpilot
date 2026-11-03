@@ -34,6 +34,12 @@ jobs:
               libs=[(x.filename,x.compress_size) for x in z.infolist() if x.filename.endswith('.so')]
           print("APK BYTES:",os.path.getsize(p))
           for name,n in sorted(libs,key=lambda x:-x[1])[:15]:print("native",name,n)
+          present={x[0].split('/')[-1] for x in libs if x[0].startswith("lib/arm64-v8a/")}
+          required={"libijkplayer.so","libijkffmpeg.so","libijksdl.so"}
+          missing=required-present
+          if missing: raise SystemExit("CRITICAL: missing arm64 IJK native libs: "+str(missing))
+          if any("/armeabi-v7a/" in x[0] or "/x86" in x[0] for x in libs):
+              raise SystemExit("CRITICAL: extra CPU ABIs increase APK/ZIP size")
           PY
       # An APK is already ZIP compressed. Gzip at level 9 adds little benefit;
       # the actual savings come from dropping heavyweight dependencies and ABIs.
