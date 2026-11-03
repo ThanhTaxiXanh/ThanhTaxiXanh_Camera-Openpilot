@@ -1,10 +1,10 @@
-# TTX Camera AI — 70mai / xADAS Playback Lite
+# TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.1.2-xadas-rebuild  
+**Version**: 1.2.1-xadas-core (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
-## Two playback tests — nothing else
+## Playback and ADAS development modules
 
 - **70MAI · IJK/FFMPEG**: Open-source IJKPlayer 0.0.26 + FFmpeg 4.0, RTSP/TCP and preferred MediaCodec. This **does not claim to be the same binary/version/settings** as the official 70mai 4.5.0, which the owner reports plays much smoother than xADAS. The official APK contains a version-dependent IJK-based player.
 - **xADAS · MEDIACODEC**: independent RTSP/RTP receiver with MediaCodec, UDP first and TCP fallback if zero RTP; a clean-room implementation based on observable architecture in xADAS, **not xADAS's original binaries**.
@@ -109,3 +109,16 @@ The camera source screen can probe only six read-only DESCRIBE requests that wer
 ### Phone camera source / Camera2
 
 Selecting **Camera điện thoại** in the source manager routes playback to an independent Android Camera2 preview with a parallel YUV_420_888 capture Surface. CAMERA runtime permission is requested only when using the phone source. The YUV ImageReader consumes the latest frame without blocking preview; Openpilot inference and safety warnings are OFF until calibrated models are verified. This is groundwork for xADAS phone-camera support, not confirmed hardware compatibility on every Android phone.
+
+## V1.2.1 — development before the next phone test
+
+Owner requirement: do not request a new phone/camera installation test until pre-device engineering readiness is at least 90%. This release has NOT reached that threshold.
+
+- Lite: ARM64 IJK/FFmpeg + RTSP, camera/GPS/PiP and settings; no ONNX native runtime.
+- AI: includes ONNX Runtime 1.31.1 and an independent model loader for explicitly authorized ONNX models; no xADAS proprietary models or code are distributed.
+- Real Phone Camera2 YUV can feed an optional OFFSCREEN raw inference diagnostic: stride-aware YUV420 -> temporal calibrated-warp API -> two 12-channel tensors -> ONNX -> Openpilot 1576-value parser. It is NOT calibrated, so no live lanes/distances/warnings are emitted.
+- Unit-tested temporal frame suppression, one-slot AI worker, perspective projection, model-confidence and age gate, headway/TTC passive decision logic, virtual-camera warp and YUV420 packing.
+- A500S IJK 3-second playback delay and 30-second RTSP completion are not resolved; Android Surface-configured MediaCodec cannot supply raw YUV to AI via getOutputImage.
+- USB/UVC and multiple other vendor-specific camera adapters are not implemented; real-world model warp/calibration and metric lead detection are still missing.
+
+See docs/PREDEVICE_90_GATE.md for required completion evidence. CI separately compiles/tests Lite and AI and checks all native libraries.

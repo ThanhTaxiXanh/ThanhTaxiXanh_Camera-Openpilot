@@ -64,7 +64,10 @@ jobs:
               assert len(files)==1, (flavor,files)
               apk=files[0]
               with zipfile.ZipFile(apk) as z:
-                  libs=[x.filename for x in z.infolist() if x.filename.endswith(".so")]
+                  names=z.namelist()
+                  libs=[p for p in names if p.endswith(".so")]
+                  assert not any(p.lower().endswith((".onnx",".ncnn",".param")) for p in names), (
+                      flavor,"no proprietary model weights may be bundled")
               found={p.rsplit("/",1)[-1] for p in libs}
               missing=ijk-found
               assert not missing, (flavor, missing)
