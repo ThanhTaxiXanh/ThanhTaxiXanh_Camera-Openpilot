@@ -9,11 +9,22 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 29
-        versionName = "1.1.2-xadas-rebuild"
+        versionCode = 30
+        versionName = "1.2.0-xadas-core"
         ndk {
             // Modern A500S Android test device: one CPU architecture only.
             abiFilters += "arm64-v8a"
+        }
+    }
+    flavorDimensions += "engine"
+    productFlavors {
+        create("lite") {
+            dimension = "engine"
+            versionNameSuffix = "-lite"
+        }
+        create("ai") {
+            dimension = "engine"
+            versionNameSuffix = "-ai"
         }
     }
     buildTypes {
@@ -35,5 +46,7 @@ dependencies {
     // library inside the official 70mai 4.5.0 APK.
     implementation("io.github.jdpxiaoming:ijkplayer-java:0.0.26")
     implementation("io.github.jdpxiaoming:ijkplayer-arm64:0.0.26")
+    // Include ONNX native runtime only in the AI APK, never in Lite.
+    "aiImplementation"("com.microsoft.onnxruntime:onnxruntime-android:1.31.1")
     testImplementation("junit:junit:4.13.2")
 }

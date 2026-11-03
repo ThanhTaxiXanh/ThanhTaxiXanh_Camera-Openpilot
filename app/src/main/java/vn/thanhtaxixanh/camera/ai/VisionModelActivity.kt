@@ -13,7 +13,7 @@ import java.security.MessageDigest
 
 /**
  * User-authorized optional ONNX import: no model data is bundled or uploaded.
- * Only file retention and SHA-256 validation. Inference/ADAS remains disabled
+ * File import and graph contract inspection; inference/ADAS remains disabled
  * until a verified native backend and camera calibration exist.
  */
 class VisionModelActivity : Activity() {
@@ -44,6 +44,21 @@ class VisionModelActivity : Activity() {
             "Có model tự nhập (" + dest.length()/1048576L + " MiB). AI chưa kích hoạt."
             else "Chưa nhập model. AI nhận diện làn và khoảng cách chưa kích hoạt.")
         body.addView(statusView)
+        body.addView(Button(this).apply {
+            text = "KIỂM TRA HỢP ĐỒNG MODEL (KHÔNG PHÁT CẢNH BÁO)"
+            setOnClickListener {
+                isEnabled = false
+                val trigger = this
+                statusView.text = "Đang kiểm tra cấu trúc mô hình..."
+                Thread({
+                    val result = VisionModelBackend.inspect(dest)
+                    runOnUiThread {
+                        trigger.isEnabled = true
+                        statusView.text = result.detail
+                    }
+                }, "TTX-ONNX-Contract-Check").start()
+            }
+        })
         body.addView(Button(this).apply {
             text = "NHẬP MODEL ONNX ĐƯỢC PHÉP SỬ DỤNG"
             setOnClickListener {
