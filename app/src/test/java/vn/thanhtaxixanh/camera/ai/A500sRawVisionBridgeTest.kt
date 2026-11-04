@@ -23,7 +23,7 @@ class A500sRawVisionBridgeTest {
         assertEquals(A500sRawVisionBridge.Verdict.WAITING_PAIR,
             bridge.accept(f, 9_600L))
         assertEquals(A500sRawVisionBridge.Verdict.SUBMITTED,
-            bridge.accept(f, 9_800L))
+            bridge.accept(f, 9_700L))
         assertEquals(A500sRawVisionBridge.Verdict.SUBMITTED,
             bridge.accept(f, 9_800L))
         assertEquals(2, received.size)
