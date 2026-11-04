@@ -1,6 +1,6 @@
 # TTX Camera AI — acceptance criteria before the next phone test
 
-Updated: 2026-11-04. V1.3.3. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-04. V1.3.4. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
 
 ## 90% engineering gate
 
@@ -29,7 +29,7 @@ Twenty criteria must be independently implemented and demonstrated with unit or 
 | 19 | GPS, PiP and settings | CODED; device unverified |
 | 20 | >5 minute uninterrupted stream and near-1s glass-to-glass latency | Experimental Direct AU freshness guard, codec-output age, P95 diagnostics and clean reconnect; NO real exposure-to-glass measurement. NOT PASS |
 
-Verdict: BELOW 90%. Do not ask the owner for a new on-device test yet. Only PASS CI items have offline evidence, CODED items need deeper validation, NOT READY items are incomplete.
+Progress: **7/20 = 35% PASS CI**. **Target >=18/20 = 90%**, with items #14–17 and #20 still mandatory and not satisfied. This is an acceptance-evidence ratio, NOT an estimated percentage of xADAS source/features cloned. Verdict: BELOW 90%. Do not ask the owner for a new on-device test yet. Only PASS CI items have offline evidence, CODED items need deeper validation, NOT READY items are incomplete.
 
 ## Priority development remaining
 
@@ -131,3 +131,15 @@ release completion latch before any new decoder starts. Synthetic
 20-minute host tests are not hardware stream uptime proof.
 No owner camera trial, exposure-to-display measurement, licensed
 model, validated lane/lead outputs or 18/20 PASS gate claim is made.
+
+V1.3.4 offline evidence: bounded, SHA-256 checked TTXYUV01 test frames
+can replay the production YUV→temporal-pair→dual-warp→FLOAT32 tensor
+preprocessing without opening camera/ONNX or enabling alerts. User
+declares model-use rights before import; an actual AI-flavor graph
+check and atomic same-directory replacement protect a previously
+working ONNX file from invalid imports. Neither self-provided frame
+hashes nor a valid graph prove video from A500S, legal model provenance,
+real-world lane/lead accuracy, or real hardware latency. No acceptance
+criterion is promoted to PASS solely from these offline features:
+**7/20 = 35% verified, 11 more independently evidenced PASS criteria
+needed for 90%, including the mandatory model/camera gates**.
