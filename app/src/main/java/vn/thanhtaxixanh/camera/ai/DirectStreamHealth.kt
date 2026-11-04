@@ -95,9 +95,11 @@ class DirectStreamHealth(
     }
 
     @Synchronized fun onAu(ptsUs: Long, atMs: Long): Boolean {
-        if (ptsUs < 0L || !accept(atMs,lastAu)) return false.also {
+        if (ptsUs < 0L) {
             invalid++
+            return false
         }
+        if (!accept(atMs,lastAu)) return false
         lastAu = atMs
         if (maxPts < 0L || ptsUs > maxPts) {
             maxPts = ptsUs
@@ -135,7 +137,8 @@ class DirectStreamHealth(
         val lastDecodeAgo = ago(lastDecode)
         val lastSurfaceAgo = ago(lastSurface)
         val status = when {
-            elapsed == null -> Status.INVALID_TIMEBASE
+            elapsed == null || listOf(lastRtp,lastAu,lastDecode,lastSurface)
+                .any { it > nowMs } -> Status.INVALID_TIMEBASE
             elapsed <= startupGraceMs &&
                 (lastAu < 0L || lastDecode < 0L || lastSurface < 0L) ->
                 Status.STARTING
