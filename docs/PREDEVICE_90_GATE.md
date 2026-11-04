@@ -1,6 +1,6 @@
 # TTX Camera AI — acceptance criteria before the next phone test
 
-Updated: 2026-11-04. V1.2.5. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-04. V1.2.6. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
 
 ## 90% engineering gate
 
@@ -22,7 +22,7 @@ Twenty criteria must be independently implemented and demonstrated with unit or 
 | 12 | NCNN alternate engine | NOT READY |
 | 13 | xADAS 1576-output lane/lead/road-edge parser | PASS CI |
 | 14 | Non-disruptive A500S decoded YUV to AI (mandatory) | CODED RAW DIAGNOSTIC in Direct: sidecar YUV -> temporal pair -> ONNX; no calibrated model and no device validation. NOT PASS |
-| 15 | Verified A500S intrinsics, model axes and warp (mandatory) | NOT READY |
+| 15 | Verified A500S intrinsics, model axes and warp (mandatory) | CODED REPROJECTION AUDIT ONLY; no physical A500S evidence or model-axis parity. NOT PASS |
 | 16 | Licensed model with ground-truth inference results (mandatory) | NOT READY |
 | 17 | Validated live lane and metric lead HUD (mandatory) | NOT READY |
 | 18 | Passive headway/TTC decision logic and fail-closed unit tests | PASS CI |
@@ -65,3 +65,10 @@ fixture parsing and 1,576-value numeric comparison. The ONNX AI UI can compare
 a separately authorized reference linked to the model SHA-256. No genuine
 licensed reference or physical A500S calibration data is bundled, so criteria
 #11, #14–17 remain incomplete. These checks cannot authorize ADAS output.
+
+
+V1.2.6 host-test evidence: synthetic pinhole reprojection, CSV evidence
+validation and contiguous-only projected lane segments. An imported candidate
+calibration is always marked unverified and no UI action can promote it to
+ready. The geometric consistency report is not real model ground truth; the
+90% gate remains below threshold. No owner on-device trial requested.

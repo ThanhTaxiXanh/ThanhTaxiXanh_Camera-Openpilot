@@ -13,6 +13,7 @@
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity android:name=".PhoneCameraActivity" android:exported="false"/>
         <activity android:name=".AdasSettingsActivity" android:exported="false"/>
+        <activity android:name=".CameraCalibrationAuditActivity" android:exported="false"/>
         <activity android:name=".CameraSourceSettingsActivity" android:exported="false"/>
         <activity android:name=".VisionModelActivity" android:exported="false"/>
         <activity android:name=".MainActivity" android:exported="true"

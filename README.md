@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.2.5-xadas-reference-audit (Lite / AI flavors)  
+**Version**: 1.2.6-xadas-geometry-audit (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -237,3 +237,26 @@ CI also runs on pull requests so both variants must pass before merging.
   warning/HUD features remain gated.
 
 See `docs/ONNX_REFERENCE_VECTOR_V1.md` for the fixed reference format.
+
+## V1.2.6 — Offline reprojection diagnostics and gap-safe lane geometry
+
+- A new **Camera Geometry Audit** screen in Settings accepts a locally owned
+  plain-ASCII `.ttxcal` marker file (max 64 KiB) containing assumed pinhole
+  height/FOV/pitch/yaw, image size, and measured forward/right/up marker
+  coordinates with their observed pixels. No image or video is uploaded.
+- The independent `CameraReprojectionAudit` enforces >=8 non-duplicate
+  markers, minimum horizontal/vertical/depth coverage, finite coordinates,
+  visible projections and RMS/P95 reprojection residuals. Clear error statuses
+  help reject inconsistent physical camera assumptions before model use.
+- **A numerically perfect fit does not imply actual camera calibration**.
+  Synthetic data can match any assumed geometry; imported evidence always has
+  `groundTruthValidated=false` and `modelCoordinateFrameValidated=false`.
+  Audit reports never authorize HUD overlays, lead metres or warnings.
+- `LaneProjection` no longer draws continuous polylines across invalid or
+  offscreen model points. It returns only runs of >=4 adjacent valid points,
+  preserving genuine breaks rather than visually inventing road lines.
+- Host-unit tests cover pinhole residuals, synthetic fit/wrong pitch, missing
+  marker distribution, forged coordinates, CSV limits and lane gap handling.
+  See `docs/CAMERA_GEOMETRY_AUDIT_V1.md` for the text fixture specification.
+- The 90% pre-device gate is still unmet: A500S camera intrinsics, lens
+  distortion, model-coordinate and metric lead ground truth are unverified.
