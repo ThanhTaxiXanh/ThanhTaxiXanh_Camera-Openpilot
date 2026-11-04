@@ -45,7 +45,7 @@ class RtpH264AccessUnitAssemblerTest {
     }
     @Test fun fragmentedIdrReconstructedOnlyAfterFuEnd() {
         val (a,out,_) = fixture()
-        a.accept(packet(1,1000,false,byteArrayOf(0x7c,0x85,0x11)))
+        a.accept(packet(1,1000,false,byteArrayOf(0x7c,0x85.toByte(),0x11)))
         a.accept(packet(2,1000,false,byteArrayOf(0x7c,0x05,0x22)))
         a.accept(packet(3,1000,true,byteArrayOf(0x7c,0x45,0x33)))
         assertEquals(1,out.size)
@@ -54,7 +54,7 @@ class RtpH264AccessUnitAssemblerTest {
     }
     @Test fun missingFuEndAtTimestampBoundaryDiscardsIncompleteNal() {
         val (a,out,metrics)=fixture()
-        a.accept(packet(1,1000,false,byteArrayOf(0x7c,0x85,0x11)))
+        a.accept(packet(1,1000,false,byteArrayOf(0x7c,0x85.toByte(),0x11)))
         a.accept(packet(2,1000,false,byteArrayOf(0x7c,0x05,0x22)))
         a.accept(packet(3,2000,true,idr))
         assertEquals(1,metrics[0])
@@ -76,7 +76,7 @@ class RtpH264AccessUnitAssemblerTest {
     }
     @Test fun lostFuPacketRequiresFutureIdrInsteadOfForwardingBrokenChain() {
         val (a,out,metrics)=fixture()
-        a.accept(packet(1,1000,false,byteArrayOf(0x7c,0x85,0x01)))
+        a.accept(packet(1,1000,false,byteArrayOf(0x7c,0x85.toByte(),0x01)))
         a.accept(packet(3,1000,true,byteArrayOf(0x7c,0x45,0x02)))
         a.accept(packet(4,2000,true,pframe))
         a.accept(packet(5,3000,true,idr))
