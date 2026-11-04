@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.10-udp-jitter-guard (Lite / AI flavors)  
+**Version**: 1.3.11-preview-gop-fence (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -546,3 +546,22 @@ The Direct RTP/H264 builder and UDP jitter window now isolate SSRC/payload-type 
   unchanged. See docs/UDP_JITTER_EPOCH_GUARD_V1.md.
 - **7/20 = 35% PASS CI**; there is no measured camera-to-glass improvement
   or new A500S hardware, calibration, model or ADAS evidence.
+
+
+## V1.3.11 — Preview H264 GOP epoch fence
+
+The Direct RTP parser already discards incomplete H264 AUs and the
+offscreen YUV/AI decoder resynchronizes on IDR. The Surface MediaCodec
+preview may still contain reference P pictures from the old GOP in native
+output/input buffers. Once *any* AU has been queued for preview, the first
+damaged RTP AU now terminates the entire old RTSP/preview decoder session
+and requires a new native decoder after async release completes. A damaged
+AU before any preview input simply waits for a valid IDR.
+
+This fail-closed fence invalidates pending RAW inference and bounded YUV
+capture evidence, and adds a visible diagnostic counter for GOP-specific
+reconnects. It NEVER attempts MediaCodec.flush on the RTP/codec callback
+thread or drops arbitrary H264 P frames. The existing rolling reconnect
+limit prevents unbounded retries. See docs/PREVIEW_GOP_EPOCH_FENCE_V1.md.
+This is NOT a measured one-second A500S preview or verified lane/lead ADAS.
+CI engineering gate stays 7/20=35%.
