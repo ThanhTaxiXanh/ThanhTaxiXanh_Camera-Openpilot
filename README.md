@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.2.4-xadas-yuv-resilience (Lite / AI flavors)  
+**Version**: 1.2.5-xadas-reference-audit (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -207,3 +207,33 @@ CI also runs on pull requests so both variants must pass before merging.
 - Both APK flavors remain ARM64. No xADAS binaries or weights are included.
   No hardware test required until the separately tracked >=90% engineering
   pre-device gate is achieved.
+
+## V1.2.5 — preprocessor fail-closed controls and authorized ONNX reference audit
+
+- Camera homographies are **immutable**, finite and invertible. Perspective
+  sampling reports in-source pixel coverage and refuses a mostly black
+  projected frame for ONNX diagnostics (<80% coverage). This does **not**
+  calibrate camera intrinsics or prove model-coordinate equivalence.
+- Both model inputs are constrained to the current independently implemented
+  studio-range YUV layout: 12 float32 channels [1,12,128,256],
+  luma 16..235 and chroma 16..240. An accidentally normalized [0,1]
+  tensor, invalid warp, NaN or out-of-range sample fails closed.
+  Real xADAS preprocessing parity remains **UNVERIFIED**.
+- The AI-flavor ONNX loader checks **float32 dtype and exact shape** of both
+  model inputs and the 1,576-float output. Lite has no native ONNX backend.
+- Model screen adds **ĐỐI CHIẾU VECTOR ONNX THAM CHIẾU** for a user-supplied,
+  legally usable offline `.ttxref` fixture bound by the exact imported
+  model's SHA-256. It runs that model against two supplied float32 tensors and
+  compares all 1,576 outputs using absolute+relative tolerances.
+- Fixture reader strictly bounds length, header, raw-input channel ranges,
+  finite expected outputs and rejects trailing bytes. Nothing is uploaded
+  or persisted from the comparison.
+- Regression tests verify crop coverage, degenerate transforms, immutable
+  matrix ownership, deterministic interpolation, studio channel ranges,
+  the reference fixture binary protocol and numeric tolerances.
+- **PASS of a user-provided reference is not proof of correct reference
+  provenance, calibration or road safety**. No actual reference model/vector
+  artifacts are included, model weight redistribution is excluded, and
+  warning/HUD features remain gated.
+
+See `docs/ONNX_REFERENCE_VECTOR_V1.md` for the fixed reference format.

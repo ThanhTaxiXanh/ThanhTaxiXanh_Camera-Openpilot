@@ -13,12 +13,13 @@ import java.security.MessageDigest
 
 /**
  * User-authorized optional ONNX import: no model data is bundled or uploaded.
- * File import and graph contract inspection; inference/ADAS remains disabled
- * until a verified native backend and camera calibration exist.
+ * File import, graph contract and offline golden-vector comparison. RAW
+ * diagnostics exist separately; calibrated ADAS displays remain disabled.
  */
 class VisionModelActivity : Activity() {
     private lateinit var statusView: TextView
     private val requestCode = 204
+    private val referenceCode = 205
     private val limitBytes = 250L * 1024L * 1024L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,6 +69,19 @@ class VisionModelActivity : Activity() {
                 }, requestCode)
             }
         })
+        body.addView(Button(this).apply {
+            text = "ĐỐI CHIẾU VECTOR ONNX THAM CHIẾU (.ttxref)"
+            setOnClickListener {
+                startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                }, referenceCode)
+            }
+        })
+        body.addView(label(
+            "Chỉ nhập vector tham chiếu có quyền sử dụng. " +
+                "Kết quả PASS chỉ chứng minh khớp với vector đã cung cấp; " +
+                "KHÔNG xác minh hiệu chuẩn camera hay độ an toàn khi lái.", 13f))
         body.addView(label(
             "Model được lưu cục bộ, không upload. Cần kiểm tra preprocessing YUV, " +
                 "virtual warp và hiệu chuẩn camera trước khi hiển thị khoảng cách. " +
@@ -82,8 +96,13 @@ class VisionModelActivity : Activity() {
     @Deprecated("Used only for a local Storage Access Framework import")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != this.requestCode || resultCode != RESULT_OK) return
+        if (resultCode != RESULT_OK) return
         val uri = data?.data ?: return
+        if (requestCode == referenceCode) {
+            compareReferenceFile(uri)
+            return
+        }
+        if (requestCode != this.requestCode) return
         statusView.text = "Đang xác minh và lưu model..."
         Thread({
             var temp: File? = null
@@ -124,5 +143,54 @@ class VisionModelActivity : Activity() {
                 runOnUiThread { statusView.text = "Lỗi nhập model: " + e.message }
             }
         }, "TTX-Local-Model-Import").start()
+    }
+
+    /** A PASS never enables safety-critical HUD output or model calibration. */
+    private fun compareReferenceFile(uri: android.net.Uri) {
+        val model = File(filesDir, "models/vision.onnx")
+        if (!model.isFile) {
+            statusView.text = "Cần nhập model ONNX được phép sử dụng trước."
+            return
+        }
+        statusView.text = "Đang kiểm tra hash model, vector và đầu ra ONNX..."
+        Thread({
+            val message = try {
+                val digest = MessageDigest.getInstance("SHA-256")
+                model.inputStream().buffered().use { input ->
+                    val buffer = ByteArray(65536)
+                    while (true) {
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        digest.update(buffer, 0, n)
+                    }
+                }
+                val sha = digest.digest()
+                val vector = contentResolver.openInputStream(uri)?.use {
+                    ReferenceTensorFixture.read(it)
+                } ?: error("Không thể mở tệp tham chiếu.")
+                require(MessageDigest.isEqual(sha, vector.modelHash)) {
+                    "SHA-256 vector không khớp với model ONNX đang nhập."
+                }
+                val runner = VisionModelBackend.openEngine(model)
+                    ?: error("Bản Lite không có ONNX; dùng APK AI.")
+                runner.use { engine ->
+                    val actual = engine.run(vector.img, vector.bigImg)
+                    val comparison = ReferenceTensorFixture.compare(
+                        vector.expectedOutput, actual)
+                    if (comparison.pass)
+                        "PASS VECTOR THAM CHIẾU: 1.576 giá trị, " +
+                            "sai số tối đa ${comparison.maxAbsoluteError}. " +
+                            "Chưa xác minh pixel warp, camera và ADAS."
+                    else
+                        "FAIL VECTOR: ${comparison.mismatches}/1576 sai khác; " +
+                            "lớn nhất tại index ${comparison.worstIndex}, " +
+                            "sai số ${comparison.maxAbsoluteError}. Không mở ADAS."
+                }
+            } catch (e: Exception) {
+                "Không xác minh được vector: " +
+                    (e.message ?: e.javaClass.simpleName).take(240)
+            }
+            runOnUiThread { if (!isFinishing && !isDestroyed) statusView.text = message }
+        }, "TTX-ONNX-Reference-Audit").start()
     }
 }
