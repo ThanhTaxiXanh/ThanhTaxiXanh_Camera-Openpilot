@@ -149,7 +149,9 @@ class H264YuvSidecar(
     private fun runDecoder() {
         var codec: MediaCodec? = null
         var decoderSynced = false
+        var decoderEpoch = -1L
         var lastCopyAt = 0L
+        val clock = OffscreenPresentationClock()
         val timeline = LinkedHashMap<Long, Long>()
         val bufferInfo = MediaCodec.BufferInfo()
         try {
@@ -158,7 +160,10 @@ class H264YuvSidecar(
                     release(codec)
                     codec = null
                     timeline.clear()
+                    clock.reset()
                     decoderSynced = false
+                    decoderEpoch = -1L
+                    lastCopyAt = 0L
                     resets.incrementAndGet()
                 }
                 val item = try { pending.poll(100, TimeUnit.MILLISECONDS) }
@@ -166,7 +171,9 @@ class H264YuvSidecar(
                 if (item == null) {
                     codec?.let { drain(it, bufferInfo, timeline) { captured, image ->
                         val now = SystemClock.elapsedRealtime()
-                        if (now - lastCopyAt >= 300L &&
+                        if (active.get() && !resetRequested.get() &&
+                            decoderEpoch == epoch.get() &&
+                            now - lastCopyAt >= 300L &&
                             now - captured in 0..550L) {
                             lastCopyAt = now
                             deliver(image, captured)
@@ -174,28 +181,31 @@ class H264YuvSidecar(
                     } }
                     continue
                 }
-                if (!active.get() || resetRequested.get()) continue
+                if (!active.get() || resetRequested.get() ||
+                    item.epoch != epoch.get()) continue
                 if (!decoderSynced) {
                     if (!H264AnnexB.hasIdr(item.annexB)) continue
                     try {
                         codec = createDecoder()
                         decoderSynced = true
+                        decoderEpoch = item.epoch
                     } catch (e: Exception) {
                         report(e)
-                        pending.clear()
-                        gate.reset()
-                        resetRequested.set(true)
+                        dropPredictionChain()
                         // Do not retry continuously without a new IDR.
                         continue
                     }
                 }
                 val running = codec ?: continue
+                if (resetRequested.get() || item.epoch != epoch.get()) continue
                 try {
                     var index = running.dequeueInputBuffer(10_000L)
                     if (index < 0) {
                         drain(running, bufferInfo, timeline) { captured, image ->
                             val now = SystemClock.elapsedRealtime()
-                            if (now - lastCopyAt >= 300L &&
+                            if (active.get() && !resetRequested.get() &&
+                            decoderEpoch == epoch.get() &&
+                            now - lastCopyAt >= 300L &&
                                 now - captured in 0..550L) {
                                 lastCopyAt = now
                                 deliver(image, captured)
@@ -214,16 +224,21 @@ class H264YuvSidecar(
                         "Offscreen H264 access unit too large"
                     }
                     dst.put(item.annexB)
+                    // Offscreen PTS is a local monotonic correlation key; the
+                    // preview RTP timestamp and pacing remain unchanged.
+                    val ptsUs = clock.next(item.capturedElapsedMs)
                     running.queueInputBuffer(index, 0, item.annexB.size,
-                        item.timestampUs, 0)
-                    timeline[item.timestampUs] = item.capturedElapsedMs
+                        ptsUs, 0)
+                    timeline[ptsUs] = item.capturedElapsedMs
                     while (timeline.size > 48) {
                         val oldest = timeline.keys.first()
                         timeline.remove(oldest)
                     }
                     drain(running, bufferInfo, timeline) { captured, image ->
                         val now = SystemClock.elapsedRealtime()
-                        if (now - lastCopyAt >= 300L &&
+                        if (active.get() && !resetRequested.get() &&
+                            decoderEpoch == epoch.get() &&
+                            now - lastCopyAt >= 300L &&
                             now - captured in 0..550L) {
                             lastCopyAt = now
                             deliver(image, captured)
@@ -231,9 +246,7 @@ class H264YuvSidecar(
                     }
                 } catch (e: Exception) {
                     report(e)
-                    pending.clear()
-                    gate.reset()
-                    resetRequested.set(true)
+                    dropPredictionChain()
                 }
             }
         } finally {
@@ -282,7 +295,7 @@ class H264YuvSidecar(
 
     override fun close() {
         if (alive.compareAndSet(true, false)) {
-            pending.clear()
+            synchronized(this) { invalidatePredictionChain() }
             active.set(false)
             worker.interrupt()
             // Native decoder is only accessed/released by its own worker.
