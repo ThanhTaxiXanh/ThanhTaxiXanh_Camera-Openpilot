@@ -1,6 +1,6 @@
 # TTX Camera AI — acceptance criteria before the next phone test
 
-Updated: 2026-11-04. V1.2.9. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-04. V1.3.0. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
 
 ## 90% engineering gate
 
@@ -27,7 +27,7 @@ Twenty criteria must be independently implemented and demonstrated with unit or 
 | 17 | Validated live lane and metric lead HUD (mandatory) | NOT READY |
 | 18 | Passive headway/TTC decision logic and fail-closed unit tests | PASS CI |
 | 19 | GPS, PiP and settings | CODED; device unverified |
-| 20 | >5 minute uninterrupted stream and near-1s glass-to-glass latency | NOT READY |
+| 20 | >5 minute uninterrupted stream and near-1s glass-to-glass latency | Experimental Direct AU freshness guard, codec-output age, P95 diagnostics and clean reconnect; NO real exposure-to-glass measurement. NOT PASS |
 
 Verdict: BELOW 90%. Do not ask the owner for a new on-device test yet. Only PASS CI items have offline evidence, CODED items need deeper validation, NOT READY items are incomplete.
 
@@ -96,3 +96,11 @@ GOP epochs, CPU queue replacement, previous-frame freshness and receipt
 clock timing tests. No measured A500S exposure timestamp or actual camera
 model output is available. The earlier ~3s glass-to-glass observation and
 camera intrinsics remain unresolved, so #14–17 and #20 are NOT PASS.
+
+V1.3.0 synthetic CI: a deliberately opt-in Direct MediaCodec mode bounds
+H264 queued AU residence and codec-input wait, suppresses only stale
+already-decoded Surface outputs, and reconnects on sustained backlog.
+A bounded PTS correlator reports H264 access-unit local receipt-to-output
+callback age, which EXCLUDES real camera exposure/encoder and Surface
+scanout latency. Existing 3s vs official 70mai 1s owner observation is
+UNRESOLVED, so mandatory acceptance #20 does not advance to PASS.
