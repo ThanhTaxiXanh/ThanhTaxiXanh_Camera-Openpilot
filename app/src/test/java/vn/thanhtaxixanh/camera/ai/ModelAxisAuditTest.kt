@@ -63,7 +63,7 @@ class ModelAxisAuditTest {
     }
 
     @Test fun ambiguousVerticalSignIsNotClaimedAsKnownModelAxis() {
-        val result=ModelAxisAudit.inspect(points(upScale=.34))
+        val result=ModelAxisAudit.inspect(points(upScale=.30))
         assertEquals(ModelAxisAudit.Status.AMBIGUOUS_AXES,result.status)
         assertFalse(result.mayEnableAdas)
     }
