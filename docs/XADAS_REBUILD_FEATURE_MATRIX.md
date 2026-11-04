@@ -59,3 +59,13 @@ H264 GOP recovery is unit tested; YUV/ONNX live parity remains unverified.
 No live ADAS or vendor feature is marked complete based on this software-only
 implementation. The earlier status matrix is retained as the historical
 v1.1.x baseline, not a claim that current v1.2.x lacks ONNX/Camera2.
+
+## V1.2.3 raw diagnostic bridge
+
+The A500S Direct offscreen YUV branch now feeds the existing ONNX pipeline,
+provided an explicitly authorized ONNX file is imported in the AI APK and the
+owner opts in to raw diagnostics. Only 640x480 observed dimensions are admitted,
+and stale/reordered/gapped pairs fail closed. ONNX results are logged as raw
+status only: no live lane, lead, distance or audible warning activation.
+This proves wiring and host-unit-test behavior, **not functional parity with
+the xADAS camera model**. Original xADAS binary data/model remain excluded.

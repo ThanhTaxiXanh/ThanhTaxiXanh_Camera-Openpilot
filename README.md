@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.2.2-xadas-yuv (Lite / AI flavors)  
+**Version**: 1.2.3-xadas-raw-onnx (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -149,3 +149,32 @@ See docs/PREDEVICE_90_GATE.md for required completion evidence. CI separately co
   does not reach the pre-device >=90% bar; no new on-phone test is requested.
 
 CI also runs on pull requests so both variants must pass before merging.
+
+## V1.2.3 — A500S raw ONNX path, intentionally without ADAS claims
+
+- Independent Direct RTSP path can now be assembled as **RTP H264 AU → opt-in
+  offscreen YUV420 MediaCodec → CPU-owned YUV420 frame → stride-aware ARGB
+  conversion → chronological temporal pairing → OpenpilotInferencePipeline →
+  a user-imported, contract-checked ONNX graph**. The Lite APK cannot run the
+  model. The existing IJK video path is unchanged.
+- Owner starts the Direct player, explicitly enables **YUV A500S** and then
+  **ONNX A500S: RAW-ONLY**. No automatic inference, recording, upload,
+  warnings, vehicle control, metric lead, or lane visualization.
+- The model's exact camera intrinsics/warp and temporal/channel conventions
+  remain unvalidated. Two research-only warp matrices are passed as
+  experimental tensor-layout placeholders. Model output is **untrusted raw
+  diagnostic data** regardless of input validity or output plausibility.
+- `A500sRawVisionBridge` accepts only the observed 640×480 source format,
+  rejects frames >550ms old / from the future, and will not pair reversed
+  frames or observations separated by >850ms. Reconnect resets the pair.
+  Its original access-unit timestamp is only the **local RTP receipt time**,
+  not a measured camera exposure time.
+- Raw frame pairs and pipeline model results are counted on-screen.
+  Model loading runs on its own thread; cancellation prevents stale session
+  results from being re-enabled; the inference worker releases the native
+  session only after its processing loop exits.
+- Pure JVM tests cover invalid dimensions, staleness, reordered frames, gaps,
+  reconnect and rejected pipeline input; GitHub Actions builds Lite/AI.
+- This milestone does **NOT** satisfy the pre-device 90% gate: real A500S
+  YUV path, model output correspondence, calibration and hardware FPS/latency
+  remain unverified. No new owner device test is requested.
