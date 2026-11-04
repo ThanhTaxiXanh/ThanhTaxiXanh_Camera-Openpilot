@@ -12,8 +12,8 @@ class RtpAuClockAuditTest {
         for (i in 1..40) {
             val stamp=clock.observe(900_000L+i*3_000L,10_000L+i*33L)
             assertEquals(RtpAuClockAudit.Status.VALID,stamp.status)
-            assertEquals(1_000_000L+i*33_333L +
-                (i%3).toLong()/2L,stamp.presentationTimeUs!!,2_000L)
+            val expected = 1_000_000L + i*100_000L/3L
+            assertTrue(kotlin.math.abs(expected-stamp.presentationTimeUs!!) <= 1L)
         }
         val summary=clock.snapshot()
         assertEquals(41L,summary.observedAccessUnits)
