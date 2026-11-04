@@ -59,6 +59,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var stopButton: Button
     private lateinit var pairButton: Button
     private lateinit var latencyButton: Button
+    private lateinit var directLatencyButton: Button
     private lateinit var yuvTapButton: Button
     private lateinit var rawAiButton: Button
     @Volatile private var rawVision: OpenpilotInferencePipeline? = null
@@ -76,6 +77,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     @Volatile private var yuvShape = "chưa có khung"
     private var ijkProfile = IjkPlaybackProfile.SMOOTH
     private var activeIjkProfile = IjkPlaybackProfile.SMOOTH
+    private var directLatencyPolicy = DirectLatencyPolicy.SMOOTH
+    private var activeDirectLatencyPolicy = DirectLatencyPolicy.SMOOTH
 
     private var backend: Backend? = null
     private var direct: DirectRtspPlayer? = null
@@ -189,6 +192,20 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             }
         }
         root.addView(latencyButton)
+
+        directLatencyButton = Button(this).apply {
+            text = directLatencyPolicy.buttonTitle
+            textSize = 11f
+            setOnClickListener {
+                directLatencyPolicy = directLatencyPolicy.next()
+                text = directLatencyPolicy.buttonTitle
+                showStatus("Direct " + directLatencyPolicy.description +
+                    (if (backend == Backend.DIRECT)
+                        ". Bấm xADAS · MEDIACODEC để áp dụng phiên mới."
+                    else ". Có hiệu lực khi phát Direct lần tới."))
+            }
+        }
+        root.addView(directLatencyButton)
 
         pairButton = Button(this).apply {
             text = "GHÉP ĐÔI & HEARTBEAT A500S (KHÔNG GIẢM TRỄ)"
@@ -358,6 +375,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         retryCount = 0
         preferUdp = true
         startedAt = SystemClock.elapsedRealtime()
+        if (mode == Backend.DIRECT) {
+            // A reconnect uses the same buffer policy as the initial session.
+            activeDirectLatencyPolicy = directLatencyPolicy
+        }
         if (mode == Backend.IJK) {
             // Apply selected profile ONLY when a new playback session starts.
             // Internal reconnects must preserve the active profile, even if
@@ -761,7 +782,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     // GOP is invalid even before the next YUV frame arrives.
                     rawVision?.invalidate()
                 }
-            }
+            },
+            activeDirectLatencyPolicy
         )
         direct = player
         player.start()
@@ -815,14 +837,24 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     detailView.text = String.format(Locale.US,
                         "%s · RTP %.1f/s · AU %.1f/s · giải mã %.1f/s · Surface %.1f/s\n" +
                             "Nguồn RTP: marker %.1f/s · đổi PTS %.1f/s · jitter %.1fms\n" +
-                            "RTP gap %d · H264 hỏng %d · đệm %d/48\n" +
+                            "RTP gap %d · H264 hỏng %d · đệm %d/%d\n" +
                             "UDP đến lệch: %d · khôi phục %d · thiếu %d gói\n" +
                             "RTSP heartbeat %d/%d OK · reconnect %d/3",
                         s.transportName, packets / dt, au / dt, decoded / dt, shown / dt,
                         markers / dt, rtpClocks / dt, s.rtp.jitterTicks / 90.0,
                         s.rtp.sequenceGaps, s.discardedAccessUnits, s.queueDepth,
+                        s.maxAccessUnitQueue,
                         s.udpReordered, s.udpRecovered, s.udpSkipped,
                         s.keepAliveOk, s.keepAliveSent, retryCount)
+                    val decode = s.decodeTimeline
+                    detailView.append("\nDirect: " + activeDirectLatencyPolicy.name +
+                        " · AU đợi cũ nhất " + (s.oldestQueueAgeMs?.toString() ?: "—") +
+                        "ms · tự ngắt do tuổi đệm " + s.bufferAgeRestarts)
+                    detailView.append("\nAU nhận→MediaCodec output [KHÔNG PHẢI trễ cảnh thực]: " +
+                        "P95 " + (decode.p95ReceiptToDecoderMs?.toString() ?: "—") +
+                        "ms · mới nhất " + (decode.lastReceiptToDecoderMs?.toString() ?: "—") +
+                        "ms · mẫu " + decode.matched +
+                        " · không ghép PTS " + decode.unmatched)
                     s.sidecar?.let { yuv ->
                         detailView.append("\nYUV OFFSCREEN: " +
                             (if (yuvTapEnabled) "BẬT" else "TẮT") +
