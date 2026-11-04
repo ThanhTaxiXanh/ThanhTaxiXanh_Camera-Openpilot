@@ -93,6 +93,42 @@ class A500sRawVisionBridgeTest {
         assertEquals(listOf(9850L), submissions)
     }
 
+    @Test fun longYuvDeliveryPauseCannotCrossTheTemporalModelWindow() {
+        val clock = AtomicLong(10_000L)
+        val submitted = mutableListOf<Long>()
+        val bridge = A500sRawVisionBridge(
+            nowMs = {clock.get()},
+            submit = {submitted.add(it.capturedAtMs); true})
+        val frame = testFrame()
+        assertEquals(A500sRawVisionBridge.Verdict.WAITING_PAIR,
+            bridge.accept(frame, 9_800L))
+        clock.set(10_400L)
+        // The new frame is fresh but the 590ms temporal jump must not
+        // combine two physically unrelated frames into one ONNX tensor.
+        assertEquals(A500sRawVisionBridge.Verdict.DISCONTINUITY,
+            bridge.accept(frame, 10_390L))
+        assertEquals(A500sRawVisionBridge.Verdict.SUBMITTED,
+            bridge.accept(frame, 10_400L))
+        assertEquals(listOf(10_400L),submitted)
+        assertEquals(1L,bridge.metrics().discontinuities)
+    }
+
+    @Test fun previousFrameAgeIsRecheckedWhenSecondFrameArrives() {
+        val clock = AtomicLong(10_000L)
+        val bridge = A500sRawVisionBridge(
+            nowMs = {clock.get()},
+            submit = {fail("Old source frame cannot enter ONNX"); true})
+        val frame = testFrame()
+        assertEquals(A500sRawVisionBridge.Verdict.WAITING_PAIR,
+            bridge.accept(frame, 9_900L))
+        clock.set(10_550L)
+        // The pair is only 490ms apart, but now the previous frame
+        // would be 650ms old, past the shared freshness deadline.
+        assertEquals(A500sRawVisionBridge.Verdict.DISCONTINUITY,
+            bridge.accept(frame, 10_390L))
+        assertEquals(0L,bridge.metrics().pairs)
+    }
+
     @Test fun sinkBackpressureNeverClaimsModelWasFed() {
         val clock = AtomicLong(5000L)
         val bridge = A500sRawVisionBridge(nowMs = { clock.get() },
