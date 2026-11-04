@@ -93,7 +93,10 @@ object OfflineYuvFixture {
      * warps are exercised. The injected time is VIRTUAL and never treated
      * as measured inference or camera latency. No ONNX model is executed.
      */
-    fun replay(sequence:Sequence):Replay {
+    fun replay(
+        sequence:Sequence,
+        onFirstTensorPair: ((FloatArray,FloatArray)->Unit)? = null
+    ):Replay {
         require(sequence.frames.size in 2..MAX_FRAMES)
         var nowMs=0L
         var pairs=0
@@ -108,6 +111,10 @@ object OfflineYuvFixture {
             if(pairs==0) {
                 mainHash=hash(main)
                 wideHash=hash(wide)
+                // First temporal pair may be checked against a separate
+                // user-authorized TTXREF01 reference, strictly offline.
+                // No ONNX runner is opened unless the caller requests it.
+                onFirstTensorPair?.invoke(main,wide)
             }
             pairs++
             true

@@ -1,7 +1,6 @@
 package vn.thanhtaxixanh.camera.ai
 
 import android.content.Context
-import java.net.URI
 
 /** Camera profiles observed in xADAS 0.2.7. Only validated adapters are enabled. */
 object CameraSourceCatalog {
@@ -30,14 +29,8 @@ object CameraSourceCatalog {
         return Profile.values().firstOrNull { it.name == saved } ?: Profile.A500S
     }
 
-    fun validateUrl(value: String): String {
-        val text = value.trim()
-        require(text.length in 10..512 && !text.contains('\r') && !text.contains('\n'))
-        val uri = URI(text)
-        require(uri.scheme.equals("rtsp", ignoreCase = true) && !uri.host.isNullOrBlank())
-        require(uri.userInfo == null) { "Chưa hỗ trợ nhập thông tin xác thực vào URL" }
-        return text
-    }
+    fun validateUrl(value: String): String =
+        RtspSourcePolicy.check(value)
 
     fun save(context: Context, profile: Profile, customUrl: String) {
         require(profile.supported) { "Profile camera chưa có adapter hoạt động" }
@@ -49,8 +42,8 @@ object CameraSourceCatalog {
 
     fun resolve(context: Context, gateway: String): String = when(val p = selected(context)) {
         Profile.A500S -> {
-            require(Regex("\\d{1,3}(\\.\\d{1,3}){3}").matches(gateway))
-            "rtsp://" + gateway + ":554/livestream/12"
+            "rtsp://" + RtspSourcePolicy.gateway(gateway) +
+                ":554/livestream/12"
         }
         Profile.CUSTOM -> validateUrl(
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
