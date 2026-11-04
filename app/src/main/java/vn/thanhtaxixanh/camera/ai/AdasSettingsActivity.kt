@@ -1,6 +1,7 @@
 package vn.thanhtaxixanh.camera.ai
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -84,6 +85,12 @@ class AdasSettingsActivity : Activity() {
             AdasPrefs.ROUND_DISTANCE, false)
         toggle("Ẩn thanh trạng thái Android", "Áp dụng khi trở lại màn hình chính.",
             AdasPrefs.HIDE_STATUS_BAR, false)
+
+        heading("Hình học camera · Chẩn đoán ngoại tuyến")
+        info("Sai số chiếu lại", "Kiểm tra mốc đo 3D/2D từ tệp riêng của người dùng. Kết quả không cấp quyền vẽ làn, khoảng cách hay cảnh báo.")
+        action("KIỂM TRA MỐC ĐO (.TTXCAL)") {
+            startActivity(Intent(this, CameraCalibrationAuditActivity::class.java))
+        }
 
         heading("Lắp đặt trên xe · Lưu để hiệu chỉnh")
         futureSlider("Chiều cao đặt camera", AdasPrefs.CAMERA_HEIGHT_CM, 60, 200, 150, "cm",
