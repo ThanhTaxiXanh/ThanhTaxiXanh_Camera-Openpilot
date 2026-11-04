@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.1-rtp-surface-timing (Lite / AI flavors)  
+**Version**: 1.3.2-stream-cadence-audit (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -385,3 +385,26 @@ See `docs/ONNX_REFERENCE_VECTOR_V1.md` for the fixed reference format.
   remains **UNRESOLVED** until a real same-scene, same-handset
   measurement. No new A500S device trial requested yet. See
   `docs/RTP_CLOCK_SURFACE_RENDER_V1.md`.
+
+## V1.3.2 — Detecting accumulated video lag even at healthy output FPS
+
+- Pure JVM `StreamCadenceAudit` correlates **five** local video events:
+  accepted H264 AU, codec input, decoded output, released Surface buffer
+  and confirmed MediaCodec render callback. The Direct player and its
+  UI expose rolling 10-second source/codec/Surface FPS estimates.
+- Diagnostic classifications distinguish local source pauses, a
+  difference between RTP media-clock cadence and AU-arrival rate,
+  lagging codec input, decoding, Surface release, and missing vendor
+  render-event callbacks (which do not prove display failure).
+- Critically, reports **relative media-PTS backlog** from the most
+  recently received AU to decoded or released frames. An internal
+  3-second PTS gap can be detected even when decoder output FPS
+  matches the source FPS. This is *not* physical glass-to-glass latency.
+- Bounded 2,048-event-per-stage ring histories, clock validation and
+  pure deterministic regression tests include steady/slow stages,
+  3s delayed-frame scenarios and ~20 minutes of synthetic input.
+- No changes to RTSP playback mode defaults, H264 frame-dropping,
+  model coordinates, ADAS warnings or camera authentication. See
+  `docs/VIDEO_CADENCE_BACKLOG_V1.md`.
+- The owner's prior ~3s TTX vs ~1s official 70mai visual delay is
+  still **unresolved**, and the >=90% pre-device criterion is NOT met.
