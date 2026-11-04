@@ -62,6 +62,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var directLatencyButton: Button
     private lateinit var yuvTapButton: Button
     private lateinit var rawAiButton: Button
+    private lateinit var yuvCaptureButton: Button
+    private val liveYuvCapture = LiveYuvEvidenceCapture(4)
+    private var pendingYuvEvidence: OfflineYuvFixture.Sequence? = null
+    private val saveYuvRequestCode = 734
     @Volatile private var rawVision: OpenpilotInferencePipeline? = null
     @Volatile private var rawBridge: A500sRawVisionBridge? = null
     @Volatile private var rawVisionRequested = false
@@ -226,7 +230,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     return@setOnClickListener
                 }
                 yuvTapEnabled = !yuvTapEnabled
-                if (!yuvTapEnabled) stopRawVision()
+                if (!yuvTapEnabled) {
+                    stopRawVision()
+                    liveYuvCapture.cancel()
+                    yuvCaptureButton.text = "LƯU 4 KHUNG YUV A500S · TẮT"
+                }
                 text = if (yuvTapEnabled) "YUV A500S: BẬT · KHÔNG PHÁT CẢNH BÁO"
                     else "YUV A500S: TẮT · CHẨN ĐOÁN OFFSCREEN"
                 showStatus(if (yuvTapEnabled)
@@ -243,6 +251,28 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             setOnClickListener { toggleA500sRawVision() }
         }
         root.addView(rawAiButton)
+
+        yuvCaptureButton = Button(this).apply {
+            text = "LƯU 4 KHUNG YUV A500S · TẮT"
+            textSize = 11f
+            setOnClickListener {
+                if (backend != Backend.DIRECT || !yuvTapEnabled) {
+                    showStatus("Chỉ thu khi Direct MediaCodec và YUV offscreen đang bật.")
+                } else if (liveYuvCapture.isArmed()) {
+                    liveYuvCapture.cancel()
+                    text = "LƯU 4 KHUNG YUV A500S · TẮT"
+                    showStatus("Đã hủy thu YUV, không tạo tệp.")
+                } else if (pendingYuvEvidence != null) {
+                    showStatus("Hãy hoàn tất bước chọn nơi lưu trước.")
+                } else {
+                    liveYuvCapture.arm()
+                    text = "ĐANG THU 4 KHUNG YUV · BẤM ĐỂ HỦY"
+                    showStatus("Thu bốn khung từ decoder phụ. " +
+                        "Bạn sẽ chọn vị trí lưu sau khi đủ khung.")
+                }
+            }
+        }
+        root.addView(yuvCaptureButton)
 
         root.addView(Button(this).apply {
             text = "PiP · CỬA SỔ VIDEO NHỎ"
@@ -763,6 +793,27 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 if (token == generation && backend == Backend.DIRECT && yuvTapEnabled) {
                     yuvFrames.incrementAndGet()
                     yuvShape = "${yuv.width}x${yuv.height}"
+                    // Only the sidecar worker copies frames. Preview remains independent.
+                    val completed = liveYuvCapture.accept(yuv, capturedAtMs)
+                    if (completed != null) runOnUiThread {
+                        if (token == generation && backend == Backend.DIRECT &&
+                            yuvTapEnabled && !isDestroyed && pendingYuvEvidence == null) {
+                            pendingYuvEvidence = completed
+                            yuvCaptureButton.text = "ĐỦ 4 KHUNG · CHỌN NƠI LƯU"
+                            try {
+                                startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                    addCategory(Intent.CATEGORY_OPENABLE)
+                                    type = "application/octet-stream"
+                                    putExtra(Intent.EXTRA_TITLE, "TTX-A500S-4frames.ttxyuv")
+                                }, saveYuvRequestCode)
+                            } catch (e: Exception) {
+                                pendingYuvEvidence = null
+                                yuvCaptureButton.text = "LƯU 4 KHUNG YUV A500S · TẮT"
+                                showStatus("Không mở được chọn tệp: " +
+                                    e.javaClass.simpleName)
+                            }
+                        }
+                    }
                     // The bridge feeds only a RAW, uncalibrated model worker.
                     // Never route the result to HUD, sound or distance.
                     if (rawVisionRequested)
@@ -783,6 +834,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 // the previous temporal frame, even if the gap is <850 ms.
                 if (token == generation) {
                     rawPairResetPending.set(true)
+                    liveYuvCapture.cancel()
                     // Nonblocking: an in-flight ONNX result from the damaged
                     // GOP is invalid even before the next YUV frame arrives.
                     rawVision?.invalidate()
@@ -807,6 +859,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             return
         }
         directRecoveryPending = true
+        liveYuvCapture.cancel()
+        if (::yuvCaptureButton.isInitialized)
+            yuvCaptureButton.text = "LƯU 4 KHUNG YUV A500S · TẮT"
         if (preferUdp && (reason.contains("zero video packets", true) ||
                 reason.contains("zero H264 access units", true))) {
             preferUdp = false
@@ -1025,11 +1080,46 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
     }
 
+    @Deprecated("Android Storage Access Framework result callback")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != saveYuvRequestCode) return
+        val sample = pendingYuvEvidence
+        pendingYuvEvidence = null
+        yuvCaptureButton.text = "LƯU 4 KHUNG YUV A500S · TẮT"
+        if (resultCode != RESULT_OK || data?.data == null || sample == null) {
+            showStatus("Đã hủy lưu khung YUV.")
+            return
+        }
+        val uri = data.data ?: return
+        showStatus("Đang ghi tệp TTXYUV01...")
+        Thread({
+            val failure = try {
+                val stream = contentResolver.openOutputStream(uri, "w")
+                    ?: error("Không mở được tệp đích")
+                stream.use { OfflineYuvFixture.write(sample, it) }
+                null
+            } catch (error: Exception) {
+                error.message ?: error.javaClass.simpleName
+            }
+            runOnUiThread {
+                if (!isDestroyed) showStatus(if (failure == null)
+                    "Đã lưu TTXYUV01 (4 khung YUV RAW). " +
+                        "Không phải bằng chứng hiệu chuẩn hoặc ground truth."
+                else "Lưu thất bại (tệp có thể chưa hoàn chỉnh): " + failure)
+            }
+        }, "TTX-YUV-FileWriter").start()
+    }
+
     private fun stopPlayback() {
         directRecoveryPending = false
         directReconnectBudget.reset()
         retryCount = 0
         stopRawVision()
+        liveYuvCapture.cancel()
+        pendingYuvEvidence = null
+        if (::yuvCaptureButton.isInitialized)
+            yuvCaptureButton.text = "LƯU 4 KHUNG YUV A500S · TẮT"
         yuvTapEnabled = false
         if (::yuvTapButton.isInitialized)
             yuvTapButton.text = "YUV A500S: TẮT · CHẨN ĐOÁN OFFSCREEN"
