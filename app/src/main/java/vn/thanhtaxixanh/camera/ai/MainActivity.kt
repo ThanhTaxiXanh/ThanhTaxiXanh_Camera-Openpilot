@@ -856,6 +856,23 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         "ms · mẫu " + decode.matched +
                         " · không ghép PTS " + decode.unmatched +
                         " · bỏ output quá hạn " + s.staleDecodedSuppressed)
+                    val rtpClock = s.rtpAuClock
+                    val surfaceClock = s.surfaceTimeline
+                    fun shownMs(value: Double?): String =
+                        value?.let { String.format(Locale.US,"%.1f",it) } ?: "—"
+                    detailView.append("\nRTP AU 90kHz: bước nhịp " +
+                        shownMs(rtpClock.lastRtpStepMs) +
+                        "ms · khoảng nhận " +
+                        (rtpClock.lastReceiptStepMs?.toString() ?: "—") +
+                        "ms · lệch cộng dồn " +
+                        shownMs(rtpClock.currentSessionDriftMs) +
+                        "ms · lỗi bước RTP " + rtpClock.rejectedAccessUnits +
+                        " · wrap " + rtpClock.timestampWraps)
+                    detailView.append("\nMediaCodec release→render callback [KHÔNG phải thời điểm màn hình quét]: " +
+                        "P95 " + shownMs(surfaceClock.p95ReleaseToRenderMs) +
+                        "ms · cuối " + shownMs(surfaceClock.lastReleaseToRenderMs) +
+                        "ms · mẫu " + surfaceClock.matched +
+                        " · thiếu sự kiện " + surfaceClock.unmatched)
                     s.sidecar?.let { yuv ->
                         detailView.append("\nYUV OFFSCREEN: " +
                             (if (yuvTapEnabled) "BẬT" else "TẮT") +
