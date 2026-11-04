@@ -83,9 +83,10 @@ class OpenpilotInferencePipeline(
 
     private fun schedule() {
         if (!running.compareAndSet(false,true)) return
-        executor.execute {
-            try {
-                while (!closed.get()) {
+        try {
+            executor.execute {
+                try {
+                    while (!closed.get()) {
                     val sample=latest.getAndSet(null) ?: break
                     val start=nowMs()
                     if (start-sample.capturedAtMs > VisionSafetyGate.MAX_FRAME_AGE_MS ||
@@ -100,6 +101,9 @@ class OpenpilotInferencePipeline(
                         val wide=VirtualCameraWarp.pairToModelInput(
                             sample.previousArgb,sample.currentArgb,
                             sourceWidth,sourceHeight,wideViewWarp)
+                        // Fail closed if tensors have invalid normalization,
+                        // chroma plane placement or non-finite values.
+                        VisionInputContract.requireRawStudioByteTensors(main,wide)
                         val output=engine.run(main,wide)
                         val parsed=OpenpilotVisionDecoder.decode(output)
                         val end=nowMs()
@@ -111,23 +115,29 @@ class OpenpilotInferencePipeline(
                         val lanes=LaneProjection.lanes(
                             parsed,calibration,sourceWidth,sourceHeight)
                         processed.incrementAndGet()
-                        onResult(Outcome(sample.capturedAtMs,end,end-start,
+                        if (!closed.get()) onResult(Outcome(sample.capturedAtMs,end,end-start,
                             parsed,lanes,
                             if (calibration?.ready==true)
                                 "Model output decoded; projected lanes require on-device validation"
                             else "RAW_ONLY: camera calibration and model axes unverified"))
                     } catch (e: Exception) {
                         errors.incrementAndGet()
-                        onResult(Outcome(sample.capturedAtMs,nowMs(),
+                        if (!closed.get()) onResult(Outcome(sample.capturedAtMs,nowMs(),
                             nowMs()-start,null,emptyList(),
                             "Inference error: " + e.javaClass.simpleName +
                                 ": " + (e.message ?: "").take(120)))
                     }
                 }
-            } finally {
-                running.set(false)
-                if (latest.get()!=null && !closed.get()) schedule()
+                } finally {
+                    running.set(false)
+                    if (latest.get()!=null && !closed.get()) schedule()
+                }
             }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            // close() won the race between offer() and executor.execute().
+            // Never surface an exception into the decoder/camera callback.
+            latest.set(null)
+            running.set(false)
         }
     }
 
