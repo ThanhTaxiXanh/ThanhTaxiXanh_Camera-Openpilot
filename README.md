@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.5-offline-onnx-parity (Lite / AI flavors)  
+**Version**: 1.3.6-evidence-lineage (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -492,3 +492,25 @@ See `docs/ONNX_REFERENCE_VECTOR_V1.md` for the fixed reference format.
 - Predevice acceptance remains **7/20 = 35% PASS CI**; this is NOT
   a percentage of xADAS code/features cloned and real model, lane,
   lead and ~1-second glass-to-glass evidence remain unresolved.
+
+## V1.3.6 — Evidence files bound to a canonical SHA-256 manifest
+
+- New locally selected `TTXEVD01` eight-line ASCII manifest,
+  available as the **third** step in Camera source → Offline YUV audit,
+  after the user chooses TTXYUV01 and TTXREF01 files.
+- Manifest binds the **full SHA-256** of the exact user-supplied YUV
+  fixture, the 1,576-output ONNX reference file, and the app-private
+  model; the reference's own embedded model hash must match too.
+- Strict max 2KiB canonical manifest syntax, validated ISO UTC seconds,
+  limited source/instrument/permission identifiers and bounded
+  streaming digest reads; fail-closed on any file substitution,
+  missing model, tampered hash, malformed fields or extraneous content.
+- No recording, uploading or playback changes. `MATCHED_SELF_DECLARED`
+  is only matching file integrity, **never proof of original camera
+  capture, independent truth, legal rights, cryptographic signer
+  identity, lane/lead accuracy or ADAS readiness**.
+- Pure JVM tests include corruption and wrong-file cases, invalid
+  metadata, missing model, forged reference model hash and size bounds.
+  See `docs/EVIDENCE_BUNDLE_LINEAGE_V1.md`.
+- Pre-device verified engineering progress remains **7/20 = 35%**;
+  the user requires 18/20=90% plus real hardware/model prerequisites.
