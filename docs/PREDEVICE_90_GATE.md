@@ -1,6 +1,6 @@
 # TTX Camera AI — acceptance criteria before the next phone test
 
-Updated: 2026-11-04. V1.3.4. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-04. V1.3.5. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
 
 ## 90% engineering gate
 
@@ -143,3 +143,15 @@ real-world lane/lead accuracy, or real hardware latency. No acceptance
 criterion is promoted to PASS solely from these offline features:
 **7/20 = 35% verified, 11 more independently evidenced PASS criteria
 needed for 90%, including the mandatory model/camera gates**.
+
+V1.3.5 offline evidence: optional TTXYUV01→TTXREF01 three-way audit
+compares exact owner-imported ONNX SHA, BOTH actual production
+preprocessing tensor inputs and genuine AI-flavor ONNX output against
+the supplied 1,576-dimensional reference. Fail-closed on model hash,
+either input, missing engine or output mismatch. The unit tests use
+synthetic reference values and FAKE engines: these neither license
+third-party weights nor demonstrate physical model truth. RTSP custom
+source/gateway validation gains malformed URI/IP guardrails but
+does not implement missing vendor protocols. No PASS promotion:
+**7/20 = 35% verified; 11 further PASS required for >=90%**, with
+mandatory #14–17 and #20 still not met.
