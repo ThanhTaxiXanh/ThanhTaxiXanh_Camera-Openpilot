@@ -13,8 +13,8 @@ import java.nio.ByteOrder
  * Licensed-model-only ONNX engine in the AI product flavor.
  *
  * A valid model graph is necessary but NOT sufficient for usable ADAS.
- * No decoder frames are passed until camera warping, temporal YUV packing,
- * coordinate units and calibration have been validated separately.
+ * Explicit RAW diagnostics may process decoder frames using UNVALIDATED
+ * research transforms. They never authorize calibrated lanes or alerts.
  */
 object VisionModelBackend : VisionRuntimeContract {
     /** Only the AI flavor can load an authorized model for true CPU inference. */
