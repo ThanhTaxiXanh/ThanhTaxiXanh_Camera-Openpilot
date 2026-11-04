@@ -20,10 +20,13 @@ import java.util.Locale
 class OfflineYuvAuditActivity:Activity() {
     private val pickCode=731
     private val referenceCode=732
+    private val manifestCode=733
     private lateinit var resultView:TextView
     private var requestNumber=0
     private var selectedYuv:Uri?=null
+    private var selectedReference:Uri?=null
     private lateinit var referenceButton:Button
+    private lateinit var evidenceButton:Button
 
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,7 +39,7 @@ class OfflineYuvAuditActivity:Activity() {
             text=msg; textSize=15f; setTextColor(Color.WHITE)
             setPadding(0,14,0,14)
         }
-        body.addView(textLine("TTX · VIDEO YUV NGOẠI TUYẾN V1.3.5"))
+        body.addView(textLine("TTX · VIDEO YUV NGOẠI TUYẾN V1.3.6"))
         body.addView(textLine(
             "Chọn TTXYUV01: 2–8 khung YUV420p 640×480. " +
                 "Xác minh SHA-256 từng khung, chạy lại bridge A500S, " +
@@ -61,6 +64,12 @@ class OfflineYuvAuditActivity:Activity() {
             setOnClickListener { pick(referenceCode) }
         }
         body.addView(referenceButton)
+        evidenceButton=Button(this).apply {
+            text="3. KIỂM TRA HỒ SƠ SHA NGUỒN DỮ LIỆU TTXEVD01"
+            isEnabled=false
+            setOnClickListener { pick(manifestCode) }
+        }
+        body.addView(evidenceButton)
         body.addView(resultView)
         body.addView(Button(this).apply {
             text="TRỞ VỀ";setOnClickListener { finish() }
@@ -107,11 +116,14 @@ class OfflineYuvAuditActivity:Activity() {
     @Deprecated("Local-only Storage Access Framework fixture picker")
     override fun onActivityResult(code:Int,result:Int,data:Intent?) {
         super.onActivityResult(code,result,data)
-        if(result!=RESULT_OK || code !in listOf(pickCode,referenceCode)) return
+        if(result!=RESULT_OK ||
+            code !in listOf(pickCode,referenceCode,manifestCode)) return
         val uri=data?.data ?: return
         val current=++requestNumber
         if(code==pickCode) {
             selectedYuv=uri
+            selectedReference=null
+            evidenceButton.isEnabled=false
             referenceButton.isEnabled=true
             resultView.text="Đang kiểm tra tệp YUV và hai tensor..."
             Thread({
@@ -141,6 +153,53 @@ class OfflineYuvAuditActivity:Activity() {
             return
         }
         val yuvUri=selectedYuv
+        if(code==manifestCode) {
+            val referenceUri=selectedReference
+            if(yuvUri==null || referenceUri==null) {
+                resultView.text="Cần kiểm tra TTXYUV01 và TTXREF01 trước."
+                return
+            }
+            evidenceButton.isEnabled=false
+            resultView.text="Đang đối chiếu hồ sơ SHA của ba tệp cục bộ..."
+            Thread({
+                val report=try {
+                    val meta=contentResolver.openInputStream(uri)?.use {
+                        EvidenceBundleManifest.read(it)
+                    } ?: error("Không đọc được TTXEVD01")
+                    val yuv=contentResolver.openInputStream(yuvUri)
+                        ?: error("Không đọc được TTXYUV01")
+                    val ref=contentResolver.openInputStream(referenceUri)
+                        ?: error("Không đọc được TTXREF01")
+                    val audit=EvidenceBundleManifest.verify(
+                        meta,yuv,ref,File(filesDir,"models/vision.onnx"))
+                    val resolved=if(audit.hashesMatch) {
+                        val vector=contentResolver.openInputStream(referenceUri)?.use {
+                            ReferenceTensorFixture.read(it)
+                        } ?: error("Không mở được vector TTXREF01")
+                        EvidenceBundleManifest.verifyEmbeddedReferenceModel(audit,vector)
+                    } else audit
+                    "TTXEVD01: " + resolved.status.name +
+                        "\nNguồn tự khai: " + meta.sourceId +
+                        "\nThiết bị tự khai: " + meta.instrumentId +
+                        "\nThời điểm tự khai: " + meta.recordedUtc +
+                        "\nQuyền sử dụng (mã tự khai): " + meta.permissionId +
+                        "\n" + resolved.note +
+                        "\nKHÔNG XÁC MINH NHÀ CUNG CẤP/ẢNH THỰC/ADAS."
+                } catch(e:Exception) {
+                    "KHÔNG HỢP LỆ TTXEVD01: " +
+                        (e.message ?: e.javaClass.simpleName).take(220) +
+                        "\nKhông cấp quyền ADAS hoặc tin vào nguồn gốc tệp."
+                }
+                runOnUiThread {
+                    if(current==requestNumber && !isDestroyed && !isFinishing) {
+                        resultView.text=report
+                        evidenceButton.isEnabled=selectedReference!=null &&
+                            selectedYuv!=null
+                    }
+                }
+            },"TTX-Offline-Evidence").apply { isDaemon=true; start() }
+            return
+        }
         if(yuvUri==null) {
             resultView.text="Chọn và kiểm tra TTXYUV01 trước."
             return
@@ -148,6 +207,7 @@ class OfflineYuvAuditActivity:Activity() {
         resultView.text="Đang so sánh SHA model, hai tensor và ONNX..."
         referenceButton.isEnabled=false
         Thread({
+            var parsedReference=false
             val message=try {
                 val sequence=contentResolver.openInputStream(yuvUri)?.use {
                     OfflineYuvFixture.read(it)
@@ -155,6 +215,7 @@ class OfflineYuvAuditActivity:Activity() {
                 val ref=contentResolver.openInputStream(uri)?.use {
                     ReferenceTensorFixture.read(it)
                 } ?: error("Không đọc được TTXREF01")
+                parsedReference=true
                 val model=File(filesDir,"models/vision.onnx")
                 val report=OfflineModelParityAudit.compare(
                     sequence,ref,model,
@@ -169,7 +230,10 @@ class OfflineYuvAuditActivity:Activity() {
             runOnUiThread {
                 if(current==requestNumber && !isDestroyed && !isFinishing) {
                     resultView.text=message
+                    if(parsedReference) selectedReference=uri
                     referenceButton.isEnabled=selectedYuv!=null
+                    evidenceButton.isEnabled=selectedYuv!=null &&
+                        selectedReference!=null
                 }
             }
         },"TTX-Offline-ONNX-Parity").apply { isDaemon=true; start() }
