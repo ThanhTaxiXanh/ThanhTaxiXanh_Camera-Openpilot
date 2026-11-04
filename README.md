@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.2.1-xadas-core (Lite / AI flavors)  
+**Version**: 1.2.2-xadas-yuv (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -122,3 +122,30 @@ Owner requirement: do not request a new phone/camera installation test until pre
 - USB/UVC and multiple other vendor-specific camera adapters are not implemented; real-world model warp/calibration and metric lead detection are still missing.
 
 See docs/PREDEVICE_90_GATE.md for required completion evidence. CI separately compiles/tests Lite and AI and checks all native libraries.
+
+
+## V1.2.2 — nonblocking offscreen YUV acquisition for Direct RTSP
+
+- Added `H264YuvSidecar`: a **second, optional** Android MediaCodec decoder
+  configured with a null Surface so output frames can be copied as YUV_420_888.
+  It receives the exact same already-assembled H264 Annex-B access units used
+  by the Direct preview. **No new RTSP connection** is opened.
+- The Direct Surface decoder remains independent and never waits for the YUV
+  decoder. The optional sidecar uses a 16-AU bounded queue; on saturation it
+  resets its own decoder and waits for a new IDR rather than decoding a broken
+  prediction chain. The IJK player's proven path is unchanged.
+- The **YUV A500S: TẮT/BẬT** button is an explicit opt-in for *raw offscreen
+  acquisition diagnostics*, not an ADAS enable switch. Default OFF. HUD
+  displays sidecar decode, output frames, IDR skips, resets and errors.
+  Switching OFF releases the auxiliary decoder without stopping preview.
+- Annex-B start-code and IDR recovery logic have repeatable JVM regression
+  tests. Both Lite and AI flavors receive the YUV acquisition adapter.
+- This is **not** live Openpilot inference or xADAS-equivalent ADAS.
+  Source intrinsics, temporal model input, legal ONNX model, real ground truth
+  and calibrated lead geometry remain unverified. Distance, lanes and warning
+  activation remain safely disabled. An offscreen second decoder may be
+  unsupported on devices with limited hardware codec instances.
+- Engineering gate #14 is now **CODED (Direct only), NOT PASS**. This version
+  does not reach the pre-device >=90% bar; no new on-phone test is requested.
+
+CI also runs on pull requests so both variants must pass before merging.
