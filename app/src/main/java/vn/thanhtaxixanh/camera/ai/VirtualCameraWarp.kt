@@ -14,10 +14,22 @@ object VirtualCameraWarp {
     const val OUTPUT_W = OpenpilotYuvPacker.SOURCE_WIDTH
     const val OUTPUT_H = OpenpilotYuvPacker.SOURCE_HEIGHT
 
-    data class Matrix(val values: DoubleArray) {
+    /**
+     * Defensive copy: a caller must not mutate the homography after
+     * validation, especially while the asynchronous inference worker runs.
+     */
+    class Matrix(values: DoubleArray) {
+        private val coefficients = values.copyOf()
+        val values: DoubleArray get() = coefficients.copyOf()
         init {
-            require(values.size == 9 && values.all { it.isFinite() })
-            require(values[6] != 0.0 || values[7] != 0.0 || values[8] != 0.0)
+            require(coefficients.size == 9 && coefficients.all { it.isFinite() })
+            val m = coefficients
+            val determinant = m[0]*(m[4]*m[8]-m[5]*m[7]) -
+                m[1]*(m[3]*m[8]-m[5]*m[6]) +
+                m[2]*(m[3]*m[7]-m[4]*m[6])
+            require(determinant.isFinite() && determinant != 0.0) {
+                "Singular/non-invertible camera homography"
+            }
         }
         companion object {
             fun identity() = Matrix(doubleArrayOf(
@@ -25,17 +37,34 @@ object VirtualCameraWarp {
         }
     }
 
+    /** Sampling coverage is geometric, not a camera calibration score. */
+    data class SampledFrame(val pixels: IntArray, val validPixels: Int) {
+        val coverage: Double get() = validPixels.toDouble() / pixels.size
+    }
+
+    // For RAW diagnostic inference, reject transforms that mostly sample
+    // black padding. The threshold does NOT establish xADAS model parity.
+    const val MIN_DIAGNOSTIC_COVERAGE = 0.80
+
     fun warp(
         argb: IntArray,
         width: Int,
         height: Int,
         outputToInput: Matrix
-    ): IntArray {
+    ): IntArray = warpWithCoverage(argb, width, height, outputToInput).pixels
+
+    fun warpWithCoverage(
+        argb: IntArray,
+        width: Int,
+        height: Int,
+        outputToInput: Matrix
+    ): SampledFrame {
         require(width > 1 && height > 1)
         require(width.toLong() * height.toLong() == argb.size.toLong())
         val m = outputToInput.values
         val result = IntArray(OUTPUT_W * OUTPUT_H)
         var dest = 0
+        var valid = 0
         for (y in 0 until OUTPUT_H) {
             for (x in 0 until OUTPUT_W) {
                 val denom = m[6]*x + m[7]*y + m[8]
@@ -50,6 +79,7 @@ object VirtualCameraWarp {
                     result[dest++] = 0xff000000.toInt()
                     continue
                 }
+                valid++
                 val x0=floor(sx).toInt()
                 val y0=floor(sy).toInt()
                 val x1=(x0+1).coerceAtMost(width-1)
@@ -73,7 +103,7 @@ object VirtualCameraWarp {
                     (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
             }
         }
-        return result
+        return SampledFrame(result, valid)
     }
 
     /** Does not imply geometrical calibration or model accuracy. */
@@ -84,8 +114,14 @@ object VirtualCameraWarp {
         sourceHeight: Int,
         outputToInput: Matrix
     ): FloatArray {
-        val a=warp(previous,sourceWidth,sourceHeight,outputToInput)
-        val b=warp(current,sourceWidth,sourceHeight,outputToInput)
-        return OpenpilotYuvPacker.packPair(a,b)
+        val a = warpWithCoverage(previous, sourceWidth, sourceHeight, outputToInput)
+        require(a.coverage >= MIN_DIAGNOSTIC_COVERAGE) {
+            "RAW_ONLY rejected: insufficient warp source coverage ${a.coverage}"
+        }
+        val b = warpWithCoverage(current, sourceWidth, sourceHeight, outputToInput)
+        require(b.coverage >= MIN_DIAGNOSTIC_COVERAGE) {
+            "RAW_ONLY rejected: insufficient warp source coverage ${b.coverage}"
+        }
+        return OpenpilotYuvPacker.packPair(a.pixels, b.pixels)
     }
 }
