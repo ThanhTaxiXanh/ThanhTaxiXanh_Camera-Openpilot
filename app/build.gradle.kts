@@ -9,8 +9,8 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 41
-        versionName = "1.3.1-rtp-surface-timing"
+        versionCode = 42
+        versionName = "1.3.2-stream-cadence-audit"
         ndk {
             // Modern A500S Android test device: one CPU architecture only.
             abiFilters += "arm64-v8a"
