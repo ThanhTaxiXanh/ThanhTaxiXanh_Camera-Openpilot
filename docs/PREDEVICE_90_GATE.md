@@ -1,6 +1,6 @@
 # TTX Camera AI — acceptance criteria before the next phone test
 
-Updated: 2026-11-04. V1.2.3. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-04. V1.2.4. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
 
 ## 90% engineering gate
 
@@ -49,3 +49,11 @@ pair reset and fail-closed behavior, and CI can verify both APK flavors compile.
 A second AVC decoder may be unsupported by the handset; calibration, valid
 model artifacts, observed confidence, lead geometry and true source timestamp
 remain unknown. Raw tensor output must NEVER count as ADAS acceptance.
+
+
+V1.2.4 evidence: additional JVM regression cases and CI compile/packaging
+for offscreen PTS uniqueness, H264 IDR recovery, decoder epoch isolation,
+nonblocking signal for temporal reset and synthetic reference-YUV ordering.
+This makes Direct YUV handling more fail-closed but does NOT change #14 to PASS:
+no genuine A500S image/ONNX golden results or live hardware evidence. The
+synthetic tensor fixture is expressly not a license or parity proof.

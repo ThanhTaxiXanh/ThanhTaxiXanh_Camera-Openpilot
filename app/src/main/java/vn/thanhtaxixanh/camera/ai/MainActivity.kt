@@ -29,6 +29,7 @@ import java.net.Inet4Address
 import java.security.SecureRandom
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * TTX Camera AI — compact PLAYBACK BENCHMARK ONLY.
@@ -68,6 +69,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     // the owner quickly switches RAW ON/OFF during the same RTSP session.
     private var rawVisionSequence = 0L
     private val rawResults = AtomicLong(0L)
+    private val rawPairResetPending = AtomicBoolean(false)
     @Volatile private var rawModelStatus = "AI chưa bật"
     @Volatile private var yuvTapEnabled = false
     private val yuvFrames = AtomicLong(0L)
@@ -677,6 +679,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         ++rawVisionSequence
         rawVisionRequested = false
         rawVisionLoading = false
+        rawPairResetPending.set(false)
         rawBridge?.reset()
         rawBridge = null
         val old = rawVision
@@ -732,12 +735,21 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     // The bridge feeds only a RAW, uncalibrated model worker.
                     // Never route the result to HUD, sound or distance.
                     if (rawVisionRequested)
-                        try { rawBridge?.accept(yuv, capturedAtMs) }
+                        try {
+                            if (rawPairResetPending.getAndSet(false))
+                                rawBridge?.reset()
+                            rawBridge?.accept(yuv, capturedAtMs)
+                        }
                         catch (error: Exception) {
                             rawModelStatus = "YUV→ONNX: " + error.javaClass.simpleName
                             rawBridge?.reset()
                         }
                 }
+            },
+            {
+                // A damaged RTP AU, overload, or codec restart must discard
+                // the previous temporal frame, even if the gap is <850 ms.
+                if (token == generation) rawPairResetPending.set(true)
             }
         )
         direct = player
@@ -761,7 +773,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
         direct?.close()
         direct = null
-        rawBridge?.reset()  // Never pair image frames across a RTSP reconnect.
+        rawPairResetPending.set(true)  // Reconnect invalidates prior pairs.
         val delay = 1200L * retryCount
         showStatus("RTSP ngắt · thử lại " + retryCount + "/3 trong " +
             delay + "ms · " + reason.take(90))

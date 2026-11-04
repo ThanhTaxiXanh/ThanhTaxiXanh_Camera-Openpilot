@@ -72,6 +72,27 @@ class A500sRawVisionBridgeTest {
         assertEquals(2L, bridge.metrics().discontinuities)
     }
 
+
+    @Test fun decoderEpochResetBlocksCrossGopPairEvenWithTinyGap() {
+        val now = AtomicLong(10000L)
+        val submissions = mutableListOf<Long>()
+        val bridge = A500sRawVisionBridge(
+            nowMs = { now.get() },
+            submit = { submissions.add(it.capturedAtMs); true })
+        val frame = testFrame()
+        assertEquals(A500sRawVisionBridge.Verdict.WAITING_PAIR,
+            bridge.accept(frame, 9770L))
+        // A missing H264 reference picture is not just a clock gap.
+        // Even 40 ms between frames must not cross the damaged GOP.
+        bridge.reset()
+        assertEquals(A500sRawVisionBridge.Verdict.WAITING_PAIR,
+            bridge.accept(frame, 9810L))
+        assertTrue(submissions.isEmpty())
+        assertEquals(A500sRawVisionBridge.Verdict.SUBMITTED,
+            bridge.accept(frame, 9850L))
+        assertEquals(listOf(9850L), submissions)
+    }
+
     @Test fun sinkBackpressureNeverClaimsModelWasFed() {
         val clock = AtomicLong(5000L)
         val bridge = A500sRawVisionBridge(nowMs = { clock.get() },

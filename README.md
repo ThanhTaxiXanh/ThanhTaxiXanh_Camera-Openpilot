@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.2.3-xadas-raw-onnx (Lite / AI flavors)  
+**Version**: 1.2.4-xadas-yuv-resilience (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -178,3 +178,32 @@ CI also runs on pull requests so both variants must pass before merging.
 - This milestone does **NOT** satisfy the pre-device 90% gate: real A500S
   YUV path, model output correspondence, calibration and hardware FPS/latency
   remain unverified. No new owner device test is requested.
+
+
+## V1.2.4 — offscreen decoder epoch recovery and test-vector correctness
+
+- A frame's local access-unit receipt time is captured before any preview
+  queue wait, so a stale frame cannot appear newly arrived to the AI gate.
+- Sidecar MediaCodec presentation timestamps now use a unique **local monotonic
+  input-receipt clock** for offscreen output correlation, avoiding ambiguous
+  32-bit RTP clock wraps or multiple access units sharing a timestamp.
+  The primary preview RTP PTS/pacing is unchanged. This local time is **not**
+  camera exposure time or a measurement of glass-to-glass latency.
+- Every sidecar overflow, detected damaged H264 access unit or secondary codec
+  exception resets a **secondary decoder epoch** and waits for a valid IDR.
+  Queued inputs and output callbacks from previous epochs are suppressed;
+  the live Surface decoder is not touched.
+- Resets propagate to the ONNX temporal pair bridge without blocking the
+  RTSP receiver: receiver threads only set an atomic discontinuity flag;
+  the offscreen frame worker consumes it before constructing another pair.
+- The secondary worker handles decoder errors during *idle output draining*,
+  rather than terminating silently and leaving a permanently full queue.
+- JVM tests verify monotonic offscreen PTS, repeated same-millisecond access
+  units, clock reset/overflow, prevention of temporal pairs across corrupted
+  GOPs and a deterministic synthetic 12-channel YUV 2x2 fixture.
+- **Not a real xADAS golden model fixture**. We cannot assert model/channel
+  parity, real camera calibration, trustworthy lead metres or safety readiness
+  from synthetic generated vectors. Live ADAS rendering and warnings stay OFF.
+- Both APK flavors remain ARM64. No xADAS binaries or weights are included.
+  No hardware test required until the separately tracked >=90% engineering
+  pre-device gate is achieved.

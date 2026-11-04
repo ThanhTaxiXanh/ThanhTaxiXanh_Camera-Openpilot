@@ -43,7 +43,8 @@ class DirectRtspPlayer(
     private val onLuma: (ByteArray, Int, Int) -> Unit,
     private val onSessionInterrupted: (String) -> Unit,
     private val preferUdp: Boolean = false,
-    private val onDecodedYuv: ((Yuv420FrameConverter.Frame, Long) -> Unit)? = null
+    private val onDecodedYuv: ((Yuv420FrameConverter.Frame, Long) -> Unit)? = null,
+    private val onYuvDiscontinuity: (() -> Unit)? = null
 ) : AutoCloseable {
     data class Counters(
         val decoded: Long, val rendered: Long, val droppedRtp: Long,
@@ -170,9 +171,11 @@ class DirectRtspPlayer(
         // Secondary decoder is lazy: native resources are allocated only
         // after an explicit user opt-in AND the next H264 IDR frame.
         yuvSidecar = onDecodedYuv?.let { frameConsumer ->
-            H264YuvSidecar(pair.first, pair.second, frameConsumer) { message ->
-                status(message)
-            }
+            H264YuvSidecar(
+                pair.first, pair.second, frameConsumer,
+                onFault = { message -> status(message) },
+                onDiscontinuity = { onYuvDiscontinuity?.invoke() }
+            )
         }
         if (pair.first != null && pair.second != null) {
             fmt.setByteBuffer("csd-0",ByteBuffer.wrap(byteArrayOf(0,0,0,1)+pair.first!!))
@@ -288,6 +291,9 @@ class DirectRtspPlayer(
         onLuma(data,w,h)
     }
     private fun enqueue(bytes:ByteArray,ts:Long) {
+        // Mark AU receipt BEFORE any preview queue backpressure. Otherwise a
+        // frame that waited 900ms would be stamped as newly captured for AI.
+        val receivedAtMs = SystemClock.elapsedRealtime()
         val sample=Sample(bytes,ts*1000000L/90000L)
         // Applying bounded backpressure preserves the H264 reference chain.
         // If decode stalls for 900 ms, fail with a clear error rather than
@@ -305,7 +311,7 @@ class DirectRtspPlayer(
         // Never wait for the secondary AI decoder; dropping its GOP is safe
         // because the preview retains its complete access-unit sequence.
         if (isAiEnabled()) {
-            yuvSidecar?.offer(bytes, sample.timestampUs, SystemClock.elapsedRealtime())
+            yuvSidecar?.offer(bytes, receivedAtMs)
         } else {
             yuvSidecar?.pause()
         }
@@ -388,7 +394,13 @@ class DirectRtspPlayer(
             status("RTSP PLAY 200 · session timeout="+timeoutSecs+
                 "s · keepalive mỗi "+intervalMs/1000+"s")
             createDecoder(describe.sdp)
-            val assemble=Assembler(::enqueue,dropped,rtpDiagnostics,discardedAccessUnits)
+            val assemble=Assembler(::enqueue,dropped,rtpDiagnostics,
+                discardedAccessUnits) {
+                // A discarded AU can break the reference-picture chain.
+                // Reset the optional AI decoder and temporal pair, never
+                // the independent Surface preview.
+                yuvSidecar?.dropPredictionChain()
+            }
             if (!useUdp) earlyMedia.forEach { assemble.accept(it) }
 
             val lastRtpAt = AtomicLong(SystemClock.elapsedRealtime())
@@ -567,7 +579,8 @@ class DirectRtspPlayer(
         val emit:(ByteArray,Long)->Unit,
         val lost:AtomicLong,
         val meter:RtpReceiverDiagnostics,
-        val discarded:AtomicLong
+        val discarded:AtomicLong,
+        val onDamaged: () -> Unit
     ) {
         private val out=ByteArrayOutputStream(65536)
         private var ts=-1L
@@ -579,9 +592,11 @@ class DirectRtspPlayer(
             out.write(prefix);out.write(packet,offset,length)
         }
         private fun flush() {
-            if (out.size()>0) {
-                if (!broken) emit(out.toByteArray(),ts)
-                else discarded.incrementAndGet()
+            if (broken) {
+                discarded.incrementAndGet()
+                onDamaged()
+            } else if (out.size()>0) {
+                emit(out.toByteArray(),ts)
             }
             out.reset();broken=false
         }
