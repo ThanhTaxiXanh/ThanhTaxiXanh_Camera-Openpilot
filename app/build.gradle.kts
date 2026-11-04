@@ -9,8 +9,8 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 38
-        versionName = "1.2.8-xadas-axis-timing-audit"
+        versionCode = 39
+        versionName = "1.2.9-raw-lineage-timing"
         ndk {
             // Modern A500S Android test device: one CPU architecture only.
             abiFilters += "arm64-v8a"
