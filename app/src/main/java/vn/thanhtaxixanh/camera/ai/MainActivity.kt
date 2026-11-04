@@ -854,7 +854,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         "P95 " + (decode.p95ReceiptToDecoderMs?.toString() ?: "—") +
                         "ms · mới nhất " + (decode.lastReceiptToDecoderMs?.toString() ?: "—") +
                         "ms · mẫu " + decode.matched +
-                        " · không ghép PTS " + decode.unmatched)
+                        " · không ghép PTS " + decode.unmatched +
+                        " · bỏ output quá hạn " + s.staleDecodedSuppressed)
                     s.sidecar?.let { yuv ->
                         detailView.append("\nYUV OFFSCREEN: " +
                             (if (yuvTapEnabled) "BẬT" else "TẮT") +
