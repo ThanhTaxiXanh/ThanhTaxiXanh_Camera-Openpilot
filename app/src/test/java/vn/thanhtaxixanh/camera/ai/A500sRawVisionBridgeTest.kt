@@ -21,13 +21,13 @@ class A500sRawVisionBridgeTest {
             submit = { received.add(it); true })
         val f = testFrame()
         assertEquals(A500sRawVisionBridge.Verdict.WAITING_PAIR,
-            bridge.accept(f, 9_100L))
+            bridge.accept(f, 9_600L))
         assertEquals(A500sRawVisionBridge.Verdict.SUBMITTED,
-            bridge.accept(f, 9_400L))
+            bridge.accept(f, 9_800L))
         assertEquals(A500sRawVisionBridge.Verdict.SUBMITTED,
-            bridge.accept(f, 9_700L))
+            bridge.accept(f, 9_800L))
         assertEquals(2, received.size)
-        assertEquals(9_700L, received[1].capturedAtMs)
+        assertEquals(9_800L, received[1].capturedAtMs)
         assertEquals(640 * 480, received[0].previousArgb.size)
         assertEquals(640 * 480, received[0].currentArgb.size)
         assertEquals(3L, bridge.metrics().frames)
@@ -60,9 +60,9 @@ class A500sRawVisionBridgeTest {
             submit = { received.add(it.capturedAtMs); true })
         val f = testFrame()
         assertEquals(A500sRawVisionBridge.Verdict.WAITING_PAIR,
-            bridge.accept(f, 19_500L))
+            bridge.accept(f, 19_700L))
         assertEquals(A500sRawVisionBridge.Verdict.DISCONTINUITY,
-            bridge.accept(f, 19_400L)) // time reversed
+            bridge.accept(f, 19_800L)) // time reversed
         clock.set(21_000L)
         assertEquals(A500sRawVisionBridge.Verdict.DISCONTINUITY,
             bridge.accept(f, 20_700L)) // 1300ms gap
