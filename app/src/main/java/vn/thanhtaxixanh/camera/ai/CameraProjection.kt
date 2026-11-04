@@ -72,11 +72,24 @@ object LaneProjection {
         imageHeight: Int
     ): List<ProjectedLane> {
         if (calibration?.ready != true) return emptyList()
+        // Never turn non-adjacent valid samples into one continuous line.
+        // mapNotNull() used to stitch across projected points behind camera,
+        // off-screen or invalid, which could invent a lane over an obstacle.
         return model.lanes.filter {
-            it.existProb >= VisionSafetyGate.MIN_LANE_PROBABILITY
-        }.mapNotNull { lane ->
-            val points = lane.points.mapNotNull { pt ->
-                CameraProjection.project(
+            it.existProb.isFinite() &&
+                it.existProb >= VisionSafetyGate.MIN_LANE_PROBABILITY
+        }.flatMap { lane ->
+            val segments = mutableListOf<ProjectedLane>()
+            val contiguous = mutableListOf<CameraProjection.Pixel>()
+            fun flush() {
+                if (contiguous.size >= 4) {
+                    segments += ProjectedLane(
+                        lane.index, lane.existProb, contiguous.toList())
+                }
+                contiguous.clear()
+            }
+            for (pt in lane.points) {
+                val projected = CameraProjection.project(
                     CameraProjection.Point3(
                         forwardM = pt.distanceFromCameraM.toDouble(),
                         rightM = pt.lateralRaw.toDouble(),
@@ -84,9 +97,11 @@ object LaneProjection {
                     ),
                     calibration, imageWidth, imageHeight
                 )
+                if (projected == null) flush()
+                else contiguous += projected
             }
-            if (points.size < 4) null
-            else ProjectedLane(lane.index, lane.existProb, points)
+            flush()
+            segments
         }
     }
 }
