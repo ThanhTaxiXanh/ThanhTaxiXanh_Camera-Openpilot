@@ -26,6 +26,7 @@ import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Independent RTSP/RTP-H264/MediaCodec experimental player.
@@ -63,7 +64,8 @@ class DirectRtspPlayer(
         val maxAccessUnitQueue: Int,
         val oldestQueueAgeMs: Long?,
         val decodeTimeline: PreviewDecodeTimeline.Snapshot,
-        val bufferAgeRestarts: Long
+        val bufferAgeRestarts: Long,
+        val staleDecodedSuppressed: Long
     )
     private data class Sample(
         val data: ByteArray, val timestampUs: Long, val receivedAtMs: Long
@@ -81,6 +83,8 @@ class DirectRtspPlayer(
     private val inputWaitMs = AtomicLong()
     private val queueOverflows = AtomicLong()
     private val bufferAgeRestarts = AtomicLong()
+    private val staleDecodedSuppressed = AtomicLong()
+    private val oldCodecOutputStreak = AtomicInteger()
     private val outputTimeline = PreviewDecodeTimeline()
     private val queuePeak = AtomicLong()
     private val keepAliveSent = AtomicLong()
@@ -131,7 +135,8 @@ class DirectRtspPlayer(
             (SystemClock.elapsedRealtime() - it.receivedAtMs).coerceAtLeast(0L)
         },
         outputTimeline.snapshot(),
-        bufferAgeRestarts.get()
+        bufferAgeRestarts.get(),
+        staleDecodedSuppressed.get()
     )
     fun start() {
         check(alive.compareAndSet(false, true)) { "Already started" }
@@ -226,15 +231,37 @@ class DirectRtspPlayer(
                 try {
                     decoded.incrementAndGet()
                     val now=SystemClock.elapsedRealtime()
-                    if (info.size > 0)
+                    val decodedAge = if (info.size > 0)
                         outputTimeline.emitted(info.presentationTimeUs,now)
+                    else null
                     // Surface-configured codecs cannot reliably expose
                     // YUV. The optional second offscreen codec handles it.
                     // Critical V0.9.5 change:
                     // NEVER retain a decoded hardware output buffer while
                     // waiting for a target PTS. Input frame pacing is handled
                     // on the feeder thread, preserving codec output slots.
-                    if (info.size > 0) {
+                    if (info.size > 0 &&
+                        latencyPolicy.shouldSuppressDecodedOutputAge(decodedAge)) {
+                        // The decoder has ALREADY decoded this picture and
+                        // maintained the H264 reference chain. Suppressing
+                        // Surface output here is safe; skipping compressed
+                        // P-frames before decode would not be safe.
+                        c.releaseOutputBuffer(i, false)
+                        staleDecodedSuppressed.incrementAndGet()
+                        if (oldCodecOutputStreak.incrementAndGet() >=
+                                latencyPolicy.staleOutputReconnectCount &&
+                            alive.compareAndSet(true,false)) {
+                            bufferAgeRestarts.incrementAndGet()
+                            lastNetworkFailure =
+                                "Codec output delayed >" +
+                                latencyPolicy.maxOutputCallbackAgeMs +
+                                "ms for " + oldCodecOutputStreak.get() +
+                                " frames; reconnect from IDR"
+                            status(lastNetworkFailure)
+                            try { socket?.close() } catch (_: Exception) {}
+                        }
+                    } else if (info.size > 0) {
+                        oldCodecOutputStreak.set(0)
                         c.releaseOutputBuffer(i, true)
                         rendered.incrementAndGet()
                         if (shown.compareAndSet(false,true)) firstPicture()
