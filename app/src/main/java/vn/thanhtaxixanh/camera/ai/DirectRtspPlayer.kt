@@ -291,6 +291,9 @@ class DirectRtspPlayer(
         onLuma(data,w,h)
     }
     private fun enqueue(bytes:ByteArray,ts:Long) {
+        // Mark AU receipt BEFORE any preview queue backpressure. Otherwise a
+        // frame that waited 900ms would be stamped as newly captured for AI.
+        val receivedAtMs = SystemClock.elapsedRealtime()
         val sample=Sample(bytes,ts*1000000L/90000L)
         // Applying bounded backpressure preserves the H264 reference chain.
         // If decode stalls for 900 ms, fail with a clear error rather than
@@ -308,7 +311,7 @@ class DirectRtspPlayer(
         // Never wait for the secondary AI decoder; dropping its GOP is safe
         // because the preview retains its complete access-unit sequence.
         if (isAiEnabled()) {
-            yuvSidecar?.offer(bytes, SystemClock.elapsedRealtime())
+            yuvSidecar?.offer(bytes, receivedAtMs)
         } else {
             yuvSidecar?.pause()
         }
