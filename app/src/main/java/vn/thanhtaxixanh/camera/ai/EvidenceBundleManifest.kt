@@ -96,9 +96,11 @@ object EvidenceBundleManifest {
         val permission=field(4,"permission_id")
         require(idPattern.matches(source) && idPattern.matches(instrument) &&
             idPattern.matches(permission)) { "Invalid evidence source/instrument/permission identifier" }
-        require(timePattern.matches(at) && Instant.parse(at).toString()==at) {
-            "Non-canonical recorded UTC timestamp"
-        }
+        val canonicalUtc=if(timePattern.matches(at)) {
+            try { Instant.parse(at).toString()==at }
+            catch (_:java.time.format.DateTimeParseException) { false }
+        } else false
+        require(canonicalUtc) { "Non-canonical recorded UTC timestamp" }
         val y=field(5,"yuv_sha256")
         val v=field(6,"ref_sha256")
         val m=field(7,"model_sha256")
