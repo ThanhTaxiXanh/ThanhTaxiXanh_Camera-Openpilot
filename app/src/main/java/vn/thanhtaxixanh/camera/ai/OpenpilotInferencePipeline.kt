@@ -11,8 +11,9 @@ import java.util.concurrent.atomic.AtomicReference
  * ONNX or UI. When overloaded, the newest sample replaces the older pending
  * sample; stale model results are dropped before publishing.
  *
- * This is the inference CORE. Source YUV decode and validated A500S camera
- * warp still require an on-device integration. No fabricated warnings.
+ * This is the inference CORE. An optional A500S YUV sidecar now feeds RAW
+ * diagnostic tensors, but source intrinsics/warp and model axes remain
+ * unvalidated. No fabricated warnings.
  */
 class OpenpilotInferencePipeline(
     private val engine: VisionInferenceEngine,
