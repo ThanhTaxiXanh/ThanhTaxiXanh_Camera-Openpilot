@@ -26,6 +26,7 @@ import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Independent RTSP/RTP-H264/MediaCodec experimental player.
@@ -44,7 +45,8 @@ class DirectRtspPlayer(
     private val onSessionInterrupted: (String) -> Unit,
     private val preferUdp: Boolean = false,
     private val onDecodedYuv: ((Yuv420FrameConverter.Frame, Long) -> Unit)? = null,
-    private val onYuvDiscontinuity: (() -> Unit)? = null
+    private val onYuvDiscontinuity: (() -> Unit)? = null,
+    private val latencyPolicy: DirectLatencyPolicy = DirectLatencyPolicy.SMOOTH
 ) : AutoCloseable {
     data class Counters(
         val decoded: Long, val rendered: Long, val droppedRtp: Long,
@@ -58,9 +60,16 @@ class DirectRtspPlayer(
         val rtp: RtpReceiverDiagnostics.Snapshot,
         val rtcpSent: Long, val discardedAccessUnits: Long,
         val udpReordered: Long, val udpRecovered: Long, val udpSkipped: Long,
-        val sidecar: H264YuvSidecar.Metrics?
+        val sidecar: H264YuvSidecar.Metrics?,
+        val maxAccessUnitQueue: Int,
+        val oldestQueueAgeMs: Long?,
+        val decodeTimeline: PreviewDecodeTimeline.Snapshot,
+        val bufferAgeRestarts: Long,
+        val staleDecodedSuppressed: Long
     )
-    private data class Sample(val data: ByteArray, val timestampUs: Long)
+    private data class Sample(
+        val data: ByteArray, val timestampUs: Long, val receivedAtMs: Long
+    )
     private val alive = AtomicBoolean(false)
     private val shown = AtomicBoolean(false)
     private val noYuv = AtomicBoolean(false)
@@ -73,6 +82,10 @@ class DirectRtspPlayer(
     private val compressedBytes = AtomicLong()
     private val inputWaitMs = AtomicLong()
     private val queueOverflows = AtomicLong()
+    private val bufferAgeRestarts = AtomicLong()
+    private val staleDecodedSuppressed = AtomicLong()
+    private val oldCodecOutputStreak = AtomicInteger()
+    private val outputTimeline = PreviewDecodeTimeline()
     private val queuePeak = AtomicLong()
     private val keepAliveSent = AtomicLong()
     private val keepAliveOk = AtomicLong()
@@ -90,9 +103,10 @@ class DirectRtspPlayer(
     // over long sessions and the V0.9.5 feeder imposed an additional wait.
     // We keep the camera's original PTS for MediaCodec and measure actual input.
     private val input = ArrayBlockingQueue<Int>(32)
-    // 48 complete access units (approximately 1–2 seconds at 25–30fps).
-    // Never discard arbitrary P frames: the following frames depend on them.
-    private val frames = ArrayBlockingQueue<Sample>(48)
+    // A500S H264 P-frames reference earlier pictures. Never discard
+    // arbitrary compressed frames to catch up: after a freshness failure,
+    // restart the RTSP decoder session and reacquire an IDR instead.
+    private val frames = ArrayBlockingQueue<Sample>(latencyPolicy.maxQueuedAccessUnits)
     private var socket: Socket? = null
     private var udpPorts: A500sUdpPortPair? = null
     private var udpThread: Thread? = null
@@ -115,7 +129,14 @@ class DirectRtspPlayer(
         udpReorder?.outOfOrderPackets ?: 0,
         udpReorder?.recoveredOutOfOrderPackets ?: 0,
         udpReorder?.skippedMissingPackets ?: 0,
-        yuvSidecar?.metrics()
+        yuvSidecar?.metrics(),
+        latencyPolicy.maxQueuedAccessUnits,
+        frames.peek()?.let {
+            (SystemClock.elapsedRealtime() - it.receivedAtMs).coerceAtLeast(0L)
+        },
+        outputTimeline.snapshot(),
+        bufferAgeRestarts.get(),
+        staleDecodedSuppressed.get()
     )
     fun start() {
         check(alive.compareAndSet(false, true)) { "Already started" }
@@ -185,7 +206,9 @@ class DirectRtspPlayer(
         // Fastest possible decode is not the same as evenly paced display.
         // Low latency was previously forced on despite this being a smooth
         // playback mode; disable the optional vendor-specific low-latency hint.
-        if (Build.VERSION.SDK_INT >= 30) fmt.setInteger(MediaFormat.KEY_LOW_LATENCY,0)
+        if (Build.VERSION.SDK_INT >= 30)
+            fmt.setInteger(MediaFormat.KEY_LOW_LATENCY,
+                if (latencyPolicy.requestCodecLowLatency) 1 else 0)
         val t = HandlerThread("TTX-Codec",Process.THREAD_PRIORITY_DISPLAY).apply { start() }
         codecThread=t
         val codecHandler = Handler(t.looper)
@@ -208,13 +231,37 @@ class DirectRtspPlayer(
                 try {
                     decoded.incrementAndGet()
                     val now=SystemClock.elapsedRealtime()
+                    val decodedAge = if (info.size > 0)
+                        outputTimeline.emitted(info.presentationTimeUs,now)
+                    else null
                     // Surface-configured codecs cannot reliably expose
                     // YUV. The optional second offscreen codec handles it.
                     // Critical V0.9.5 change:
                     // NEVER retain a decoded hardware output buffer while
                     // waiting for a target PTS. Input frame pacing is handled
                     // on the feeder thread, preserving codec output slots.
-                    if (info.size > 0) {
+                    if (info.size > 0 &&
+                        latencyPolicy.shouldSuppressDecodedOutputAge(decodedAge)) {
+                        // The decoder has ALREADY decoded this picture and
+                        // maintained the H264 reference chain. Suppressing
+                        // Surface output here is safe; skipping compressed
+                        // P-frames before decode would not be safe.
+                        c.releaseOutputBuffer(i, false)
+                        staleDecodedSuppressed.incrementAndGet()
+                        if (oldCodecOutputStreak.incrementAndGet() >=
+                                latencyPolicy.staleOutputReconnectCount &&
+                            alive.compareAndSet(true,false)) {
+                            bufferAgeRestarts.incrementAndGet()
+                            lastNetworkFailure =
+                                "Codec output delayed >" +
+                                latencyPolicy.maxOutputCallbackAgeMs +
+                                "ms for " + oldCodecOutputStreak.get() +
+                                " frames; reconnect from IDR"
+                            status(lastNetworkFailure)
+                            try { socket?.close() } catch (_: Exception) {}
+                        }
+                    } else if (info.size > 0) {
+                        oldCodecOutputStreak.set(0)
                         c.releaseOutputBuffer(i, true)
                         rendered.incrementAndGet()
                         if (shown.compareAndSet(false,true)) firstPicture()
@@ -239,13 +286,34 @@ class DirectRtspPlayer(
                     // second artificial jitter buffer. Never reorder/drop
                     // compressed reference pictures.
                     val sample=frames.poll(250,TimeUnit.MILLISECONDS) ?: continue
+                    requireFreshAu(sample,"before MediaCodec input acquisition")
                     val waitStart=SystemClock.elapsedRealtime()
                     var index:Int?=null
-                    while (alive.get() && index == null)
-                        index=input.poll(250,TimeUnit.MILLISECONDS)
+                    while (alive.get() && index == null) {
+                        index=input.poll(40,TimeUnit.MILLISECONDS)
+                        if (index == null &&
+                            latencyPolicy.inputWaitExceeded(
+                                waitStart,SystemClock.elapsedRealtime())) {
+                            bufferAgeRestarts.incrementAndGet()
+                            throw IllegalStateException(
+                                "Codec input not available before " +
+                                    latencyPolicy.maxInputWaitMs + "ms")
+                        }
+                    }
+                    val inputReadyAt = SystemClock.elapsedRealtime()
                     inputWaitMs.addAndGet(
-                        (SystemClock.elapsedRealtime()-waitStart).coerceAtLeast(0L))
+                        (inputReadyAt-waitStart).coerceAtLeast(0L))
                     if (!alive.get() || index == null) break
+                    // The callback may provide a slot just AFTER the wait
+                    // budget; enforce the deadline on success, not only on
+                    // empty polls. Reconnect rather than drop a reference AU.
+                    if (latencyPolicy.inputWaitExceeded(waitStart,inputReadyAt)) {
+                        bufferAgeRestarts.incrementAndGet()
+                        throw IllegalStateException(
+                            "Codec input callback arrived after " +
+                                latencyPolicy.maxInputWaitMs + "ms")
+                    }
+                    requireFreshAu(sample,"before MediaCodec.queueInputBuffer")
 
                     val dst=decoder.getInputBuffer(index)
                         ?: throw IllegalStateException("MediaCodec returned a null input buffer")
@@ -256,7 +324,14 @@ class DirectRtspPlayer(
                             sample.data.size+" > "+dst.remaining())
                     }
                     dst.put(sample.data)
-                    decoder.queueInputBuffer(index,0,sample.data.size,sample.timestampUs,0)
+                    outputTimeline.submitted(sample.timestampUs,sample.receivedAtMs)
+                    try {
+                        decoder.queueInputBuffer(index,0,sample.data.size,
+                            sample.timestampUs,0)
+                    } catch (failure: Exception) {
+                        outputTimeline.forget(sample.timestampUs)
+                        throw failure
+                    }
                     submittedAccessUnits.incrementAndGet()
                 }
             } catch (_:InterruptedException) {
@@ -272,6 +347,18 @@ class DirectRtspPlayer(
             }
         },"TTX-CodecFeed").apply{ start() }
     }
+    private fun requireFreshAu(sample: Sample, stage: String) {
+        val verdict = latencyPolicy.checkAge(
+            sample.receivedAtMs,SystemClock.elapsedRealtime())
+        if (verdict != DirectLatencyPolicy.AgeStatus.FRESH) {
+            bufferAgeRestarts.incrementAndGet()
+            throw IllegalStateException(
+                "Stale H264 access unit at " + stage + ": " + verdict +
+                    ", policy=" + latencyPolicy.name +
+                    " (must reconnect from next IDR)")
+        }
+    }
+
     private fun sampleLuma(image:Image) {
         val p=image.planes.firstOrNull() ?: return
         val crop:Rect=image.cropRect
@@ -294,16 +381,20 @@ class DirectRtspPlayer(
         // Mark AU receipt BEFORE any preview queue backpressure. Otherwise a
         // frame that waited 900ms would be stamped as newly captured for AI.
         val receivedAtMs = SystemClock.elapsedRealtime()
-        val sample=Sample(bytes,ts*1000000L/90000L)
-        // Applying bounded backpressure preserves the H264 reference chain.
-        // If decode stalls for 900 ms, fail with a clear error rather than
-        // silently dropping a compressed P-frame and corrupting the GOP.
-        val accepted = frames.offer(sample, 900L, TimeUnit.MILLISECONDS)
+        val sample=Sample(bytes,ts*1000000L/90000L,receivedAtMs)
+        // A growing backlog must be measured before accepting another AU.
+        // Never remove only its old P-frames: restart the decoder and
+        // reacquire IDR when the selected freshness policy cannot be met.
+        frames.peek()?.let { requireFreshAu(it,"network AU arrival") }
+        val accepted = frames.offer(
+            sample,latencyPolicy.enqueueWaitMs,TimeUnit.MILLISECONDS)
         if (!accepted) {
             queueOverflows.incrementAndGet()
             throw IllegalStateException(
-                "Decoder không theo kịp: hàng đợi 48 khung đầy hơn 900 ms. " +
-                "Dừng Direct để tránh bỏ mất H264 P-frame; thử lại hoặc dùng VLC 800 ms."
+                "Decoder không theo kịp: hàng đợi " +
+                    latencyPolicy.maxQueuedAccessUnits +
+                    " AU đầy hơn " + latencyPolicy.enqueueWaitMs +
+                    "ms; reconnect bảo vệ chuỗi H264 P-frame."
             )
         }
         receivedAccessUnits.incrementAndGet()
@@ -656,6 +747,7 @@ class DirectRtspPlayer(
         feeder?.interrupt()
         frames.clear()
         input.clear()
+        outputTimeline.clear()
         yuvSidecar?.close()
         yuvSidecar = null
         val oldCodec=codec

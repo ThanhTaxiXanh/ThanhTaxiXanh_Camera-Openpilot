@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.2.9-raw-lineage-timing (Lite / AI flavors)  
+**Version**: 1.3.0-direct-buffer-audit (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -334,3 +334,28 @@ See `docs/ONNX_REFERENCE_VECTOR_V1.md` for the fixed reference format.
   remain separate. See `docs/RAW_LINEAGE_TIMING_V1.md`.
 - The mandatory >=90% pre-device gate is not met. No fresh phone trial
   should be requested yet; never derive trusted lead metres from raw data.
+
+## V1.3.0 — experimental Direct freshness guard and decoder output timing
+
+- Direct MediaCodec now offers an **opt-in freshness guard** preserving
+  the existing SMOOTH selection as default. It bounds compressed H264
+  queue length (12 AU), offer wait (80ms), max queued age (450ms), codec
+  input wait (350ms), and requests a vendor low-latency hint with
+  safe fallback. Smooth continues to use 48 AU, 900ms queue wait and
+  non-low-latency codec, with a 1.8s fail-fast queue-age protection.
+- Overload or stale compressed input **reconnects** the stream;
+  it never silently drops arbitrary H264 P-frames. A decoded image
+  older than 850ms can be suppressed from Surface in experimental mode
+  without corrupting inter-frame reference decoding. Four consecutive
+  late decoded images trigger a clean reconnect.
+- A bounded `PreviewDecodeTimeline` correlates input H264 RTP-derived
+  PTS with MediaCodec output PTS and reports local receipt-to-decode
+  callback age (last, P95, matched/unmatched) in the main UI. These
+  measurements **are not glass-to-glass latency**, which remains
+  owner-observed ~3s vs ~1s in the official 70mai player.
+- Host tests cover default/opt-in queue safeguards, codec-output
+  freshness, PTS alignment, window P95, invalid clocks and bounded
+  memory. Read `docs/DIRECT_LATENCY_GUARD_V1.md`.
+- This is a controlled experiment for a later approved A500S trial,
+  not evidence that 70mai app performance has been matched. The
+  pre-device 90% acceptance gate remains NOT PASS.
