@@ -179,16 +179,16 @@ class OfflineYuvAuditActivity:Activity() {
                         EvidenceBundleManifest.verifyEmbeddedReferenceModel(audit,vector)
                     } else audit
                     "TTXEVD01: " + resolved.status.name +
-                        "\\nNguồn tự khai: " + meta.sourceId +
-                        "\\nThiết bị tự khai: " + meta.instrumentId +
-                        "\\nThời điểm tự khai: " + meta.recordedUtc +
-                        "\\nQuyền sử dụng (mã tự khai): " + meta.permissionId +
-                        "\\n" + resolved.note +
-                        "\\nKHÔNG XÁC MINH NHÀ CUNG CẤP/ẢNH THỰC/ADAS."
+                        "\nNguồn tự khai: " + meta.sourceId +
+                        "\nThiết bị tự khai: " + meta.instrumentId +
+                        "\nThời điểm tự khai: " + meta.recordedUtc +
+                        "\nQuyền sử dụng (mã tự khai): " + meta.permissionId +
+                        "\n" + resolved.note +
+                        "\nKHÔNG XÁC MINH NHÀ CUNG CẤP/ẢNH THỰC/ADAS."
                 } catch(e:Exception) {
                     "KHÔNG HỢP LỆ TTXEVD01: " +
                         (e.message ?: e.javaClass.simpleName).take(220) +
-                        "\\nKhông cấp quyền ADAS hoặc tin vào nguồn gốc tệp."
+                        "\nKhông cấp quyền ADAS hoặc tin vào nguồn gốc tệp."
                 }
                 runOnUiThread {
                     if(current==requestNumber && !isDestroyed && !isFinishing) {
