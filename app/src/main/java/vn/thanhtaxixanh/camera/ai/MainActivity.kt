@@ -27,6 +27,7 @@ import tv.danmaku.ijk.media.player.IjkMediaPlayer
 import java.util.Locale
 import java.net.Inet4Address
 import java.security.SecureRandom
+import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -58,6 +59,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var pairButton: Button
     private lateinit var latencyButton: Button
     private lateinit var yuvTapButton: Button
+    private lateinit var rawAiButton: Button
+    @Volatile private var rawVision: OpenpilotInferencePipeline? = null
+    @Volatile private var rawBridge: A500sRawVisionBridge? = null
+    @Volatile private var rawVisionRequested = false
+    private var rawVisionLoading = false
+    private val rawResults = AtomicLong(0L)
+    @Volatile private var rawModelStatus = "AI chưa bật"
     @Volatile private var yuvTapEnabled = false
     private val yuvFrames = AtomicLong(0L)
     @Volatile private var yuvShape = "chưa có khung"
@@ -194,6 +202,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     return@setOnClickListener
                 }
                 yuvTapEnabled = !yuvTapEnabled
+                if (!yuvTapEnabled) stopRawVision()
                 text = if (yuvTapEnabled) "YUV A500S: BẬT · KHÔNG PHÁT CẢNH BÁO"
                     else "YUV A500S: TẮT · CHẨN ĐOÁN OFFSCREEN"
                 showStatus(if (yuvTapEnabled)
@@ -203,6 +212,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             }
         }
         root.addView(yuvTapButton)
+
+        rawAiButton = Button(this).apply {
+            text = "ONNX A500S: TẮT · RAW-ONLY"
+            textSize = 11f
+            setOnClickListener { toggleA500sRawVision() }
+        }
+        root.addView(rawAiButton)
 
         root.addView(Button(this).apply {
             text = "PiP · CỬA SỔ VIDEO NHỎ"
@@ -563,6 +579,108 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         try { player.release() } catch (_: Throwable) {}
     }
 
+    /**
+     * The owner explicitly enables model execution. A model is loaded only
+     * from app-private storage; a successful graph load is not camera
+     * calibration. These outputs NEVER reach AdasHudView or warning audio.
+     */
+    private fun toggleA500sRawVision() {
+        if (rawVisionLoading) return
+        if (rawVision != null) {
+            stopRawVision()
+            showStatus("ONNX RAW đã tắt; không lưu khung hình hoặc cảnh báo.")
+            return
+        }
+        if (backend != Backend.DIRECT || !yuvTapEnabled) {
+            showStatus("Bật Direct MediaCodec rồi chọn YUV A500S trước khi chạy ONNX RAW.")
+            return
+        }
+        val model = File(filesDir, "models/vision.onnx")
+        if (!model.isFile) {
+            showStatus("Chưa có model ONNX được phép sử dụng. Nhập tại OPENPILOT.")
+            return
+        }
+        rawVisionLoading = true
+        rawVisionRequested = true
+        rawAiButton.isEnabled = false
+        rawAiButton.text = "ONNX A500S: ĐANG NẠP MODEL"
+        rawModelStatus = "Đang xác minh model đã nhập"
+        val token = generation
+        Thread({
+            var result: OpenpilotInferencePipeline? = null
+            var failure: String? = null
+            var runner: VisionInferenceEngine? = null
+            try {
+                runner = VisionModelBackend.openEngine(model)
+                    ?: error("Bản Lite không có ONNX Runtime; sử dụng APK AI.")
+                val mainWarp = VirtualCameraWarp.Matrix(doubleArrayOf(
+                    1.0,0.0,64.0,0.0,1.0,112.0,0.0,0.0,1.0))
+                val wideWarp = VirtualCameraWarp.Matrix(doubleArrayOf(
+                    1.2,0.0,13.0,0.0,1.2,86.0,0.0,0.0,1.0))
+                result = OpenpilotInferencePipeline(
+                    runner, mainWarp, wideWarp, calibration = null,
+                    sourceWidth = A500sRawVisionBridge.EXPECTED_WIDTH,
+                    sourceHeight = A500sRawVisionBridge.EXPECTED_HEIGHT,
+                    nowMs = { SystemClock.elapsedRealtime() }
+                ) { outcome ->
+                    if (token == generation && rawVisionRequested) {
+                        rawResults.incrementAndGet()
+                        rawModelStatus = outcome.status +
+                            " · ONNX " + outcome.runtimeMs + "ms"
+                    }
+                }
+                // Pipeline owns the engine and closes it only after inference
+                // exits; never dispose native sessions from the codec thread.
+                runner = null
+            } catch (e: Exception) {
+                failure = (e.message ?: e.javaClass.simpleName).take(180)
+                try { runner?.close() } catch (_: Exception) {}
+            }
+            val candidate = result
+            val problem = failure
+            runOnUiThread {
+                if (token != generation || !rawVisionRequested ||
+                    backend != Backend.DIRECT || !yuvTapEnabled || isDestroyed) {
+                    candidate?.close()
+                    return@runOnUiThread
+                }
+                rawVisionLoading = false
+                rawAiButton.isEnabled = true
+                if (candidate == null) {
+                    rawVisionRequested = false
+                    rawAiButton.text = "ONNX A500S: TẮT · RAW-ONLY"
+                    rawModelStatus = problem ?: "Không thể tạo ONNX runner"
+                    showStatus("ONNX RAW không khởi động: " + rawModelStatus)
+                } else {
+                    rawResults.set(0L)
+                    rawVision = candidate
+                    rawBridge = A500sRawVisionBridge(
+                        nowMs = { SystemClock.elapsedRealtime() },
+                        submit = { pair -> candidate.offer(pair) })
+                    rawAiButton.text = "ONNX A500S: RAW ĐANG CHẠY · TẮT"
+                    rawModelStatus = "YUV → temporal pair → ONNX; chưa hiệu chuẩn"
+                    showStatus("ONNX RAW đã mở. CHỈ CHẨN ĐOÁN: " +
+                        "không hiển thị làn, mét hoặc cảnh báo.")
+                }
+            }
+        }, "TTX-A500S-RAW-ModelLoader").start()
+    }
+
+    private fun stopRawVision() {
+        rawVisionRequested = false
+        rawVisionLoading = false
+        rawBridge?.reset()
+        rawBridge = null
+        val old = rawVision
+        rawVision = null
+        old?.close()
+        rawModelStatus = "AI đã tắt"
+        if (::rawAiButton.isInitialized) {
+            rawAiButton.isEnabled = true
+            rawAiButton.text = "ONNX A500S: TẮT · RAW-ONLY"
+        }
+    }
+
     private fun startDirect(token: Int) {
         val wifi = network ?: return
         val currentUrl = url ?: return
@@ -599,12 +717,18 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 }
             },
             selectedUdp,
-            { yuv, _ ->
+            { yuv, capturedAtMs ->
                 if (token == generation && backend == Backend.DIRECT && yuvTapEnabled) {
                     yuvFrames.incrementAndGet()
                     yuvShape = "${yuv.width}x${yuv.height}"
-                    // The frame is intentionally not passed to ADAS until
-                    // intrinsics and model axes are verified with golden data.
+                    // The bridge feeds only a RAW, uncalibrated model worker.
+                    // Never route the result to HUD, sound or distance.
+                    if (rawVisionRequested)
+                        try { rawBridge?.accept(yuv, capturedAtMs) }
+                        catch (error: Exception) {
+                            rawModelStatus = "YUV→ONNX: " + error.javaClass.simpleName
+                            rawBridge?.reset()
+                        }
                 }
             }
         )
@@ -629,6 +753,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
         direct?.close()
         direct = null
+        rawBridge?.reset()  // Never pair image frames across a RTSP reconnect.
         val delay = 1200L * retryCount
         showStatus("RTSP ngắt · thử lại " + retryCount + "/3 trong " +
             delay + "ms · " + reason.take(90))
@@ -676,6 +801,14 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                             " · lỗi ${yuv.errors}")
                         if (yuv.lastFailure.isNotBlank())
                             detailView.append("\n" + yuv.lastFailure)
+                    }
+                    rawBridge?.metrics()?.let { model ->
+                        detailView.append("\nONNX RAW: " + rawModelStatus +
+                            " · ${rawResults.get()} kết quả" +
+                            " · pair ${model.pairs}" +
+                            " · bỏ ${model.rejected}" +
+                            " · ngắt nhịp ${model.discontinuities}" +
+                            " · ${model.lastVerdict}")
                     }
                     previousPackets = s.rtp.packets
                     previousMarkers = s.rtp.markers
@@ -739,6 +872,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun stopPlayback() {
+        stopRawVision()
         yuvTapEnabled = false
         if (::yuvTapButton.isInitialized)
             yuvTapButton.text = "YUV A500S: TẮT · CHẨN ĐOÁN OFFSCREEN"
