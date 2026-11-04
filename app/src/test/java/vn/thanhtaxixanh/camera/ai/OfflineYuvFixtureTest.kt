@@ -46,7 +46,10 @@ class OfflineYuvFixtureTest {
         assertEquals(2,result.pairs)
         assertEquals(64,result.mainHash.length)
         assertEquals(64,result.wideHash.length)
-        assertNotEquals(result.mainHash,result.wideHash)
+        // Uniform gray planes intentionally produce identical tensor values
+        // under both crop transforms. Distinct hashes would be an invalid
+        // assertion unless the source contains spatial structure.
+        assertEquals(result.mainHash,result.wideHash)
         assertTrue(result.note.contains("NOT actual camera video"))
         assertFalse(VisionSafetyGate.assess(
             null,null,nowElapsedMs=1_000L,speedMetersPerSecond=null).mayWarn)
