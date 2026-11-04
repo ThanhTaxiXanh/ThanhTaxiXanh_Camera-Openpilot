@@ -873,6 +873,28 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         "ms · cuối " + shownMs(surfaceClock.lastReleaseToRenderMs) +
                         "ms · mẫu " + surfaceClock.matched +
                         " · thiếu sự kiện " + surfaceClock.unmatched)
+                    val cadence = s.streamCadence
+                    detailView.append("\nNHỊP VIDEO 10s [chẩn đoán, KHÔNG phải trễ cảnh thực]: " +
+                        cadence.status.name + " · " +
+                        "RTP AU " + shownMs(cadence.sourceFps) +
+                        " fps · đồng hồ nguồn ~" +
+                        shownMs(cadence.mediaClockFps) + " fps" +
+                        " · đưa vào codec " +
+                        shownMs(cadence.codecInputFps) + " fps")
+                    detailView.append("\nGiải mã " +
+                        shownMs(cadence.codecOutputFps) +
+                        " fps · thả Surface " +
+                        shownMs(cadence.surfaceReleaseFps) +
+                        " fps · render callback " +
+                        shownMs(cadence.matchedRenderCallbackFps) +
+                        " fps · lỗi mẫu " + cadence.invalidEvents)
+                    detailView.append("\nKhoảng cách thời gian *media PTS* [không phải độ trễ vật lý]: " +
+                        "nguồn→giải mã " +
+                        shownMs(cadence.mediaGapToCodecOutputMs) +
+                        "ms · nguồn→Surface " +
+                        shownMs(cadence.mediaGapToSurfaceReleaseMs) +
+                        "ms · nguồn im lặng " +
+                        (cadence.sourceStallMs?.toString() ?: "—") + "ms")
                     s.sidecar?.let { yuv ->
                         detailView.append("\nYUV OFFSCREEN: " +
                             (if (yuvTapEnabled) "BẬT" else "TẮT") +
