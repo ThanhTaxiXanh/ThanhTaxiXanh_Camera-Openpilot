@@ -556,13 +556,18 @@ class DirectRtspPlayer(
             status("RTSP PLAY 200 · session timeout="+timeoutSecs+
                 "s · keepalive mỗi "+intervalMs/1000+"s")
             createDecoder(describe.sdp)
-            val assemble=Assembler(::enqueue,dropped,rtpDiagnostics,
-                discardedAccessUnits) {
+            val assemble = RtpH264AccessUnitAssembler(
+                emit = ::enqueue,
+                onDamaged = {
                 // A discarded AU can break the reference-picture chain.
                 // Reset the optional AI decoder and temporal pair, never
                 // the independent Surface preview.
                 yuvSidecar?.dropPredictionChain()
-            }
+                },
+                onPacket = { rtpDiagnostics.observe(it) },
+                onLostSequence = { dropped.incrementAndGet() },
+                onDiscarded = { discardedAccessUnits.incrementAndGet() }
+            )
             if (!useUdp) earlyMedia.forEach {
                 streamHealth.onRtp(SystemClock.elapsedRealtime())
                 assemble.accept(it)
@@ -748,75 +753,6 @@ class DirectRtspPlayer(
                     lastNetworkFailure.ifBlank { "RTSP connection ended" }
                 })
             }
-        }
-    }
-    private class Assembler(
-        val emit:(ByteArray,Long)->Unit,
-        val lost:AtomicLong,
-        val meter:RtpReceiverDiagnostics,
-        val discarded:AtomicLong,
-        val onDamaged: () -> Unit
-    ) {
-        private val out=ByteArrayOutputStream(65536)
-        private var ts=-1L
-        private var seq=-1
-        private var broken=false
-        private val prefix=byteArrayOf(0,0,0,1)
-        private fun add(packet:ByteArray,offset:Int,length:Int) {
-            if(length<1 || out.size()+length>1_500_000){broken=true;return}
-            out.write(prefix);out.write(packet,offset,length)
-        }
-        private fun flush() {
-            if (broken) {
-                discarded.incrementAndGet()
-                onDamaged()
-            } else if (out.size()>0) {
-                emit(out.toByteArray(),ts)
-            }
-            out.reset();broken=false
-        }
-        fun accept(p:ByteArray) {
-            meter.observe(p)
-            if(p.size<13 || (p[0].toInt() and 0xC0)!=0x80)return
-            val cc=p[0].toInt() and 15
-            var o=12+4*cc
-            if(o>=p.size)return
-            if(p[0].toInt() and 16!=0) {
-                if(o+4>p.size)return
-                val len=((p[o+2].toInt() and 255) shl 8)or(p[o+3].toInt() and 255)
-                o+=4+len*4
-            }
-            if(o>=p.size)return
-            val mark=(p[1].toInt() and 128)!=0
-            val nextSeq=((p[2].toInt() and 255) shl 8)or(p[3].toInt() and 255)
-            val nextTs=((p[4].toLong() and 255) shl 24)or
-                ((p[5].toLong() and 255) shl 16)or
-                ((p[6].toLong() and 255) shl 8)or(p[7].toLong() and 255)
-            if(ts>=0 && ts!=nextTs) flush()
-            if(seq>=0 && ((seq+1) and 65535)!=nextSeq){broken=true;lost.incrementAndGet()}
-            seq=nextSeq;ts=nextTs
-            when(p[o].toInt() and 31) {
-                in 1..23 -> add(p,o,p.size-o)
-                24 -> { o++
-                    while(o+2<=p.size) {
-                        val len=((p[o].toInt() and 255) shl 8)or(p[o+1].toInt() and 255)
-                        o+=2
-                        if(len<1 || o+len>p.size){broken=true;break}
-                        add(p,o,len);o+=len
-                    }
-                }
-                28 -> {
-                    if(o+2>=p.size){broken=true;return}
-                    val typ=p[o+1].toInt() and 255
-                    if(typ and 128!=0) {
-                        out.write(prefix)
-                        out.write((p[o].toInt() and 224)or(typ and 31))
-                    } else if(out.size()==0) broken=true
-                    out.write(p,o+2,p.size-o-2)
-                }
-                else -> broken=true
-            }
-            if(mark)flush()
         }
     }
     private fun cleanup() {

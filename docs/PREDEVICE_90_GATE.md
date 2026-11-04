@@ -171,3 +171,6 @@ with synthetic tests alone, a dependency that must remain visible.
 
 
 V1.3.7: bounded, owner-armed live YUV capture and SAF TTXYUV01 writer, with JVM tests for planar stride/interleaved conversion, integrity round-trip and fail-closed gaps. New data collection is not on-device validation. Criteria #14-17 and #20 remain NOT PASS; **7/20 = 35%**.
+
+
+V1.3.8: independently unit-tested RTP/H264 FU-A/STAP-A reassembly guards and conservative cross-boundary packet-loss quarantine in the Direct player. This is packet integrity work, NOT measured phone-camera playback or model calibration: **7/20=35%** and mandatory #14–17/#20 remain NOT PASS.
