@@ -904,6 +904,20 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         "ms · cuối " + shownMs(surfaceClock.lastReleaseToRenderMs) +
                         "ms · mẫu " + surfaceClock.matched +
                         " · thiếu sự kiện " + surfaceClock.unmatched)
+                    val health = s.streamHealth
+                    detailView.append("\nVIDEO HEALTH · " + health.status.name +
+                        " · RTP " + (health.lastRtpAgoMs?.toString() ?: "—") +
+                        "ms · AU " + (health.lastAuAgoMs?.toString() ?: "—") +
+                        "ms · decode " +
+                        (health.lastDecodeAgoMs?.toString() ?: "—") +
+                        "ms · Surface " +
+                        (health.lastSurfaceAgoMs?.toString() ?: "—") + "ms")
+                    detailView.append("\nPTS AU: trùng " + health.duplicatePts +
+                        " · đảo thứ tự " + health.backwardPts +
+                        " · chưa tiến " + health.nonAdvancingAuCount +
+                        " · lỗi đồng hồ " + health.invalidClocks +
+                        " · đang phục hồi " +
+                        (if (directRecoveryPending) "CÓ" else "KHÔNG"))
                     val cadence = s.streamCadence
                     detailView.append("\nNHỊP VIDEO 10s [chẩn đoán, KHÔNG phải trễ cảnh thực]: " +
                         cadence.status.name + " · " +
