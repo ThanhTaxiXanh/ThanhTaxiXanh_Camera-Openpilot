@@ -300,9 +300,19 @@ class DirectRtspPlayer(
                                     latencyPolicy.maxInputWaitMs + "ms")
                         }
                     }
+                    val inputReadyAt = SystemClock.elapsedRealtime()
                     inputWaitMs.addAndGet(
-                        (SystemClock.elapsedRealtime()-waitStart).coerceAtLeast(0L))
+                        (inputReadyAt-waitStart).coerceAtLeast(0L))
                     if (!alive.get() || index == null) break
+                    // The callback may provide a slot just AFTER the wait
+                    // budget; enforce the deadline on success, not only on
+                    // empty polls. Reconnect rather than drop a reference AU.
+                    if (latencyPolicy.inputWaitExceeded(waitStart,inputReadyAt)) {
+                        bufferAgeRestarts.incrementAndGet()
+                        throw IllegalStateException(
+                            "Codec input callback arrived after " +
+                                latencyPolicy.maxInputWaitMs + "ms")
+                    }
                     requireFreshAu(sample,"before MediaCodec.queueInputBuffer")
 
                     val dst=decoder.getInputBuffer(index)
