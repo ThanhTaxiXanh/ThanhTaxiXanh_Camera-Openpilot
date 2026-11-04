@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -20,7 +21,7 @@ class VisionModelActivity : Activity() {
     private lateinit var statusView: TextView
     private val requestCode = 204
     private val referenceCode = 205
-    private val limitBytes = 250L * 1024L * 1024L
+    private lateinit var rightsCheck: CheckBox
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,9 +61,19 @@ class VisionModelActivity : Activity() {
                 }, "TTX-ONNX-Contract-Check").start()
             }
         })
+        rightsCheck = CheckBox(this).apply {
+            text = "Tôi xác nhận có quyền sử dụng tệp ONNX tự nhập"
+            setTextColor(Color.WHITE)
+            isChecked = false
+        }
+        body.addView(rightsCheck)
         body.addView(Button(this).apply {
             text = "NHẬP MODEL ONNX ĐƯỢC PHÉP SỬ DỤNG"
             setOnClickListener {
+                if (!rightsCheck.isChecked) {
+                    statusView.text = "Xác nhận quyền sử dụng model trước khi chọn tệp."
+                    return@setOnClickListener
+                }
                 startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
                     type = "*/*"
