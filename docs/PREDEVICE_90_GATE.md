@@ -1,6 +1,6 @@
 # TTX Camera AI — acceptance criteria before the next phone test
 
-Updated: 2026-11-04. V1.2.4. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-04. V1.2.5. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
 
 ## 90% engineering gate
 
@@ -18,7 +18,7 @@ Twenty criteria must be independently implemented and demonstrated with unit or 
 | 8 | Phone Camera2 preview plus YUV420 source | CODED; hardware unverified |
 | 9 | Stride-aware YUV420 frame converter | PASS CI |
 | 10 | Temporal 12-channel YUV preprocessing and virtual warp | PASS CI; camera warp unverified |
-| 11 | ONNX Runtime graph loading and worker | CODED; no golden model tests |
+| 11 | ONNX Runtime graph loading and worker | CODED; float32 shape/type gate and optional external reference comparison, but no authorized genuine reference yet |
 | 12 | NCNN alternate engine | NOT READY |
 | 13 | xADAS 1576-output lane/lead/road-edge parser | PASS CI |
 | 14 | Non-disruptive A500S decoded YUV to AI (mandatory) | CODED RAW DIAGNOSTIC in Direct: sidecar YUV -> temporal pair -> ONNX; no calibrated model and no device validation. NOT PASS |
@@ -57,3 +57,11 @@ nonblocking signal for temporal reset and synthetic reference-YUV ordering.
 This makes Direct YUV handling more fail-closed but does NOT change #14 to PASS:
 no genuine A500S image/ONNX golden results or live hardware evidence. The
 synthetic tensor fixture is expressly not a license or parity proof.
+
+
+V1.2.5 evidence: CPU/JVM tests now enforce homography immutability,
+invertibility, geometric coverage, studio-YUV channel ranges, fixed reference
+fixture parsing and 1,576-value numeric comparison. The ONNX AI UI can compare
+a separately authorized reference linked to the model SHA-256. No genuine
+licensed reference or physical A500S calibration data is bundled, so criteria
+#11, #14–17 remain incomplete. These checks cannot authorize ADAS output.
