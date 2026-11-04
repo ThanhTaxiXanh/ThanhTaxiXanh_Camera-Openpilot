@@ -9,8 +9,8 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 43
-        versionName = "1.3.3-video-freeze-recovery"
+        versionCode = 44
+        versionName = "1.3.4-offline-yuv-model-guard"
         ndk {
             // Modern A500S Android test device: one CPU architecture only.
             abiFilters += "arm64-v8a"
