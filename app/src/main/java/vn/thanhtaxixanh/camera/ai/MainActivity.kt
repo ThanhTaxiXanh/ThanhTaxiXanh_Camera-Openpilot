@@ -88,6 +88,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private var ownerSession: A500sOwnerSession? = null
     @Volatile private var generation = 0
     private var retryCount = 0
+    private val directReconnectBudget = DirectReconnectBudget()
+    private var directRecoveryPending = false
     private var preferUdp = true
     private var startedAt = 0L
     private var previousSampleTime = 0L
@@ -730,7 +732,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         previousDecoded = 0L
         previousRendered = 0L
         val selectedUdp = preferUdp
-        val player = DirectRtspPlayer(
+        // A callback from an old RTSP session must never restart the new one.
+        lateinit var player: DirectRtspPlayer
+        player = DirectRtspPlayer(
             wifi, currentUrl, surfaceView.holder.surface,
             { yuvTapEnabled },
             { message ->
@@ -749,7 +753,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             { _, _, _ -> }, // Deliberately no AI/frame copying in benchmark
             { reason ->
                 runOnUiThread {
-                    if (token == generation && backend == Backend.DIRECT)
+                    if (token == generation && backend == Backend.DIRECT &&
+                        direct === player)
                         recoverDirect(token, reason)
                 }
             },
@@ -790,30 +795,56 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun recoverDirect(token: Int, reason: String) {
-        if (token != generation || backend != Backend.DIRECT) return
+        if (token != generation || backend != Backend.DIRECT ||
+            directRecoveryPending) return
+        val decision=directReconnectBudget.onInterrupted(
+            SystemClock.elapsedRealtime())
+        retryCount=decision.attemptsWithinWindow
+        if (!decision.permitted) {
+            showStatus("Direct đã dừng sau " + retryCount +
+                " lần lỗi trong 60 giây · " + reason.take(110))
+            stopPlayback()
+            return
+        }
+        directRecoveryPending = true
         if (preferUdp && (reason.contains("zero video packets", true) ||
                 reason.contains("zero H264 access units", true))) {
             preferUdp = false
             showStatus("A500S UDP không có video → thử TCP mới")
         }
-        if (SystemClock.elapsedRealtime() - startedAt > 60_000L)
-            retryCount = 0
-        retryCount++
-        if (retryCount > 3) {
-            showStatus("Direct đã ngắt sau 3 lần thử: " + reason)
-            stopPlayback()
-            return
+        val old=direct
+        direct=null
+        rawPairResetPending.set(true)
+        rawVision?.invalidate()
+        old?.close()
+        showStatus("RTSP ngắt · đợi giải phóng MediaCodec · thử " +
+            retryCount + "/3 · " + reason.take(90))
+        // Do not sleep, join, or wait for a native decoder on Android UI,
+        // Surface, codec callback, or RTP assembly threads.
+        Thread({
+            val released = try { old?.awaitCodecRelease(5_000L) ?: true }
+                catch (_: InterruptedException) { false }
+            ui.post {
+                if (token != generation || backend != Backend.DIRECT ||
+                    !directRecoveryPending) return@post
+                if (!released) {
+                    showStatus("MediaCodec cũ chưa giải phóng sau 5 giây; " +
+                        "dừng an toàn, không mở decoder mới")
+                    stopPlayback()
+                    return@post
+                }
+                ui.postDelayed({
+                    if (token == generation && backend == Backend.DIRECT &&
+                        directRecoveryPending) {
+                        directRecoveryPending=false
+                        startDirect(token)
+                    }
+                }, decision.delayMs)
+            }
+        }, "TTX-Direct-Release-Barrier").apply {
+            isDaemon=true
+            start()
         }
-        direct?.close()
-        direct = null
-        rawPairResetPending.set(true)  // Reconnect invalidates prior pairs.
-        rawVision?.invalidate() // nonblocking generation barrier for running ONNX
-        val delay = 1200L * retryCount
-        showStatus("RTSP ngắt · thử lại " + retryCount + "/3 trong " +
-            delay + "ms · " + reason.take(90))
-        ui.postDelayed({
-            if (token == generation && backend == Backend.DIRECT) startDirect(token)
-        }, delay)
     }
 
     private val statusTicker = object : Runnable {
@@ -981,6 +1012,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun stopPlayback() {
+        directRecoveryPending = false
+        directReconnectBudget.reset()
+        retryCount = 0
         stopRawVision()
         yuvTapEnabled = false
         if (::yuvTapButton.isInitialized)
