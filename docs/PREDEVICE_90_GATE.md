@@ -188,3 +188,6 @@ Old player closes its socket and uses the existing async decoder release latch
 before recovery. RAW/ONNX epoch and YUV evidence are invalidated. Host JVM tests
 do not demonstrate exact hardware frame-flush behavior, exposure delay or
 calibrated lane/lead correctness: **7/20 = 35%**, mandatory #14–17/#20 NOT PASS.
+
+
+V1.3.12: a canonical TTXONNX-AUDIT-01 text-only receipt binds installed model SHA256, both Float32 input tensors, and reference vs actual 1576 outputs with big-endian raw IEEE754 SHA256; the Android share sheet can export hashes without weights or camera images. Matching self-imported reference is MATCHED_UNVERIFIED and does not validate independence or permission. No #11 or mandatory gate promotion: **7/20=35%**.

@@ -22,6 +22,7 @@ class VisionModelActivity : Activity() {
     private val requestCode = 204
     private val referenceCode = 205
     private lateinit var rightsCheck: CheckBox
+    private var latestAuditReceipt: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -89,6 +90,26 @@ class VisionModelActivity : Activity() {
                 }, referenceCode)
             }
         })
+        body.addView(Button(this).apply {
+            text = "CHIA SẺ BIÊN BẢN HASH (KHÔNG CHỨA MODEL)"
+            setOnClickListener {
+                val receipt = latestAuditReceipt
+                if (receipt == null) {
+                    statusView.text = "Chưa có đối chiếu ONNX để xuất biên bản."
+                } else {
+                    try {
+                        startActivity(Intent.createChooser(
+                            Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, receipt)
+                            }, "Chia sẻ biên bản ONNX (không chứa model)"))
+                    } catch (e: Exception) {
+                        statusView.text = "Không chia sẻ được biên bản: " +
+                            e.javaClass.simpleName
+                    }
+                }
+            }
+        })
         body.addView(label(
             "Chỉ nhập vector tham chiếu có quyền sử dụng. " +
                 "Kết quả PASS chỉ chứng minh khớp với vector đã cung cấp; " +
@@ -153,7 +174,9 @@ class VisionModelActivity : Activity() {
             return
         }
         statusView.text = "Đang kiểm tra hash model, vector và đầu ra ONNX..."
+        latestAuditReceipt = null
         Thread({
+            var preparedReceipt: String? = null
             val message = try {
                 val digest = MessageDigest.getInstance("SHA-256")
                 model.inputStream().buffered().use { input ->
@@ -175,22 +198,30 @@ class VisionModelActivity : Activity() {
                     ?: error("Bản Lite không có ONNX; dùng APK AI.")
                 runner.use { engine ->
                     val actual = engine.run(vector.img, vector.bigImg)
-                    val comparison = ReferenceTensorFixture.compare(
-                        vector.expectedOutput, actual)
-                    if (comparison.pass)
-                        "PASS VECTOR THAM CHIẾU: 1.576 giá trị, " +
-                            "sai số tối đa ${comparison.maxAbsoluteError}. " +
-                            "Chưa xác minh pixel warp, camera và ADAS."
+                    val report = OnnxReferenceAuditReceipt.inspect(
+                        sha, vector, actual)
+                    preparedReceipt = report.toText()
+                    if (report.comparison.pass)
+                        "KHỚP VECTOR TỰ NHẬP · CHƯA NGHIỆM THU #11. " +
+                            "SHA model " + report.modelSha256 +
+                            ". Sai khác " + report.comparison.mismatches +
+                            "/1576; KHÔNG chứng minh tham chiếu độc lập."
                     else
-                        "FAIL VECTOR: ${comparison.mismatches}/1576 sai khác; " +
-                            "lớn nhất tại index ${comparison.worstIndex}, " +
-                            "sai số ${comparison.maxAbsoluteError}. Không mở ADAS."
+                        "KHÔNG KHỚP VECTOR · KHÔNG MỞ ADAS. " +
+                            "Sai khác " + report.comparison.mismatches +
+                            "/1576; index " + report.comparison.worstIndex +
+                            ". Xem biên bản SHA để kiểm tra."
                 }
             } catch (e: Exception) {
                 "Không xác minh được vector: " +
                     (e.message ?: e.javaClass.simpleName).take(240)
             }
-            runOnUiThread { if (!isFinishing && !isDestroyed) statusView.text = message }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    latestAuditReceipt = preparedReceipt
+                    statusView.text = message
+                }
+            }
         }, "TTX-ONNX-Reference-Audit").start()
     }
 }
