@@ -1,6 +1,6 @@
 # TTX Camera AI — acceptance criteria before the next phone test
 
-Updated: 2026-11-04. V1.2.8. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-04. V1.2.9. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
 
 ## 90% engineering gate
 
@@ -21,7 +21,7 @@ Twenty criteria must be independently implemented and demonstrated with unit or 
 | 11 | ONNX Runtime graph loading and worker | CODED; float32 shape/type gate and optional external reference comparison, but no authorized genuine reference yet |
 | 12 | NCNN alternate engine | NOT READY |
 | 13 | xADAS 1576-output lane/lead/road-edge parser | PASS CI |
-| 14 | Non-disruptive A500S decoded YUV to AI (mandatory) | CODED RAW DIAGNOSTIC in Direct: sidecar YUV -> temporal pair -> ONNX; no calibrated model and no device validation. NOT PASS |
+| 14 | Non-disruptive A500S decoded YUV to AI (mandatory) | CODED RAW DIAGNOSTIC: sidecar YUV→temporal pair→optional ONNX, now with epoch/continuity guards and synthetic end-to-end tests; no actual model and physical device evidence. NOT PASS |
 | 15 | Verified A500S intrinsics, model axes and warp (mandatory) | CODED camera pinhole and Brown-Conrady distortion audit for user supplied marker files; no measured A500S coefficients, optical validation or model-axis parity. NOT PASS |
 | 16 | Licensed model with ground-truth inference results (mandatory) | NOT READY |
 | 17 | Validated live lane and metric lead HUD (mandatory) | NOT READY |
@@ -88,3 +88,11 @@ source/model metadata and cannot validate its provenance. The tests do
 NOT validate real model axes, synchronized exposure timestamps or physical
 lead distance and do NOT advance mandatory #14-#17 to PASS. Real device
 acceptance and the owner's >=90% threshold remain outstanding.
+
+
+V1.2.9 offline evidence: synthetic end-to-end A500S YUV→ARGB→temporal pair→
+model inputs→fake inference→1,576-head parser, plus nonblocking inference
+GOP epochs, CPU queue replacement, previous-frame freshness and receipt
+clock timing tests. No measured A500S exposure timestamp or actual camera
+model output is available. The earlier ~3s glass-to-glass observation and
+camera intrinsics remain unresolved, so #14–17 and #20 are NOT PASS.
