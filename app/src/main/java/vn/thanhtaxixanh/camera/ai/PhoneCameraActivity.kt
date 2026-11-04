@@ -44,7 +44,8 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
     private val framesReceived = AtomicLong(0L)
     @Volatile private var vision: OpenpilotInferencePipeline? = null
     private var lastVisionCaptureMs = 0L
-    private var previousVisionFrame: IntArray? = null
+    @Volatile private var previousVisionFrame: IntArray? = null
+    @Volatile private var previousVisionCaptureMs = 0L
     private lateinit var aiButton: Button
     private var loadingAi = false
 
@@ -95,6 +96,7 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
             vision?.close()
             vision=null
             previousVisionFrame=null
+            previousVisionCaptureMs=0L
             aiButton.text="AI: TẮT · CHẨN ĐOÁN TENSOR"
             status.text="Đã tắt suy luận AI thử nghiệm."
             return
@@ -126,8 +128,11 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
                     runOnUiThread {
                         if (vision != null && !isFinishing)
                             status.text="Openpilot RAW: " + result.status +
-                                " · inference " + result.runtimeMs + "ms" +
-                                " · lane metric: CHƯA HIỆU CHUẨN"
+                                " · xử lý " + result.runtimeMs + "ms" +
+                                (result.timing?.sourceToResultMs?.let {
+                                    " · từ nhận Camera2 " + it + "ms"
+                                } ?: "") +
+                                " · KHÔNG phải trễ cảnh thực · chưa hiệu chuẩn"
                     }
                 }
             } catch (e:Exception) {
@@ -145,6 +150,7 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
                 } else {
                     vision=newPipeline
                     previousVisionFrame=null
+                    previousVisionCaptureMs=0L
                     aiButton.text="AI: RAW ONNX ĐANG CHẠY · BẤM ĐỂ TẮT"
                     status.text="AI ONNX thử nghiệm trên YUV điện thoại; " +
                         "không dùng kết quả để cảnh báo."
@@ -163,11 +169,23 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
         try {
             val argb=Yuv420FrameConverter.argb(AndroidYuvImageBridge.snapshot(image))
             val prev=previousVisionFrame
+            val previousAt=previousVisionCaptureMs
             previousVisionFrame=argb
+            previousVisionCaptureMs=now
             if (prev!=null) {
-                current.offer(OpenpilotInferencePipeline.PairSample(prev,argb,now))
+                if (previousAt > 0L &&
+                    now - previousAt in 1L..A500sRawVisionBridge.MAX_GAP_MS) {
+                    current.offer(OpenpilotInferencePipeline.PairSample(prev,argb,now))
+                } else {
+                    // Camera2 pause/stream jump: old ONNX result must not
+                    // masquerade as the next continuous video frame.
+                    current.invalidate()
+                }
             }
         } catch (e:Exception) {
+            previousVisionFrame=null
+            previousVisionCaptureMs=0L
+            current.invalidate()
             runOnUiThread {
                 status.text="Khung YUV không hợp lệ: "+e.javaClass.simpleName
             }
@@ -272,6 +290,9 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
 
     private fun closeCamera() {
         started=false
+        previousVisionFrame=null
+        previousVisionCaptureMs=0L
+        vision?.invalidate()
         try { session?.close() }catch(_:Exception){}
         session=null
         try { camera?.close() }catch(_:Exception){}
@@ -298,6 +319,7 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
         vision?.close()
         vision=null
         previousVisionFrame=null
+        previousVisionCaptureMs=0L
         if (::aiButton.isInitialized)
             aiButton.text="AI: TẮT · CHẨN ĐOÁN TENSOR"
         closeCamera()

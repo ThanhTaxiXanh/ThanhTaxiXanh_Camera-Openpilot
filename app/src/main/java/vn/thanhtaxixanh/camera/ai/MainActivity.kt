@@ -633,8 +633,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     if (token == generation && requestId == rawVisionSequence &&
                         rawVisionRequested) {
                         rawResults.incrementAndGet()
+                        val measured = outcome.timing?.sourceToResultMs
                         rawModelStatus = outcome.status +
-                            " · ONNX " + outcome.runtimeMs + "ms"
+                            " · xử lý " + outcome.runtimeMs + "ms" +
+                            (if (measured != null)
+                                " · nhận AU→tensor→model " + measured + "ms" +
+                                    " (KHÔNG phải trễ cảnh thực)"
+                            else "")
                     }
                 }
                 // Pipeline owns the engine and closes it only after inference
@@ -742,6 +747,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         }
                         catch (error: Exception) {
                             rawModelStatus = "YUV→ONNX: " + error.javaClass.simpleName
+                            rawVision?.invalidate()
                             rawBridge?.reset()
                         }
                 }
@@ -749,7 +755,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             {
                 // A damaged RTP AU, overload, or codec restart must discard
                 // the previous temporal frame, even if the gap is <850 ms.
-                if (token == generation) rawPairResetPending.set(true)
+                if (token == generation) {
+                    rawPairResetPending.set(true)
+                    // Nonblocking: an in-flight ONNX result from the damaged
+                    // GOP is invalid even before the next YUV frame arrives.
+                    rawVision?.invalidate()
+                }
             }
         )
         direct = player
@@ -774,6 +785,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         direct?.close()
         direct = null
         rawPairResetPending.set(true)  // Reconnect invalidates prior pairs.
+        rawVision?.invalidate() // nonblocking generation barrier for running ONNX
         val delay = 1200L * retryCount
         showStatus("RTSP ngắt · thử lại " + retryCount + "/3 trong " +
             delay + "ms · " + reason.take(90))

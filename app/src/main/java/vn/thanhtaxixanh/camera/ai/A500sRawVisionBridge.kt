@@ -41,7 +41,10 @@ class A500sRawVisionBridge(
     companion object {
         const val EXPECTED_WIDTH = 640
         const val EXPECTED_HEIGHT = 480
-        const val MAX_GAP_MS = 850L
+        // Offscreen YUV arrives roughly every 300ms. A larger gap would
+        // silently pair temporally unrelated images after a decoder pause.
+        // This is a raw-input continuity rule, NOT a camera exposure clock.
+        const val MAX_GAP_MS = 500L
     }
 
     @Synchronized fun metrics(): Metrics =
@@ -75,7 +78,9 @@ class A500sRawVisionBridge(
             return reject(Verdict.STALE)
         val old = previous
         if (old != null &&
-            (capturedAtMs <= old.atMs || capturedAtMs - old.atMs > MAX_GAP_MS)) {
+            (capturedAtMs <= old.atMs ||
+                capturedAtMs - old.atMs > MAX_GAP_MS ||
+                now - old.atMs > VisionSafetyGate.MAX_FRAME_AGE_MS)) {
             discontinuities++
             // Keep the new valid image as the start of a fresh pair; do not
             // bridge across a reconnect, a GOP reset or a timestamp jump.
