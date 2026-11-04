@@ -11,7 +11,7 @@ import android.widget.TextView
 import java.util.Locale
 
 /**
- * Local-only pinhole reprojection inspection. Never saves a calibration,
+ * Local-only pinhole/Brown-Conrady and metric-range residual inspection. Never saves a calibration,
  * sets model-axis validation flags or activates ADAS warnings/overlays.
  */
 class CameraCalibrationAuditActivity : Activity() {
@@ -124,19 +124,19 @@ class CameraCalibrationAuditActivity : Activity() {
                 } ?: error("Không thể mở tệp .ttxlead")
                 val audit = evidence.audit()
                 val numbers = String.format(Locale.US,
-                    "MAE %.2f m · RMSE %.2f m · P95 %.2f m\\n" +
+                    "MAE %.2f m · RMSE %.2f m · P95 %.2f m\n" +
                         "MAPE %.2f %% · bias %+.2f m",
                     audit.meanAbsoluteErrorMeters,
                     audit.rootMeanSquareErrorMeters,
                     audit.p95AbsoluteErrorMeters,
                     audit.meanAbsolutePercentError,
                     audit.signedBiasMeters)
-                "Kết quả: ${audit.status}\\n" +
-                    "Dataset: ${evidence.datasetId} · ${audit.count} mốc đo\\n" +
-                    "Thiết bị đo (tự khai): ${evidence.referenceInstrumentId}\\n" +
-                    "SHA model (tự khai): ${evidence.claimedModelSha256.take(12)}…\\n" +
-                    numbers + "\\n" + audit.note +
-                    "\\nKHÔNG XÁC THỰC NGUỒN ĐO · ADAS VẪN KHÓA"
+                "Kết quả: ${audit.status}\n" +
+                    "Dataset: ${evidence.datasetId} · ${audit.count} mốc đo\n" +
+                    "Thiết bị đo (tự khai): ${evidence.referenceInstrumentId}\n" +
+                    "SHA model (tự khai): ${evidence.claimedModelSha256.take(12)}…\n" +
+                    numbers + "\n" + audit.note +
+                    "\nKHÔNG XÁC THỰC NGUỒN ĐO · ADAS VẪN KHÓA"
             } catch (e: Exception) {
                 "Tệp khoảng cách không hợp lệ: " +
                     (e.message ?: e.javaClass.simpleName).take(180)
