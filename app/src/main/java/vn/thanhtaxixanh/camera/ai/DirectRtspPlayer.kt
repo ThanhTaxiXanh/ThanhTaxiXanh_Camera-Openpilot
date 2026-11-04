@@ -42,7 +42,8 @@ class DirectRtspPlayer(
     private val firstPicture: () -> Unit,
     private val onLuma: (ByteArray, Int, Int) -> Unit,
     private val onSessionInterrupted: (String) -> Unit,
-    private val preferUdp: Boolean = false
+    private val preferUdp: Boolean = false,
+    private val onDecodedYuv: ((Yuv420FrameConverter.Frame, Long) -> Unit)? = null
 ) : AutoCloseable {
     data class Counters(
         val decoded: Long, val rendered: Long, val droppedRtp: Long,
@@ -55,7 +56,8 @@ class DirectRtspPlayer(
         val transportName: String, val udpPackets: Long,
         val rtp: RtpReceiverDiagnostics.Snapshot,
         val rtcpSent: Long, val discardedAccessUnits: Long,
-        val udpReordered: Long, val udpRecovered: Long, val udpSkipped: Long
+        val udpReordered: Long, val udpRecovered: Long, val udpSkipped: Long,
+        val sidecar: H264YuvSidecar.Metrics?
     )
     private data class Sample(val data: ByteArray, val timestampUs: Long)
     private val alive = AtomicBoolean(false)
@@ -95,6 +97,7 @@ class DirectRtspPlayer(
     private var udpThread: Thread? = null
     @Volatile private var udpReorder: RtpJitterQueue? = null
     private var codec: MediaCodec? = null
+    private var yuvSidecar: H264YuvSidecar? = null
     private var thread: Thread? = null
     private var feeder: Thread? = null
     private var codecThread: HandlerThread? = null
@@ -110,7 +113,8 @@ class DirectRtspPlayer(
         rtpDiagnostics.snapshot(), rtcpSent.get(), discardedAccessUnits.get(),
         udpReorder?.outOfOrderPackets ?: 0,
         udpReorder?.recoveredOutOfOrderPackets ?: 0,
-        udpReorder?.skippedMissingPackets ?: 0
+        udpReorder?.skippedMissingPackets ?: 0,
+        yuvSidecar?.metrics()
     )
     fun start() {
         check(alive.compareAndSet(false, true)) { "Already started" }
@@ -163,6 +167,13 @@ class DirectRtspPlayer(
     private fun createDecoder(sdp: String) {
         val fmt = MediaFormat.createVideoFormat("video/avc",1280,720)
         val pair = spsPps(sdp)
+        // Secondary decoder is lazy: native resources are allocated only
+        // after an explicit user opt-in AND the next H264 IDR frame.
+        yuvSidecar = onDecodedYuv?.let { frameConsumer ->
+            H264YuvSidecar(pair.first, pair.second, frameConsumer) { message ->
+                status(message)
+            }
+        }
         if (pair.first != null && pair.second != null) {
             fmt.setByteBuffer("csd-0",ByteBuffer.wrap(byteArrayOf(0,0,0,1)+pair.first!!))
             fmt.setByteBuffer("csd-1",ByteBuffer.wrap(byteArrayOf(0,0,0,1)+pair.second!!))
@@ -194,17 +205,8 @@ class DirectRtspPlayer(
                 try {
                     decoded.incrementAndGet()
                     val now=SystemClock.elapsedRealtime()
-                    if (isAiEnabled() && !noYuv.get() && now-lastSampleMs>=1300L) {
-                        lastSampleMs=now
-                        try {
-                            val image=c.getOutputImage(i)
-                            if (image==null) noYuv.set(true)
-                            else image.use { sampleLuma(it) }
-                        } catch (_:Exception) {
-                            noYuv.set(true)
-                            status("MediaCodec Surface không xuất được YUV, vẫn phát video.")
-                        }
-                    }
+                    // Surface-configured codecs cannot reliably expose
+                    // YUV. The optional second offscreen codec handles it.
                     // Critical V0.9.5 change:
                     // NEVER retain a decoded hardware output buffer while
                     // waiting for a target PTS. Input frame pacing is handled
@@ -300,6 +302,13 @@ class DirectRtspPlayer(
         }
         receivedAccessUnits.incrementAndGet()
         compressedBytes.addAndGet(bytes.size.toLong())
+        // Never wait for the secondary AI decoder; dropping its GOP is safe
+        // because the preview retains its complete access-unit sequence.
+        if (isAiEnabled()) {
+            yuvSidecar?.offer(bytes, sample.timestampUs, SystemClock.elapsedRealtime())
+        } else {
+            yuvSidecar?.pause()
+        }
         queuePeak.accumulateAndGet(frames.size.toLong()) { a, b -> maxOf(a,b) }
     }
     private fun run() {
@@ -632,6 +641,8 @@ class DirectRtspPlayer(
         feeder?.interrupt()
         frames.clear()
         input.clear()
+        yuvSidecar?.close()
+        yuvSidecar = null
         val oldCodec=codec
         codec=null
         val oldThread=codecThread

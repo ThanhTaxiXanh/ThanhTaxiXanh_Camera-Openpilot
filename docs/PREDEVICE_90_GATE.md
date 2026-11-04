@@ -1,6 +1,6 @@
 # TTX Camera AI — acceptance criteria before the next phone test
 
-Updated: 2026-11-03. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-04. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
 
 ## 90% engineering gate
 
@@ -21,7 +21,7 @@ Twenty criteria must be independently implemented and demonstrated with unit or 
 | 11 | ONNX Runtime graph loading and worker | CODED; no golden model tests |
 | 12 | NCNN alternate engine | NOT READY |
 | 13 | xADAS 1576-output lane/lead/road-edge parser | PASS CI |
-| 14 | Non-disruptive A500S decoded YUV to AI (mandatory) | NOT READY |
+| 14 | Non-disruptive A500S decoded YUV to AI (mandatory) | CODED PARTIAL: optional Direct offscreen YUV sidecar; no calibrated AI hookup or IJK access; not PASS |
 | 15 | Verified A500S intrinsics, model axes and warp (mandatory) | NOT READY |
 | 16 | Licensed model with ground-truth inference results (mandatory) | NOT READY |
 | 17 | Validated live lane and metric lead HUD (mandatory) | NOT READY |
@@ -33,7 +33,7 @@ Verdict: BELOW 90%. Do not ask the owner for a new on-device test yet. Only PASS
 
 ## Priority development remaining
 
-1. Feed A500S compressed H264 into a separate non-blocking YUV decoder while preserving IJK preview (Surface output cannot supply getOutputImage reliably).
+1. V1.2.2 introduces a nonblocking H264/YUV sidecar to the Direct receiver, sharing its compressed access units and preserving its Surface. Validate the offscreen codec on real hardware; then provide an independent way to capture the IJK stream without disrupting its preview. Neither variant is verified for end-to-end live AI yet.
 2. Secure a compatible model with explicit redistribution rights and build golden offline model-input/output fixtures.
 3. Match camera warp, normalized YUV channels, model coordinate convention, pitch/yaw/intrinsics and metric lead geometry against reference data.
 4. Connect validated model results to fail-closed HUD and passive warnings. Never display a synthetic lead or stale lane.
@@ -41,3 +41,5 @@ Verdict: BELOW 90%. Do not ask the owner for a new on-device test yet. Only PASS
 6. Add protocol and decoder timing simulations to CI; then re-evaluate the 18/20 gate before requesting an owner phone test.
 
 Privacy: no recording or model upload, no proprietary xADAS weights, no camera-auth bypass, no steering or braking.
+
+V1.2.2 offline evidence: H264 Annex-B/IDR tests + both flavor build checks; no YUV from A500S hardware has been captured in this milestone. A successful CI run verifies compilation only, not camera throughput, additional decoder capacity, frame timestamps, or actual model safety.

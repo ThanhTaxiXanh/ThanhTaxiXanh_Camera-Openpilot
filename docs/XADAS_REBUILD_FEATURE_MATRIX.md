@@ -49,3 +49,13 @@ The user's APK contains independently packaged 92.9MB ONNX and 92.2MB NCNN asset
 - Physical A500S verification, same-phone latency comparison vs official 70mai and xADAS
 
 This document is a truthful gap list; a successful Gradle build is not acceptance that xADAS functionality has been fully duplicated.
+
+## V1.2.2 update (2026-11-04)
+
+DirectRtspPlayer now tees assembled Annex-B access units to an independent, lazy,
+offscreen YUV420 MediaCodec pipeline when the owner enables RAW diagnostics.
+It does not touch the Surface decoder or open another network session.
+H264 GOP recovery is unit tested; YUV/ONNX live parity remains unverified.
+No live ADAS or vendor feature is marked complete based on this software-only
+implementation. The earlier status matrix is retained as the historical
+v1.1.x baseline, not a claim that current v1.2.x lacks ONNX/Camera2.
