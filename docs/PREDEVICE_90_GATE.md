@@ -1,6 +1,6 @@
 # TTX Camera AI — acceptance criteria before the next phone test
 
-Updated: 2026-11-04. V1.3.0. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-04. V1.3.1. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
 
 ## 90% engineering gate
 
@@ -104,3 +104,10 @@ A bounded PTS correlator reports H264 access-unit local receipt-to-output
 callback age, which EXCLUDES real camera exposure/encoder and Surface
 scanout latency. Existing 3s vs official 70mai 1s owner observation is
 UNRESOLVED, so mandatory acceptance #20 does not advance to PASS.
+
+V1.3.1 CI: source RTP 90kHz-to-local-receipt pacing, timestamp wrap,
+decoder-to-render callback duration and bounded PTS correlations.
+This only separates pipeline latency mechanisms; it cannot measure
+true camera exposure, official 70mai transport latency, SurfaceFlinger
+scanout, live ONNX geometry, or real speedup. Criterion #20 remains
+NOT PASS; the owner >=90% gate is unchanged.
