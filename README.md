@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.6-evidence-lineage (Lite / AI flavors)  
+**Version**: 1.3.7-live-yuv-capture (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -514,3 +514,8 @@ See `docs/ONNX_REFERENCE_VECTOR_V1.md` for the fixed reference format.
   See `docs/EVIDENCE_BUNDLE_LINEAGE_V1.md`.
 - Pre-device verified engineering progress remains **7/20 = 35%**;
   the user requires 18/20=90% plus real hardware/model prerequisites.
+
+
+## V1.3.7 — Live A500S four-frame YUV export
+
+Owner explicitly enables Direct YUV and captures four frames to a locally selected TTXYUV01 file (Android Create Document). Uses offscreen-decoder copies, never touching preview Surface or RTP work. No model is required. Disconnects, format errors and temporal gaps cancel an incomplete capture. The file does NOT validate provenance, model rights, camera geometry or ADAS; see docs/LIVE_YUV_EXPORT_V1.md. Acceptance remains **7/20 = 35%**.

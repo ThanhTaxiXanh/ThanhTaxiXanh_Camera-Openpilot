@@ -168,3 +168,6 @@ MATCHED_SELF_DECLARED **never** promotes #14–17 or #20:
 **7/20 = 35% PASS CI, 11 additional verified PASS needed for 90%**.
 Mandatory physical-device criteria cannot be independently proven
 with synthetic tests alone, a dependency that must remain visible.
+
+
+V1.3.7: bounded, owner-armed live YUV capture and SAF TTXYUV01 writer, with JVM tests for planar stride/interleaved conversion, integrity round-trip and fail-closed gaps. New data collection is not on-device validation. Criteria #14-17 and #20 remain NOT PASS; **7/20 = 35%**.

@@ -71,6 +71,33 @@ object OfflineYuvFixture {
         return Sequence(frames)
     }
 
+    /** Serialize canonical TTXYUV01 with digests, refusing partial bad inputs. */
+    fun write(sequence: Sequence, output: java.io.OutputStream) {
+        val frames=sequence.frames
+        require(frames.size in 2..MAX_FRAMES)
+        var previous=-1L
+        for(frame in frames) {
+            require(frame.receivedMs>=0L && (previous<0L ||
+                (frame.receivedMs>previous &&
+                    frame.receivedMs-previous<=A500sRawVisionBridge.MAX_GAP_MS)))
+            require(frame.y.size==Y_BYTES && frame.u.size==UV_BYTES &&
+                frame.v.size==UV_BYTES)
+            previous=frame.receivedMs
+        }
+        val out=java.io.DataOutputStream(java.io.BufferedOutputStream(output,65536))
+        out.write(magic)
+        out.writeShort(WIDTH);out.writeShort(HEIGHT)
+        out.writeShort(frames.size);out.writeShort(0)
+        for(frame in frames) {
+            out.writeLong(frame.receivedMs)
+            out.write(frame.y);out.write(frame.u);out.write(frame.v)
+            val sha=MessageDigest.getInstance("SHA-256")
+            sha.update(frame.y);sha.update(frame.u);sha.update(frame.v)
+            out.write(sha.digest())
+        }
+        out.flush()
+    }
+
     private val mainWarp=VirtualCameraWarp.Matrix(doubleArrayOf(
         1.0,0.0,64.0,0.0,1.0,112.0,0.0,0.0,1.0))
     private val wideWarp=VirtualCameraWarp.Matrix(doubleArrayOf(
