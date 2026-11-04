@@ -1,6 +1,6 @@
 # TTX Camera AI — acceptance criteria before the next phone test
 
-Updated: 2026-11-04. V1.2.6. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-04. V1.2.7. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
 
 ## 90% engineering gate
 
@@ -22,7 +22,7 @@ Twenty criteria must be independently implemented and demonstrated with unit or 
 | 12 | NCNN alternate engine | NOT READY |
 | 13 | xADAS 1576-output lane/lead/road-edge parser | PASS CI |
 | 14 | Non-disruptive A500S decoded YUV to AI (mandatory) | CODED RAW DIAGNOSTIC in Direct: sidecar YUV -> temporal pair -> ONNX; no calibrated model and no device validation. NOT PASS |
-| 15 | Verified A500S intrinsics, model axes and warp (mandatory) | CODED REPROJECTION AUDIT ONLY; no physical A500S evidence or model-axis parity. NOT PASS |
+| 15 | Verified A500S intrinsics, model axes and warp (mandatory) | CODED camera pinhole and Brown-Conrady distortion audit for user supplied marker files; no measured A500S coefficients, optical validation or model-axis parity. NOT PASS |
 | 16 | Licensed model with ground-truth inference results (mandatory) | NOT READY |
 | 17 | Validated live lane and metric lead HUD (mandatory) | NOT READY |
 | 18 | Passive headway/TTC decision logic and fail-closed unit tests | PASS CI |
@@ -72,3 +72,11 @@ validation and contiguous-only projected lane segments. An imported candidate
 calibration is always marked unverified and no UI action can promote it to
 ready. The geometric consistency report is not real model ground truth; the
 90% gate remains below threshold. No owner on-device trial requested.
+
+V1.2.7 host-test evidence: candidate Brown-Conrady optics (fx/fy/cx/cy,
+k1/k2/k3,p1/p2), TTXCAL02 distortion marker comparisons and a separate
+TTXLEAD01 CSV range discrepancy audit. Lead MAE/RMSE/P95/MAPE/bias cannot
+be accepted as ground truth unless input source/timestamp/metric model
+conversion have independent verification. The app does not convert raw
+lead outputs into metres, does not auto-validate model coordinates,
+and does not change item #15/#16/#17 to PASS.
