@@ -18,6 +18,7 @@ object VisionPipelineTiming {
         val queueDelayMs: Long?,
         val preprocessingMs: Long?,
         val inferenceMs: Long?,
+        val postprocessingMs: Long?,
         val sourceToResultMs: Long?,
         val note: String = "Local H264 receipt to ONNX result; NOT optical exposure or screen latency"
     ) {
@@ -29,21 +30,24 @@ object VisionPipelineTiming {
         offeredMs: Long,
         workerStartMs: Long,
         modelStartMs: Long,
-        completedMs: Long,
+        modelCompletedMs: Long,
+        publishedAtMs: Long,
         maxAgeMs: Long = VisionSafetyGate.MAX_FRAME_AGE_MS
     ): Trace {
         if (maxAgeMs < 0L || receiptMs < 0L ||
             offeredMs < receiptMs || workerStartMs < offeredMs ||
-            modelStartMs < workerStartMs || completedMs < modelStartMs) {
-            return Trace(Status.INVALID_CLOCK, null, null, null, null)
+            modelStartMs < workerStartMs || modelCompletedMs < modelStartMs ||
+            publishedAtMs < modelCompletedMs) {
+            return Trace(Status.INVALID_CLOCK, null, null, null, null, null)
         }
-        val age = completedMs - receiptMs
+        val age = publishedAtMs - receiptMs
         val result = if (age <= maxAgeMs)
             Status.FRESH_RECEIPT_TO_RESULT else Status.TOO_OLD
         return Trace(result,
             workerStartMs - offeredMs,
             modelStartMs - workerStartMs,
-            completedMs - modelStartMs,
+            modelCompletedMs - modelStartMs,
+            publishedAtMs - modelCompletedMs,
             age)
     }
 }
