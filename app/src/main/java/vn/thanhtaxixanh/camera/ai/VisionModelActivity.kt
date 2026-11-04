@@ -13,8 +13,8 @@ import java.security.MessageDigest
 
 /**
  * User-authorized optional ONNX import: no model data is bundled or uploaded.
- * File import and graph contract inspection; inference/ADAS remains disabled
- * until a verified native backend and camera calibration exist.
+ * File import, graph contract and offline golden-vector comparison. RAW
+ * diagnostics exist separately; calibrated ADAS displays remain disabled.
  */
 class VisionModelActivity : Activity() {
     private lateinit var statusView: TextView
