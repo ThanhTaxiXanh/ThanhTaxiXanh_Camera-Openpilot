@@ -27,7 +27,9 @@ object RtspSourcePolicy {
             trimmed.none { it=='\r' || it=='\n' || it=='\u0000' }) {
             "Invalid RTSP URL length or control characters"
         }
-        val uri=URI(trimmed)
+        val uri=try { URI(trimmed) } catch(e:java.net.URISyntaxException) {
+            throw IllegalArgumentException("Malformed RTSP camera URL",e)
+        }
         require(uri.scheme.equals("rtsp",ignoreCase=true)) {
             "Only rtsp:// URLs are allowed"
         }
