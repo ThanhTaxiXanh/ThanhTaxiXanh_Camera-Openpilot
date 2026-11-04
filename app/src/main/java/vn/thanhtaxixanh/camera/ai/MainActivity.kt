@@ -738,6 +738,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                             rawBridge?.reset()
                         }
                 }
+            },
+            {
+                // A damaged RTP AU, overload, or codec restart must discard
+                // the previous temporal frame, even if the gap is <850 ms.
+                if (token == generation) rawBridge?.reset()
             }
         )
         direct = player
