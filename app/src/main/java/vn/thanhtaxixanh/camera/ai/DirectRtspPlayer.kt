@@ -67,7 +67,8 @@ class DirectRtspPlayer(
         val bufferAgeRestarts: Long,
         val staleDecodedSuppressed: Long,
         val rtpAuClock: RtpAuClockAudit.Snapshot,
-        val surfaceTimeline: SurfaceFrameTimeline.Snapshot
+        val surfaceTimeline: SurfaceFrameTimeline.Snapshot,
+        val streamCadence: StreamCadenceAudit.Snapshot
     )
     private data class Sample(
         val data: ByteArray, val timestampUs: Long, val receivedAtMs: Long
@@ -90,6 +91,7 @@ class DirectRtspPlayer(
     private val outputTimeline = PreviewDecodeTimeline()
     private val surfaceTimeline = SurfaceFrameTimeline()
     private val rtpAuClock = RtpAuClockAudit()
+    private val streamCadence = StreamCadenceAudit()
     private val queuePeak = AtomicLong()
     private val keepAliveSent = AtomicLong()
     private val keepAliveOk = AtomicLong()
@@ -142,7 +144,8 @@ class DirectRtspPlayer(
         bufferAgeRestarts.get(),
         staleDecodedSuppressed.get(),
         rtpAuClock.snapshot(),
-        surfaceTimeline.snapshot()
+        surfaceTimeline.snapshot(),
+        streamCadence.snapshot(SystemClock.elapsedRealtime())
     )
     fun start() {
         check(alive.compareAndSet(false, true)) { "Already started" }
@@ -224,8 +227,14 @@ class DirectRtspPlayer(
         // MediaCodec renders into Surface asynchronously after
         // releaseOutputBuffer(index, true); correlate by original PTS.
         decoder.setOnFrameRenderedListener({ _, ptsUs, renderNanoTime ->
-            if (alive.get())
-                surfaceTimeline.rendered(ptsUs,renderNanoTime)
+            if (alive.get() &&
+                surfaceTimeline.rendered(ptsUs,renderNanoTime) != null) {
+                // The callback's native nanoseconds are not elapsedRealtime
+                // and must not be mixed with RTP-receipt timestamps.
+                streamCadence.observe(
+                    StreamCadenceAudit.Stage.RENDER_CALLBACK,
+                    ptsUs,SystemClock.elapsedRealtime())
+            }
         },codecHandler)
         decoder.setCallback(object:MediaCodec.Callback() {
             override fun onInputBufferAvailable(c:MediaCodec,i:Int) { if (alive.get()) input.offer(i) }
@@ -244,9 +253,12 @@ class DirectRtspPlayer(
                 try {
                     decoded.incrementAndGet()
                     val now=SystemClock.elapsedRealtime()
-                    val decodedAge = if (info.size > 0)
+                    val decodedAge = if (info.size > 0) {
+                        streamCadence.observe(
+                            StreamCadenceAudit.Stage.CODEC_OUTPUT,
+                            info.presentationTimeUs,now)
                         outputTimeline.emitted(info.presentationTimeUs,now)
-                    else null
+                    } else null
                     // Surface-configured codecs cannot reliably expose
                     // YUV. The optional second offscreen codec handles it.
                     // Critical V0.9.5 change:
@@ -284,6 +296,10 @@ class DirectRtspPlayer(
                             throw failure
                         }
                         rendered.incrementAndGet()
+                        streamCadence.observe(
+                            StreamCadenceAudit.Stage.SURFACE_RELEASE,
+                            info.presentationTimeUs,
+                            SystemClock.elapsedRealtime())
                         if (shown.compareAndSet(false,true)) firstPicture()
                     } else {
                         c.releaseOutputBuffer(i, false)
@@ -353,6 +369,9 @@ class DirectRtspPlayer(
                         throw failure
                     }
                     submittedAccessUnits.incrementAndGet()
+                    streamCadence.observe(
+                        StreamCadenceAudit.Stage.CODEC_INPUT,
+                        sample.timestampUs,SystemClock.elapsedRealtime())
                 }
             } catch (_:InterruptedException) {
                 Thread.currentThread().interrupt()
@@ -427,6 +446,9 @@ class DirectRtspPlayer(
             )
         }
         receivedAccessUnits.incrementAndGet()
+        streamCadence.observe(
+            StreamCadenceAudit.Stage.AU_RECEIVED,
+            sample.timestampUs,receivedAtMs)
         compressedBytes.addAndGet(bytes.size.toLong())
         // Never wait for the secondary AI decoder; dropping its GOP is safe
         // because the preview retains its complete access-unit sequence.
