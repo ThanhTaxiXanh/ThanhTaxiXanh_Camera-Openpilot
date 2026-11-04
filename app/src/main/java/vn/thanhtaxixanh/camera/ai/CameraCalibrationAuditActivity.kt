@@ -17,6 +17,7 @@ import java.util.Locale
 class CameraCalibrationAuditActivity : Activity() {
     private lateinit var status: TextView
     private val requestCode = 623
+    private val leadRequestCode = 624
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,11 +37,11 @@ class CameraCalibrationAuditActivity : Activity() {
             "Chỉ phân tích mốc đo 3D và tọa độ ảnh được cung cấp hợp lệ. " +
                 "Không tự tính nội tham số, không đọc ảnh camera, " +
                 "không tạo bằng chứng hiệu chuẩn từ dữ liệu giả."))
-        status = label("Chưa có bộ mốc đo. Định dạng: TTXCAL01 · ASCII CSV " +
-            "· tối đa 64 KiB · tối thiểu 8 mốc trải đều trong ảnh.", 13f)
+        status = label("Chưa có bộ mốc đo: TTXCAL01 (pinhole) hoặc " +
+            "TTXCAL02 (nội tham số + độ méo), tối đa 64 KiB.", 13f)
         container.addView(status)
         container.addView(Button(this).apply {
-            text = "CHỌN TỆP MỐC ĐO CAMERA (.ttxcal)"
+            text = "KIỂM TRA MỐC CAMERA (.ttxcal)"
             setOnClickListener {
                 startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
@@ -48,6 +49,19 @@ class CameraCalibrationAuditActivity : Activity() {
                 }, requestCode)
             }
         })
+        container.addView(Button(this).apply {
+            text = "SO SÁNH KHOẢNG CÁCH ĐO THỰC (.ttxlead)"
+            setOnClickListener {
+                startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                }, leadRequestCode)
+            }
+        })
+        container.addView(label(
+            "TTXLEAD01: thống kê sai số giữa số mét do thiết bị độc lập đo " +
+                "và dự đoán mét từ nguồn bên ngoài. KHÔNG dùng tensor RAW " +
+                "để suy diễn mét, không mở khóa cảnh báo.", 13f))
         container.addView(label(
             "RMS/P95 là sai số chiếu lại của ma trận camera giả định, " +
                 "không phải xác nhận tọa độ model ONNX hay khoảng cách xe. " +
@@ -64,8 +78,13 @@ class CameraCalibrationAuditActivity : Activity() {
         requestCode: Int, resultCode: Int, data: Intent?
     ) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != this.requestCode || resultCode != RESULT_OK) return
+        if (resultCode != RESULT_OK) return
         val uri = data?.data ?: return
+        if (requestCode == leadRequestCode) {
+            inspectLeadFixture(uri)
+            return
+        }
+        if (requestCode != this.requestCode) return
         status.text = "Đang đọc mốc đo và kiểm tra sai số hình học..."
         Thread({
             val result = try {
@@ -81,7 +100,9 @@ class CameraCalibrationAuditActivity : Activity() {
                 } else "Không đủ điều kiện tính sai số"
                 "Kết quả: ${audit.status}\n" +
                     "Số mốc: ${audit.inputMarkers} · " +
-                    "${evidence.imageWidth}×${evidence.imageHeight}\n" +
+                    "${evidence.imageWidth}×${evidence.imageHeight} · " +
+                    (if (evidence.lens == null) "pinhole" else
+                        "Brown-Conrady") + "\n" +
                     numbers + "\n" + audit.note +
                     "\nCHỈ CHẨN ĐOÁN · KHÔNG MỞ KHÓA ADAS"
             } catch (e: Exception) {
@@ -94,4 +115,36 @@ class CameraCalibrationAuditActivity : Activity() {
             }
         }, "TTX-Camera-Geometry-Audit").start()
     }
+    private fun inspectLeadFixture(uri: android.net.Uri) {
+        status.text = "Đang kiểm tra tệp đo khoảng cách độc lập..."
+        Thread({
+            val result = try {
+                val evidence = contentResolver.openInputStream(uri)?.use {
+                    LeadDistanceFixture.read(it)
+                } ?: error("Không thể mở tệp .ttxlead")
+                val audit = evidence.audit()
+                val numbers = String.format(Locale.US,
+                    "MAE %.2f m · RMSE %.2f m · P95 %.2f m\\n" +
+                        "MAPE %.2f %% · bias %+.2f m",
+                    audit.meanAbsoluteErrorMeters,
+                    audit.rootMeanSquareErrorMeters,
+                    audit.p95AbsoluteErrorMeters,
+                    audit.meanAbsolutePercentError,
+                    audit.signedBiasMeters)
+                "Kết quả: ${audit.status}\\n" +
+                    "Dataset: ${evidence.datasetId} · ${audit.count} mốc đo\\n" +
+                    "Thiết bị đo (tự khai): ${evidence.referenceInstrumentId}\\n" +
+                    "SHA model (tự khai): ${evidence.claimedModelSha256.take(12)}…\\n" +
+                    numbers + "\\n" + audit.note +
+                    "\\nKHÔNG XÁC THỰC NGUỒN ĐO · ADAS VẪN KHÓA"
+            } catch (e: Exception) {
+                "Tệp khoảng cách không hợp lệ: " +
+                    (e.message ?: e.javaClass.simpleName).take(180)
+            }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) status.text = result
+            }
+        }, "TTX-Independent-Lead-Range-Audit").start()
+    }
+
 }
