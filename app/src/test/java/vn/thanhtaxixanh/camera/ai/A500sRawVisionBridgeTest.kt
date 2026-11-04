@@ -62,7 +62,7 @@ class A500sRawVisionBridgeTest {
         assertEquals(A500sRawVisionBridge.Verdict.WAITING_PAIR,
             bridge.accept(f, 19_700L))
         assertEquals(A500sRawVisionBridge.Verdict.DISCONTINUITY,
-            bridge.accept(f, 19_800L)) // time reversed
+            bridge.accept(f, 19_600L)) // time reversed
         clock.set(21_000L)
         assertEquals(A500sRawVisionBridge.Verdict.DISCONTINUITY,
             bridge.accept(f, 20_700L)) // 1300ms gap
