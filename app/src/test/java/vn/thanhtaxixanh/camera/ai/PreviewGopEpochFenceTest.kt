@@ -107,4 +107,39 @@ class PreviewGopEpochFenceTest {
         assertEquals(listOf(2000L),got)
         assertEquals(0L,fence.snapshot().reconnectRequests)
     }
+
+    @Test fun udpTimeoutThenFreshIdrCannotReenterOldPreviewDecoder() {
+        val fence = PreviewGopEpochFence()
+        val accepted = mutableListOf<Long>()
+        var damage = 0
+        val assembler = RtpH264AccessUnitAssembler(
+            emit = { _, pts ->
+                if (fence.mayQueue()) {
+                    fence.queued()
+                    accepted.add(pts)
+                }
+            },
+            onDamaged = { fence.damaged(); damage++ }
+        )
+        val udp = RtpJitterQueue(maxDelayMs = 55L)
+        val deliver: (ByteArray) -> Unit = { assembler.accept(it) }
+        val idr = byteArrayOf(0x65, 0x11)
+        val p = byteArrayOf(0x41, 0x22)
+
+        // RTP seq=101 never arrives. The UDP window must not invent it.
+        udp.accept(packet(100, 1000, true, idr), 0L, deliver)
+        udp.accept(packet(102, 3000, true, p), 1L, deliver)
+        assertEquals(listOf(1000L), accepted)
+        udp.tick(60L, deliver)
+        assertEquals(1L, udp.skippedMissingPackets)
+        assertTrue(damage >= 1)
+        assertTrue(fence.snapshot().reconnectRequired)
+
+        // Even a valid later IDR must be decoded by a NEW MediaCodec.
+        udp.accept(packet(103, 4000, true, idr), 61L, deliver)
+        assertEquals(listOf(1000L), accepted)
+        assertEquals(1L, fence.snapshot().reconnectRequests)
+        assertFalse(fence.mayQueue())
+    }
+
 }
