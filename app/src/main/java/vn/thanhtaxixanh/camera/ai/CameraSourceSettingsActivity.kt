@@ -1,6 +1,7 @@
 package vn.thanhtaxixanh.camera.ai
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.net.ConnectivityManager
@@ -95,6 +96,13 @@ class CameraSourceSettingsActivity : Activity() {
                         }
                     }
                 }, "TTX-RTSP-Discovery").start()
+            }
+        })
+        body.addView(Button(this).apply {
+            text = "CHẨN ĐOÁN VIDEO YUV OFFLINE (TTXYUV01)"
+            setOnClickListener {
+                startActivity(Intent(this@CameraSourceSettingsActivity,
+                    OfflineYuvAuditActivity::class.java))
             }
         })
         body.addView(Button(this).apply {
