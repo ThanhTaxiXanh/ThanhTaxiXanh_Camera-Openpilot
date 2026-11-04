@@ -18,17 +18,21 @@ enum class DirectLatencyPolicy(
     val enqueueWaitMs: Long,
     val maxQueueAgeMs: Long,
     val maxInputWaitMs: Long,
-    val requestCodecLowLatency: Boolean
+    val requestCodecLowLatency: Boolean,
+    val maxOutputCallbackAgeMs: Long,
+    val staleOutputReconnectCount: Int
 ) {
     SMOOTH(
         "DIRECT: MƯỢT · BỘ ĐỆM GỐC",
         "Giữ cấu hình cũ 48 AU và tối đa 900ms khi hàng đợi đầy",
-        48, 900L, 1_800L, 1_500L, false
+        48, 900L, 1_800L, 1_500L, false,
+        Long.MAX_VALUE, Int.MAX_VALUE
     ),
     FRESHNESS_GUARD(
         "DIRECT: THỬ GIẢM TÍCH LŨY TRỄ",
         "12 AU, nhận tối đa 80ms, AU cũ hơn 450ms sẽ ngắt để kết nối lại từ IDR",
-        12, 80L, 450L, 350L, true
+        12, 80L, 450L, 350L, true,
+        850L, 4
     );
 
     fun next() = entries[(ordinal + 1) % entries.size]
@@ -41,6 +45,17 @@ enum class DirectLatencyPolicy(
         return if (observedAtMs - receivedAtMs > maxQueueAgeMs)
             AgeStatus.TOO_OLD else AgeStatus.FRESH
     }
+
+    /**
+     * Decoded buffers can be discarded AFTER MediaCodec has decoded them:
+     * this never drops reference P-frames from the H264 input stream.
+     * Unknown age (PTS mismatch) is not proof of delay and is not discarded.
+     */
+    fun shouldSuppressDecodedOutputAge(ageMs: Long?): Boolean =
+        ageMs != null && ageMs > maxOutputCallbackAgeMs
+
+    fun shouldReconnectForStaleOutputs(streak: Int): Boolean =
+        streak >= staleOutputReconnectCount
 
     fun inputWaitExceeded(waitStartMs: Long, nowMs: Long): Boolean =
         nowMs < waitStartMs || nowMs - waitStartMs > maxInputWaitMs
