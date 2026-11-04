@@ -29,7 +29,9 @@ class StreamCadenceAudit(
         SOURCE_AU_STALLED,
         CODEC_INPUT_LAGGING,
         CODEC_OUTPUT_LAGGING,
+        CODEC_OUTPUT_MEDIA_BACKLOG,
         SURFACE_RELEASE_LAGGING,
+        SURFACE_RELEASE_MEDIA_BACKLOG,
         RENDER_CALLBACK_UNCONFIRMED,
         FLOW_OBSERVED
     }
@@ -133,19 +135,26 @@ class StreamCadenceAudit(
                 return null
             return (leading-trailing)/1000.0
         }
-        val result = if (!mature || events[Stage.AU_RECEIVED.ordinal].size < 30)
-            Status.WARMUP
+        val codecMediaGap = mediaGap(Stage.AU_RECEIVED,Stage.CODEC_OUTPUT)
+        val surfaceMediaGap = mediaGap(Stage.AU_RECEIVED,Stage.SURFACE_RELEASE)
+        val result = if (!mature) Status.WARMUP
         else if ((inputStall ?: 0L) > 2_500L)
             Status.SOURCE_AU_STALLED
+        else if (events[Stage.AU_RECEIVED.ordinal].size < 30)
+            Status.WARMUP
         else if (rates[Stage.CODEC_INPUT.ordinal] <
             rates[Stage.AU_RECEIVED.ordinal]*.80)
             Status.CODEC_INPUT_LAGGING
         else if (rates[Stage.CODEC_OUTPUT.ordinal] <
             rates[Stage.CODEC_INPUT.ordinal]*.80)
             Status.CODEC_OUTPUT_LAGGING
+        else if (codecMediaGap != null && codecMediaGap > 1_000.0)
+            Status.CODEC_OUTPUT_MEDIA_BACKLOG
         else if (rates[Stage.SURFACE_RELEASE.ordinal] <
             rates[Stage.CODEC_OUTPUT.ordinal]*.80)
             Status.SURFACE_RELEASE_LAGGING
+        else if (surfaceMediaGap != null && surfaceMediaGap > 1_000.0)
+            Status.SURFACE_RELEASE_MEDIA_BACKLOG
         else if (rates[Stage.SURFACE_RELEASE.ordinal] >= 4.0 &&
             rates[Stage.RENDER_CALLBACK.ordinal] <
                 rates[Stage.SURFACE_RELEASE.ordinal]*.60)
@@ -157,8 +166,8 @@ class StreamCadenceAudit(
             rate(Stage.CODEC_INPUT),rate(Stage.CODEC_OUTPUT),
             rate(Stage.SURFACE_RELEASE),rate(Stage.RENDER_CALLBACK),
             sourceClockFps,
-            mediaGap(Stage.AU_RECEIVED,Stage.CODEC_OUTPUT),
-            mediaGap(Stage.AU_RECEIVED,Stage.SURFACE_RELEASE),
+            codecMediaGap,
+            surfaceMediaGap,
             inputStall,invalid,evictions)
     }
 }
