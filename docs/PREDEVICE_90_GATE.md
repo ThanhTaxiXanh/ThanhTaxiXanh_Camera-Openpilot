@@ -1,6 +1,6 @@
 # TTX Camera AI — acceptance criteria before the next phone test
 
-Updated: 2026-11-04. V1.2.7. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-04. V1.2.8. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
 
 ## 90% engineering gate
 
@@ -80,3 +80,11 @@ be accepted as ground truth unless input source/timestamp/metric model
 conversion have independent verification. The app does not convert raw
 lead outputs into metres, does not auto-validate model coordinates,
 and does not change item #15/#16/#17 to PASS.
+
+V1.2.8 offline evidence: synthetic 3D model-lateral/vertical sign-hypothesis
+audits using a bounded TTXAXIS01 file and monotonic paired-range/maximum
+skew validation from TTXLEAD02. Both protocols accept user-declared
+source/model metadata and cannot validate its provenance. The tests do
+NOT validate real model axes, synchronized exposure timestamps or physical
+lead distance and do NOT advance mandatory #14-#17 to PASS. Real device
+acceptance and the owner's >=90% threshold remain outstanding.

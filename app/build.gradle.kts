@@ -9,8 +9,8 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 37
-        versionName = "1.2.7-xadas-lens-lead-audit"
+        versionCode = 38
+        versionName = "1.2.8-xadas-axis-timing-audit"
         ndk {
             // Modern A500S Android test device: one CPU architecture only.
             abiFilters += "arm64-v8a"

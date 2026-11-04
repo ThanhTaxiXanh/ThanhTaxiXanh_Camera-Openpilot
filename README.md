@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.2.7-xadas-lens-lead-audit (Lite / AI flavors)  
+**Version**: 1.2.8-xadas-axis-timing-audit (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -286,3 +286,27 @@ See `docs/ONNX_REFERENCE_VECTOR_V1.md` for the fixed reference format.
 - Numerical agreement on synthetic or manually supplied evidence
   is NOT a camera certificate or safety acceptance. The 90% gate
   remains unmet, with no new phone test requested.
+
+## V1.2.8 — 3D model-axis hypothesis and synchronized range-data auditing
+
+- New pure `ModelAxisAudit` and 64 KiB `TTXAXIS01` local CSV reader
+  compare user-supplied raw X/Y/Z hypotheses with independently measured
+  forward/right/up coordinates. Four lateral/vertical sign hypotheses are
+  ranked by 3D RMS error, enforcing spatial coverage, uniqueness and
+  ambiguity gates. A synthetic or apparently best-matched sign is
+  **never** trusted for production camera geometry or ADAS.
+- New `TimedLeadAudit` checks 12–512 metric range pairs against strictly
+  increasing timestamps declared to share one monotonic session clock.
+  It refuses statistics if absolute per-pair skew exceeds 100 ms,
+  if timestamps regress or ranges fail their existing coverage checks.
+  Camera RTP receipt time is not verified camera exposure time.
+- `LeadDistanceFixture` gains `TTXLEAD02` (clock row + reference/prediction
+  timestamps per sample) and preserves legacy `TTXLEAD01` CSV behavior.
+  The diagnostic screen displays P95/max timestamp skew for V2.
+- Model axis and timed lead tests include synthetic correct/wrong signs,
+  ambiguous axes, clock regressions, skew violations, malformed CSV and
+  legacy V1 compatibility. See `docs/AXIS_AND_TIMING_AUDIT_V1.md`.
+- SHA-256 and source/device names in these local CSV fixtures are
+  self-declared, **not independently authenticated**. No real model weights,
+  proven model axes, physical lead distance or ADAS warnings are included.
+  The 90% device gate is still unmet and no new A500S phone trial is needed.

@@ -18,6 +18,7 @@ class CameraCalibrationAuditActivity : Activity() {
     private lateinit var status: TextView
     private val requestCode = 623
     private val leadRequestCode = 624
+    private val axisRequestCode = 625
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,6 +59,19 @@ class CameraCalibrationAuditActivity : Activity() {
                 }, leadRequestCode)
             }
         })
+        container.addView(Button(this).apply {
+            text = "KIỂM TRA HỆ TRỤC MODEL (.ttxaxis)"
+            setOnClickListener {
+                startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                }, axisRequestCode)
+            }
+        })
+        container.addView(label(
+            "TTXAXIS01 thử các giả thuyết dấu trục 3D và phát hiện " +
+                "hệ trục mơ hồ. TTXLEAD02 yêu cầu cặp timestamp đồng hồ chung. " +
+                "Cả hai vẫn chỉ là kiểm tra ngoại tuyến.", 13f))
         container.addView(label(
             "TTXLEAD01: thống kê sai số giữa số mét do thiết bị độc lập đo " +
                 "và dự đoán mét từ nguồn bên ngoài. KHÔNG dùng tensor RAW " +
@@ -82,6 +96,10 @@ class CameraCalibrationAuditActivity : Activity() {
         val uri = data?.data ?: return
         if (requestCode == leadRequestCode) {
             inspectLeadFixture(uri)
+            return
+        }
+        if (requestCode == axisRequestCode) {
+            inspectAxisFixture(uri)
             return
         }
         if (requestCode != this.requestCode) return
@@ -131,7 +149,13 @@ class CameraCalibrationAuditActivity : Activity() {
                     audit.p95AbsoluteErrorMeters,
                     audit.meanAbsolutePercentError,
                     audit.signedBiasMeters)
+                val timing = evidence.timingAudit?.let { sync ->
+                    "Cặp thời gian: ${sync.status} · " +
+                        "Max lệch ${sync.maxSkewMs} ms · " +
+                        "P95 lệch ${sync.p95SkewMs} ms\n"
+                } ?: "TTXLEAD01: chưa có timestamp để đồng bộ\n"
                 "Kết quả: ${audit.status}\n" +
+                    timing +
                     "Dataset: ${evidence.datasetId} · ${audit.count} mốc đo\n" +
                     "Thiết bị đo (tự khai): ${evidence.referenceInstrumentId}\n" +
                     "SHA model (tự khai): ${evidence.claimedModelSha256.take(12)}…\n" +
@@ -145,6 +169,34 @@ class CameraCalibrationAuditActivity : Activity() {
                 if (!isFinishing && !isDestroyed) status.text = result
             }
         }, "TTX-Independent-Lead-Range-Audit").start()
+    }
+
+    private fun inspectAxisFixture(uri: android.net.Uri) {
+        status.text = "Đang đối chiếu hệ trục 3D với các mốc độc lập..."
+        Thread({
+            val message = try {
+                val evidence = contentResolver.openInputStream(uri)?.use {
+                    ModelAxisFixture.read(it)
+                } ?: error("Không thể mở tệp hệ trục TTXAXIS01")
+                val report = evidence.audit()
+                val scores = if (report.rmsMeters != null) {
+                    String.format(Locale.US,
+                        "RMS giả thuyết tốt nhất %.3f m · kế tiếp %.3f m",
+                        report.rmsMeters,report.runnerUpRmsMeters)
+                } else "Không đủ mốc đo 3D để đánh giá"
+                "Kết quả: ${report.status}\n" +
+                    "Dataset: ${evidence.datasetId} · ${report.count} mốc\n" +
+                    "Dấu trục giả thuyết: ${report.bestHypothesis}\n" +
+                    scores + "\n" + report.note +
+                    "\nKHÔNG XÁC THỰC MODEL/HỆ TRỤC · ADAS VẪN KHÓA"
+            } catch (e: Exception) {
+                "Tệp hệ trục không hợp lệ: " +
+                    (e.message ?: e.javaClass.simpleName).take(180)
+            }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) status.text = message
+            }
+        }, "TTX-Independent-Model-Axis-Audit").start()
     }
 
 }
