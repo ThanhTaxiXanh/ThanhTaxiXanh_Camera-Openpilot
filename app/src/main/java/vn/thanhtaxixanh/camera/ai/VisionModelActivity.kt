@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -20,7 +21,7 @@ class VisionModelActivity : Activity() {
     private lateinit var statusView: TextView
     private val requestCode = 204
     private val referenceCode = 205
-    private val limitBytes = 250L * 1024L * 1024L
+    private lateinit var rightsCheck: CheckBox
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,9 +61,19 @@ class VisionModelActivity : Activity() {
                 }, "TTX-ONNX-Contract-Check").start()
             }
         })
+        rightsCheck = CheckBox(this).apply {
+            text = "Tôi xác nhận có quyền sử dụng tệp ONNX tự nhập"
+            setTextColor(Color.WHITE)
+            isChecked = false
+        }
+        body.addView(rightsCheck)
         body.addView(Button(this).apply {
             text = "NHẬP MODEL ONNX ĐƯỢC PHÉP SỬ DỤNG"
             setOnClickListener {
+                if (!rightsCheck.isChecked) {
+                    statusView.text = "Xác nhận quyền sử dụng model trước khi chọn tệp."
+                    return@setOnClickListener
+                }
                 startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
                     type = "*/*"
@@ -103,46 +114,35 @@ class VisionModelActivity : Activity() {
             return
         }
         if (requestCode != this.requestCode) return
-        statusView.text = "Đang xác minh và lưu model..."
+        val attested = rightsCheck.isChecked
+        if (!attested) {
+            statusView.text = "Chưa xác nhận quyền sử dụng model."
+            return
+        }
+        statusView.text = "Đang kiểm tra graph ONNX và SHA-256 rồi thay thế an toàn..."
         Thread({
-            var temp: File? = null
-            try {
-                val dest = File(filesDir, "models/vision.onnx")
-                dest.parentFile?.mkdirs()
-                val working = File(dest.parentFile, "vision.onnx.part")
-                temp = working
-                val sha = MessageDigest.getInstance("SHA-256")
-                var count = 0L
-                val source = contentResolver.openInputStream(uri)
-                    ?: throw IllegalArgumentException("Không đọc được model")
-                source.use { input ->
-                    working.outputStream().use { output ->
-                        val bytes = ByteArray(65536)
-                        while (true) {
-                            val n = input.read(bytes)
-                            if (n < 0) break
-                            count += n
-                            require(count <= limitBytes) { "Model vượt giới hạn 250 MiB" }
-                            sha.update(bytes, 0, n)
-                            output.write(bytes, 0, n)
-                        }
-                    }
-                }
-                require(count > 1024) { "Tệp model không hợp lệ hoặc rỗng" }
-                if (dest.exists()) dest.delete()
-                check(working.renameTo(dest)) { "Không thể lưu model" }
-                val hex = sha.digest().joinToString("") {
-                    "%02x".format(it.toInt() and 255)
-                }
-                runOnUiThread {
-                    statusView.text = "Đã lưu cục bộ " + count/1048576L + " MiB, SHA256 " +
-                        hex.take(16) + "…; CHƯA chạy inference."
-                }
+            val report = try {
+                val stream = contentResolver.openInputStream(uri)
+                    ?: error("Không đọc được model")
+                val installed = ModelInstallGuard.install(
+                    input = stream,
+                    destination = File(filesDir,"models/vision.onnx"),
+                    graphCheck = { candidate -> VisionModelBackend.inspect(candidate) },
+                    userAffirmsRights = attested
+                )
+                "Model mới: " + installed.bytes/1048576L + " MiB; SHA-256 " +
+                    installed.sha256.take(16) + "…\n" +
+                    installed.graphDetail +
+                    "\nChỉ kiểm tra graph. KHÔNG xác thực hiệu chuẩn hoặc bật ADAS."
             } catch (e: Exception) {
-                temp?.delete()
-                runOnUiThread { statusView.text = "Lỗi nhập model: " + e.message }
+                "Nhập model thất bại: " +
+                    (e.message ?: e.javaClass.simpleName).take(200) +
+                    "\nModel hợp lệ trước đó không bị xóa."
             }
-        }, "TTX-Local-Model-Import").start()
+            runOnUiThread {
+                if (!isDestroyed && !isFinishing) statusView.text = report
+            }
+        }, "TTX-Atomic-Model-Import").apply { isDaemon = true; start() }
     }
 
     /** A PASS never enables safety-critical HUD output or model calibration. */
