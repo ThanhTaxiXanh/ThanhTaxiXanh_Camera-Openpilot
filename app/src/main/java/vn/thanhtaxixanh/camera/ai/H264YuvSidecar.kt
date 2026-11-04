@@ -29,7 +29,8 @@ class H264YuvSidecar(
     private val sps: ByteArray?,
     private val pps: ByteArray?,
     private val onFrame: (Yuv420FrameConverter.Frame, Long) -> Unit,
-    private val onFault: (String) -> Unit = {}
+    private val onFault: (String) -> Unit = {},
+    private val onDiscontinuity: () -> Unit = {}
 ) : AutoCloseable {
     data class Metrics(
         val received: Long,
@@ -45,14 +46,15 @@ class H264YuvSidecar(
 
     private data class UnitSample(
         val annexB: ByteArray,
-        val timestampUs: Long,
-        val capturedElapsedMs: Long
+        val capturedElapsedMs: Long,
+        val epoch: Long
     )
 
     private val alive = AtomicBoolean(true)
     private val active = AtomicBoolean(false)
     private val resetRequested = AtomicBoolean(false)
     private val gate = H264SecondarySyncGate()
+    private val epoch = AtomicLong(0L)
     private val pending = ArrayBlockingQueue<UnitSample>(16)
     private val received = AtomicLong()
     private val skipped = AtomicLong()
@@ -72,18 +74,17 @@ class H264YuvSidecar(
         pending.size, lastFailure.get())
 
     /** Never blocks RTP, the H264 assembler, UI, or the preview feeder. */
-    fun offer(annexB: ByteArray, ptsUs: Long, capturedElapsedMs: Long): Boolean {
-        if (!alive.get() || annexB.isEmpty()) return false
+    @Synchronized fun offer(annexB: ByteArray, capturedElapsedMs: Long): Boolean {
+        if (!alive.get() || annexB.isEmpty() || capturedElapsedMs < 0L) return false
         active.set(true)
         if (!gate.accept(annexB)) {
             skipped.incrementAndGet()
             return false
         }
-        if (!pending.offer(UnitSample(annexB, ptsUs, capturedElapsedMs))) {
-            // Loss of one compressed reference frame invalidates this GOP.
-            pending.clear()
-            gate.reset()
-            resetRequested.set(true)
+        if (!pending.offer(UnitSample(annexB, capturedElapsedMs, epoch.get()))) {
+            // One missing reference picture poisons the whole GOP. The main
+            // Surface decoder is unaffected; only this offscreen codec resets.
+            invalidatePredictionChain()
             overflows.incrementAndGet()
             return false
         }
@@ -91,13 +92,23 @@ class H264YuvSidecar(
         return true
     }
 
+    /** Called only while holding the sidecar monitor. */
+    private fun invalidatePredictionChain() {
+        epoch.incrementAndGet()
+        pending.clear()
+        gate.reset()
+        resetRequested.set(true)
+        try { onDiscontinuity() } catch (_: Exception) {}
+    }
+
+    /** RTP damage, dropped access units or codec errors require a new IDR. */
+    @Synchronized fun dropPredictionChain() {
+        if (alive.get()) invalidatePredictionChain()
+    }
+
     /** Allows the native YUV decoder to be released while video keeps playing. */
-    fun pause() {
-        if (active.getAndSet(false)) {
-            pending.clear()
-            gate.reset()
-            resetRequested.set(true)
-        }
+    @Synchronized fun pause() {
+        if (active.getAndSet(false)) invalidatePredictionChain()
     }
 
     private fun createDecoder(): MediaCodec {
