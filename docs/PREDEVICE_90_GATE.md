@@ -1,6 +1,6 @@
 # TTX Camera AI — acceptance criteria before the next phone test
 
-Updated: 2026-11-04. V1.3.1. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-04. V1.3.2. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
 
 ## 90% engineering gate
 
@@ -111,3 +111,12 @@ This only separates pipeline latency mechanisms; it cannot measure
 true camera exposure, official 70mai transport latency, SurfaceFlinger
 scanout, live ONNX geometry, or real speedup. Criterion #20 remains
 NOT PASS; the owner >=90% gate is unchanged.
+
+V1.3.2 CI evidence: 10-second rolling, five-stage local AU→input→decoded
+→Surface-release→render-callback throughput and PTS-media-gap diagnostics,
+with synthetic prolonged slowdown/3s backlog and a 20-minute fake stream.
+A renderer may report healthy local FPS while optical camera-to-glass
+lag remains high. A missing native render callback is not proof of
+a display stall. No real A500S timestamps or exposure-ground truth
+are introduced; #14–17 and #20 remain NOT PASS and do not advance
+the 18/20 owner gate.
