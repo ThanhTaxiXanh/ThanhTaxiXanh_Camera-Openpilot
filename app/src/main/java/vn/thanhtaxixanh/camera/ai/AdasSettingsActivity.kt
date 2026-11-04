@@ -89,8 +89,8 @@ class AdasSettingsActivity : Activity() {
         heading("Hình học camera · Chẩn đoán ngoại tuyến")
         info("Sai số chiếu lại và độ méo camera",
             "TTXCAL01/02: kiểm tra mốc 3D/2D, fx/fy/cx/cy và độ méo ống kính; không được coi là hiệu chuẩn thực.")
-        info("Sai số khoảng cách xe phía trước",
-            "TTXLEAD01: so sánh mét đo độc lập và mét dự đoán từ pipeline đã định nghĩa; không suy ra mét từ tensor RAW.")
+        info("Kiểm định hệ trục 3D và đồng bộ khoảng cách",
+            "TTXAXIS01: so sánh giả thuyết dấu trục model. TTXLEAD01/02: thống kê mét dự đoán và lọc timestamp lệch quá 100 ms; không suy ra mét từ tensor RAW.")
         action("KIỂM TRA MỐC CAMERA & KHOẢNG CÁCH") {
             startActivity(Intent(this, CameraCalibrationAuditActivity::class.java))
         }
