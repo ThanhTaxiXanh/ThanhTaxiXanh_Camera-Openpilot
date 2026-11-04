@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.3-video-freeze-recovery (Lite / AI flavors)  
+**Version**: 1.3.4-offline-yuv-model-guard (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -439,3 +439,30 @@ See `docs/ONNX_REFERENCE_VECTOR_V1.md` for the fixed reference format.
   xADAS parity is inferred. See
   `docs/RTSP_VIDEO_FREEZE_RECOVERY_V1.md`.
 - The mandatory >=90% engineering gate is **still NOT met**.
+
+## V1.3.4 — Offline YUV420 pipeline replay + guarded ONNX model install
+
+- New camera settings entry **CHẨN ĐOÁN VIDEO YUV OFFLINE** opens a
+  local Android Storage Access Framework picker for a user-provided
+  TTXYUV01 engineering fixture. Supports 2–8 planar 640×480 frames,
+  per-frame SHA-256 checks, strict monotonic 1–500ms receipt stamps,
+  fixed caps and rejection of trailing/foreign bytes.
+- Replays the existing stride-aware YUV420 converter, live A500S
+  temporal bridge, both experimental virtual-camera warps and
+  validated FLOAT32 [1,12,128,256] preprocessing. Returns first
+  pair's deterministic SHA-256 tensor fingerprints and pair counts.
+  It does **not** run ONNX, prove actual camera footage or physical
+  camera-to-glass latency, or unlock ADAS.
+- ONNX import now requires explicit user affirmation of model-use
+  rights and **verifies a staged local file with SHA-256 and real
+  flavor-specific graph inspection BEFORE replacement**. On invalid
+  graph, size, missing ONNX runtime or failed atomic move, the
+  prior valid model remains intact. Lite still has no ONNX runtime.
+- Added synthetic host tests for malformed YUV, temporal replay,
+  deterministic tensor checksums, ONNX install atomicity, false
+  graph approval, missing user rights and old-model preservation.
+- Documents: `docs/OFFLINE_YUV_MODEL_IMPORT_V1.md`.
+  **Engineering acceptance: 7/20 = 35% PASS CI** until these
+  tests and packaging pass, and remains 35% afterward because no
+  new mandatory real-world/ONNX-ground-truth gate is proven. This
+  is not an xADAS feature parity percentage.
