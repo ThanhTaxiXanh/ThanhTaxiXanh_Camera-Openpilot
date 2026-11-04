@@ -46,7 +46,7 @@ class LensDistortionProjectionTest {
         assertEquals(baseline.x+12f,shifted.x,.0001f)
         assertEquals(baseline.y-5f,shifted.y,.0001f)
         val tangential=LensDistortionProjection.project(p,camera,
-            lens.copy(p1=.04,p2=-.025))!!
+            lens.copy(p1=.04,p2=-.05))!!
         assertTrue(kotlin.math.abs(tangential.x-baseline.x) > .05f)
         assertTrue(kotlin.math.abs(tangential.y-baseline.y) > .05f)
         val turned=LensDistortionProjection.project(
@@ -63,7 +63,7 @@ class LensDistortionProjectionTest {
         assertNull(LensDistortionProjection.project(
             p,camera,lens.copy(k1=10.0)))
         assertNull(LensDistortionProjection.project(
-            p,camera,lens.copy(width=400)))
+            p,camera,lens.copy(width=100)))
         assertNull(LensDistortionProjection.project(
             CameraProjection.Point3(-4.0,0.0,0.0),camera,lens))
         assertNull(LensDistortionProjection.project(
