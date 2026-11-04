@@ -49,12 +49,15 @@ object CameraReprojectionAudit {
         candidate: VisionSafetyGate.Calibration,
         imageWidth: Int,
         imageHeight: Int,
-        markers: List<Marker>
+        markers: List<Marker>,
+        lens: LensDistortionProjection.Intrinsics? = null
     ): Report {
         fun invalid(status: Status, description: String) = Report(
             status, markers.size, null, null, null, null, null, description)
         if (imageWidth !in 2..8192 || imageHeight !in 2..8192 ||
-            !candidate.structurallyValid || markers.size > 256)
+            !candidate.structurallyValid || markers.size > 256 ||
+            (lens != null && (!lens.structurallyValid ||
+                lens.width != imageWidth || lens.height != imageHeight)))
             return invalid(Status.INVALID_INPUT, "Invalid candidate, image size or marker count")
         if (markers.size < MIN_ANCHORS)
             return invalid(Status.INSUFFICIENT, "At least $MIN_ANCHORS measured markers required")
@@ -92,10 +95,12 @@ object CameraReprojectionAudit {
 
         val errors = DoubleArray(markers.size)
         markers.forEachIndexed { i, marker ->
-            val projected = CameraProjection.project(
+            val projected = (if (lens == null) CameraProjection.project(
                 marker.point, candidate, imageWidth, imageHeight,
                 requireVerifiedCalibration = false
-            ) ?: return Report(Status.OUT_OF_VIEW, markers.size,
+            ) else LensDistortionProjection.project(
+                marker.point, candidate, lens
+            )) ?: return Report(Status.OUT_OF_VIEW, markers.size,
                 null, null, null, widthCoverage, heightCoverage,
                 "Candidate projects marker outside visible image or behind camera")
             errors[i] = hypot(

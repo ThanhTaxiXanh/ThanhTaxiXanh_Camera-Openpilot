@@ -13,6 +13,7 @@ import java.io.InputStream
  */
 object CameraCalibrationFixture {
     const val MAGIC = "TTXCAL01"
+    const val LENS_MAGIC = "TTXCAL02"
     const val MAX_FILE_BYTES = 65536
     const val MAX_MARKERS = 256
 
@@ -20,11 +21,12 @@ object CameraCalibrationFixture {
         val imageWidth: Int,
         val imageHeight: Int,
         val candidate: VisionSafetyGate.Calibration,
-        val markers: List<CameraReprojectionAudit.Marker>
+        val markers: List<CameraReprojectionAudit.Marker>,
+        val lens: LensDistortionProjection.Intrinsics? = null
     ) {
         fun audit(): CameraReprojectionAudit.Report =
             CameraReprojectionAudit.inspect(
-                candidate, imageWidth, imageHeight, markers)
+                candidate, imageWidth, imageHeight, markers, lens)
     }
 
     /**
@@ -55,10 +57,16 @@ object CameraCalibrationFixture {
         }) { "Fixture must be plain ASCII CSV" }
         val lines = data.toString(Charsets.US_ASCII).lineSequence()
             .map { it.trim() }.filter { it.isNotBlank() }.toList()
-        require(lines.size in (MIN_LINES)..(MAX_MARKERS + 3)) {
+        require(lines.isNotEmpty()) { "Missing fixture header" }
+        val hasLens = when (lines[0]) {
+            MAGIC -> false
+            LENS_MAGIC -> true
+            else -> throw IllegalArgumentException("Invalid TTXCAL01/02 header")
+        }
+        val markerStart = if (hasLens) 4 else 3
+        require(lines.size in (MIN_MARKERS + markerStart)..(MAX_MARKERS + markerStart)) {
             "Require header, candidate and 8..256 markers"
         }
-        require(lines[0] == MAGIC) { "Invalid TTXCAL01 header" }
         fun parts(line: String): List<String> =
             line.split(',').map { it.trim() }
         val image = parts(lines[1])
@@ -81,7 +89,25 @@ object CameraCalibrationFixture {
         require(candidate.structurallyValid) {
             "Camera geometry exceeds physical plausibility limits"
         }
-        val markers = lines.drop(3).map { line ->
+        val lens = if (hasLens) {
+            // Optional Brown-Conrady fx/fy/cx/cy, radial k1/k2/k3 and
+            // tangential p1/p2. No import file can set verified flags.
+            val lensRow = parts(lines[3])
+            require(lensRow.size == 10 && lensRow[0] == "lens") {
+                "Expected lens,fx,fy,cx,cy,k1,k2,p1,p2,k3"
+            }
+            LensDistortionProjection.Intrinsics(
+                width, height,
+                lensRow[1].toDouble(), lensRow[2].toDouble(),
+                lensRow[3].toDouble(), lensRow[4].toDouble(),
+                lensRow[5].toDouble(), lensRow[6].toDouble(),
+                lensRow[7].toDouble(), lensRow[8].toDouble(),
+                lensRow[9].toDouble()
+            ).also { require(it.structurallyValid) {
+                "Lens intrinsics/distortion out of bounds"
+            } }
+        } else null
+        val markers = lines.drop(markerStart).map { line ->
             val row = parts(line)
             require(row.size == 7 && row[0] == "marker") {
                 "Each marker requires ID, forward, right, up, pixel x/y"
@@ -94,8 +120,8 @@ object CameraCalibrationFixture {
                     row[5].toFloat(), row[6].toFloat())
             )
         }
-        return Evidence(width, height, candidate, markers)
+        return Evidence(width, height, candidate, markers, lens)
     }
 
-    private const val MIN_LINES = CameraReprojectionAudit.MIN_ANCHORS + 3
+    private const val MIN_MARKERS = CameraReprojectionAudit.MIN_ANCHORS
 }

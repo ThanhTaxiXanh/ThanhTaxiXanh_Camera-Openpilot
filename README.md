@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.2.6-xadas-geometry-audit (Lite / AI flavors)  
+**Version**: 1.2.7-xadas-lens-lead-audit (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -260,3 +260,29 @@ See `docs/ONNX_REFERENCE_VECTOR_V1.md` for the fixed reference format.
   See `docs/CAMERA_GEOMETRY_AUDIT_V1.md` for the text fixture specification.
 - The 90% pre-device gate is still unmet: A500S camera intrinsics, lens
   distortion, model-coordinate and metric lead ground truth are unverified.
+
+## V1.2.7 — Candidate lens distortion and independently measured lead error
+
+- New pure Kotlin `LensDistortionProjection` implements Brown-Conrady
+  radial (k1/k2/k3) and tangential (p1/p2) terms, with fx/fy/cx/cy pixel
+  intrinsics, finite bounds and offscreen rejection. **Diagnostic only**:
+  it does not modify the live CameraProjection or activate ADAS.
+- Existing `.ttxcal` import now also accepts `TTXCAL02` with
+  `lens,fx,fy,cx,cy,k1,k2,p1,p2,k3`. Existing `TTXCAL01` remains
+  backward-compatible. RMS/P95 use the specified model; all evidence
+  still sets groundTruthValidated/modelCoordinateFrameValidated=false.
+- Local `.ttxlead` comparator reads separately measured reference
+  and already-metric predicted distance pairs, requiring >=12 unique
+  frames spanning >=30 m and 3 range bands; reports MAE, RMSE,
+  P95 absolute error, MAPE and signed bias. **Never** treats raw
+  xADAS/Openpilot lead tensor values as metres. SHA-256 field is
+  declared metadata, not an independently authenticated signature.
+- Both options are accessible from Camera geometry diagnostics in
+  Settings. Fully local: no telemetry, no recording, no weights.
+- Regression tests cover zero-distortion parity with pinhole, barrel
+  and tangential geometry, invalid optics, wrong lens detection,
+  legacy fixture continuity, independent range statistics and malformed
+  local data. See `docs/CAMERA_LENS_LEAD_AUDIT_V2.md`.
+- Numerical agreement on synthetic or manually supplied evidence
+  is NOT a camera certificate or safety acceptance. The 90% gate
+  remains unmet, with no new phone test requested.
