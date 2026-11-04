@@ -53,9 +53,12 @@ class CameraReprojectionAuditTest {
         assertEquals(CameraReprojectionAudit.Status.INSUFFICIENT,
             CameraReprojectionAudit.inspect(
                 unverified, 640, 480, base.take(4)).status)
+        val clustered = base.mapIndexed { i, item ->
+            item.copy(point = item.point.copy(forwardM = 8.0 + i * 0.01))
+        }
         assertEquals(CameraReprojectionAudit.Status.NARROW_DISTRIBUTION,
             CameraReprojectionAudit.inspect(
-                unverified, 640, 480, base.take(9)).status)
+                unverified, 640, 480, clustered).status)
         val duplicate = base.toMutableList()
         duplicate[1] = duplicate[0].copy(pixel = duplicate[1].pixel)
         assertEquals(CameraReprojectionAudit.Status.INVALID_INPUT,
