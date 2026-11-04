@@ -35,7 +35,10 @@ class A500sUdpPortPair private constructor(
                     a = DatagramSocket(null)
                     network.bindSocket(a)
                     a.bind(InetSocketAddress(evenPort))
-                    a.soTimeout = 100
+                    // Keep the socket wake-up below the 55ms RTP reorder
+                    // budget so a silent stream cannot add an extra 100ms
+                    // before jitter deadlines are inspected.
+                    a.soTimeout = 25
                     a.receiveBufferSize = 2 * 1024 * 1024
 
                     b = DatagramSocket(null)
