@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.2-stream-cadence-audit (Lite / AI flavors)  
+**Version**: 1.3.3-video-freeze-recovery (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -408,3 +408,34 @@ See `docs/ONNX_REFERENCE_VECTOR_V1.md` for the fixed reference format.
   `docs/VIDEO_CADENCE_BACKLOG_V1.md`.
 - The owner's prior ~3s TTX vs ~1s official 70mai visual delay is
   still **unresolved**, and the >=90% pre-device criterion is NOT met.
+
+## V1.3.3 — Detect actual pipeline freezes and avoid codec overlap during RTSP recovery
+
+- Pure-JVM `DirectStreamHealth` watches received RTP, completed
+  H264 AU, MediaCodec decoded output and successful Surface buffer
+  release; classifies RTP silence, RTP-without-AU freeze, decoder
+  stalls, missing Surface output and PTS permanently stuck behind
+  the highest observed source timestamp.
+- Single H264 B-frame PTS regression/duplicate is counted for
+  diagnostics, not blindly dropped. A nonadvancing source PTS
+  lasting >3 seconds and at least 8 AUs triggers a fresh RTSP
+  session rather than pretending the video is live.
+- `DirectReconnectBudget` replaces the flawed original 60-second
+  **total uptime** retry reset with a bounded 60-second **rolling
+  failure window**. Up to three retries are allowed; a fourth
+  failure inside that window stops Direct. Long uninterrupted uptime
+  no longer clears recent reconnect attempts.
+- Direct recovery rejects duplicate/old session callbacks and waits
+  on a background thread for the old MediaCodec release latch,
+  up to five seconds, before opening the next RTSP/decoder session.
+  No codec release wait blocks the Android UI/preview threads.
+- Main screen reports RTP/AU/decoder/Surface silence ages, duplicate
+  and reversed PTS counters and whether recovery is active.
+- Deterministic JVM tests exercise healthy live flow, each frozen
+  stage, repeated PTS, legitimate B-frame reordering, 20-minute
+  synthetic playback and prolonged reconnect rates.
+- IJK defaults and Direct SMOOTH buffering remain unchanged. No
+  true A500S glass-to-glass test, legitimate model or real-world
+  xADAS parity is inferred. See
+  `docs/RTSP_VIDEO_FREEZE_RECOVERY_V1.md`.
+- The mandatory >=90% engineering gate is **still NOT met**.

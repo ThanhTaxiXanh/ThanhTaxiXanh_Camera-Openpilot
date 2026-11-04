@@ -23,6 +23,7 @@ import java.net.URI
 import java.net.Socket
 import java.nio.ByteBuffer
 import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -68,7 +69,8 @@ class DirectRtspPlayer(
         val staleDecodedSuppressed: Long,
         val rtpAuClock: RtpAuClockAudit.Snapshot,
         val surfaceTimeline: SurfaceFrameTimeline.Snapshot,
-        val streamCadence: StreamCadenceAudit.Snapshot
+        val streamCadence: StreamCadenceAudit.Snapshot,
+        val streamHealth: DirectStreamHealth.Snapshot
     )
     private data class Sample(
         val data: ByteArray, val timestampUs: Long, val receivedAtMs: Long
@@ -92,6 +94,8 @@ class DirectRtspPlayer(
     private val surfaceTimeline = SurfaceFrameTimeline()
     private val rtpAuClock = RtpAuClockAudit()
     private val streamCadence = StreamCadenceAudit()
+    private val streamHealth = DirectStreamHealth()
+    private val codecReleased = CountDownLatch(1)
     private val queuePeak = AtomicLong()
     private val keepAliveSent = AtomicLong()
     private val keepAliveOk = AtomicLong()
@@ -145,8 +149,18 @@ class DirectRtspPlayer(
         staleDecodedSuppressed.get(),
         rtpAuClock.snapshot(),
         surfaceTimeline.snapshot(),
-        streamCadence.snapshot(SystemClock.elapsedRealtime())
+        streamCadence.snapshot(SystemClock.elapsedRealtime()),
+        streamHealth.snapshot(SystemClock.elapsedRealtime())
     )
+    /**
+     * Called ONLY by the detached RTSP recovery worker. Never block
+     * MainActivity, Surface callbacks or MediaCodec's callback handler.
+     */
+    fun awaitCodecRelease(timeoutMs: Long): Boolean {
+        require(timeoutMs in 1L..30_000L)
+        return codecReleased.await(timeoutMs,TimeUnit.MILLISECONDS)
+    }
+
     fun start() {
         check(alive.compareAndSet(false, true)) { "Already started" }
         thread = Thread({ run() }, "TTX-RTSP-H264").apply { start() }
@@ -253,6 +267,7 @@ class DirectRtspPlayer(
                 try {
                     decoded.incrementAndGet()
                     val now=SystemClock.elapsedRealtime()
+                    if (info.size > 0) streamHealth.onDecoded(now)
                     val decodedAge = if (info.size > 0) {
                         streamCadence.observe(
                             StreamCadenceAudit.Stage.CODEC_OUTPUT,
@@ -296,10 +311,11 @@ class DirectRtspPlayer(
                             throw failure
                         }
                         rendered.incrementAndGet()
+                        val submittedAtMs=SystemClock.elapsedRealtime()
                         streamCadence.observe(
                             StreamCadenceAudit.Stage.SURFACE_RELEASE,
-                            info.presentationTimeUs,
-                            SystemClock.elapsedRealtime())
+                            info.presentationTimeUs,submittedAtMs)
+                        streamHealth.onSurfaceReleased(submittedAtMs)
                         if (shown.compareAndSet(false,true)) firstPicture()
                     } else {
                         c.releaseOutputBuffer(i, false)
@@ -449,6 +465,8 @@ class DirectRtspPlayer(
         streamCadence.observe(
             StreamCadenceAudit.Stage.AU_RECEIVED,
             sample.timestampUs,receivedAtMs)
+        if (!streamHealth.onAu(sample.timestampUs,receivedAtMs))
+            throw IllegalStateException("Invalid A500S AU timeline")
         compressedBytes.addAndGet(bytes.size.toLong())
         // Never wait for the secondary AI decoder; dropping its GOP is safe
         // because the preview retains its complete access-unit sequence.
@@ -533,6 +551,8 @@ class DirectRtspPlayer(
                 }
             }
             require(play.code==200){ "PLAY "+play.code+" "+aggregate }
+            val playStartedMs = SystemClock.elapsedRealtime()
+            check(streamHealth.start(playStartedMs))
             status("RTSP PLAY 200 · session timeout="+timeoutSecs+
                 "s · keepalive mỗi "+intervalMs/1000+"s")
             createDecoder(describe.sdp)
@@ -543,7 +563,10 @@ class DirectRtspPlayer(
                 // the independent Surface preview.
                 yuvSidecar?.dropPredictionChain()
             }
-            if (!useUdp) earlyMedia.forEach { assemble.accept(it) }
+            if (!useUdp) earlyMedia.forEach {
+                streamHealth.onRtp(SystemClock.elapsedRealtime())
+                assemble.accept(it)
+            }
 
             val lastRtpAt = AtomicLong(SystemClock.elapsedRealtime())
             if (useUdp) {
@@ -561,7 +584,9 @@ class DirectRtspPlayer(
                                 // Bind to the selected Wi-Fi Network and accept
                                 // video packets from the camera host only.
                                 if (packet.address.hostAddress == host && packet.length >= 12) {
-                                    lastRtpAt.set(SystemClock.elapsedRealtime())
+                                    val packetAt=SystemClock.elapsedRealtime()
+                                    lastRtpAt.set(packetAt)
+                                    streamHealth.onRtp(packetAt)
                                     udpPackets.incrementAndGet()
                                     reorder.accept(
                                         packet.data.copyOfRange(packet.offset,
@@ -593,7 +618,6 @@ class DirectRtspPlayer(
                 t.start()
             }
 
-            val playStartedMs = SystemClock.elapsedRealtime()
             var nextSequence = 4
             var nextRtcpAt = SystemClock.elapsedRealtime() + 5000L
             var nextKeepAliveAt = SystemClock.elapsedRealtime() + intervalMs
@@ -604,6 +628,13 @@ class DirectRtspPlayer(
             while(alive.get()) {
                 val now=SystemClock.elapsedRealtime()
                 val receivedPackets = rtpDiagnostics.snapshot().packets
+                val health = streamHealth.snapshot(now)
+                if (health.requiresReconnect)
+                    error("Direct video frozen: " + health.status +
+                        " (RTP " + health.lastRtpAgoMs +
+                        "ms, AU " + health.lastAuAgoMs +
+                        "ms, codec " + health.lastDecodeAgoMs +
+                        "ms, Surface " + health.lastSurfaceAgoMs + "ms)")
                 if (receivedPackets == 0L && now - lastRtpAt.get() > 5000L) {
                     error("RTP timeout: PLAY 200 but zero video packets for 5 seconds; " +
                         "negotiated=" + activeTransportName)
@@ -665,7 +696,9 @@ class DirectRtspPlayer(
                 when (packet) {
                     is RtspWireReader.Event.Interleaved -> {
                         if (packet.channel == rtpChannel) {
-                            lastRtpAt.set(SystemClock.elapsedRealtime())
+                            val packetAt=SystemClock.elapsedRealtime()
+                            lastRtpAt.set(packetAt)
+                            streamHealth.onRtp(packetAt)
                             assemble.accept(packet.payload)
                         }
                     }
@@ -807,10 +840,17 @@ class DirectRtspPlayer(
         val oldThread=codecThread
         codecThread=null
         Thread({
-            try { oldCodec?.stop() } catch (_:Exception) {}
-            try { oldCodec?.release() } catch (_:Exception) {}
-            oldThread?.quitSafely()
-        },"TTX-CodecClose").start()
+            try {
+                try { oldCodec?.stop() } catch (_:Exception) {}
+                try { oldCodec?.release() } catch (_:Exception) {}
+            } finally {
+                try { oldThread?.quitSafely() } catch (_:Exception) {}
+                codecReleased.countDown()
+            }
+        },"TTX-CodecClose").apply {
+            isDaemon = true
+            start()
+        }
     }
 
     override fun close() {

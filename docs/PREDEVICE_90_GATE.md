@@ -1,6 +1,6 @@
 # TTX Camera AI — acceptance criteria before the next phone test
 
-Updated: 2026-11-04. V1.3.2. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-04. V1.3.3. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
 
 ## 90% engineering gate
 
@@ -120,3 +120,14 @@ lag remains high. A missing native render callback is not proof of
 a display stall. No real A500S timestamps or exposure-ground truth
 are introduced; #14–17 and #20 remain NOT PASS and do not advance
 the 18/20 owner gate.
+
+V1.3.3 offline CI: a bounded per-session H264 freeze watchdog now
+separates RTP silence from RTP-without-complete-AU, decoded-output
+and Surface-release stalls. A persistent 3s+ unchanging PTS with
+8+ AU arrivals causes controlled reconnect, whereas isolated
+B-frame reversals are only counted. Reconnects are limited to 3
+per actual 60-second rolling window, with an async old-MediaCodec
+release completion latch before any new decoder starts. Synthetic
+20-minute host tests are not hardware stream uptime proof.
+No owner camera trial, exposure-to-display measurement, licensed
+model, validated lane/lead outputs or 18/20 PASS gate claim is made.

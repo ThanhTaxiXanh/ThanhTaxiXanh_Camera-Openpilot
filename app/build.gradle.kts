@@ -9,8 +9,8 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 42
-        versionName = "1.3.2-stream-cadence-audit"
+        versionCode = 43
+        versionName = "1.3.3-video-freeze-recovery"
         ndk {
             // Modern A500S Android test device: one CPU architecture only.
             abiFilters += "arm64-v8a"
