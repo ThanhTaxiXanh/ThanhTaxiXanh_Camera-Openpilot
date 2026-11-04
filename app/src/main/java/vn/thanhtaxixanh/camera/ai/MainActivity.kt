@@ -64,6 +64,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     @Volatile private var rawBridge: A500sRawVisionBridge? = null
     @Volatile private var rawVisionRequested = false
     private var rawVisionLoading = false
+    // UI-only nonce prevents a cancelled model load from resurrecting when
+    // the owner quickly switches RAW ON/OFF during the same RTSP session.
+    private var rawVisionSequence = 0L
     private val rawResults = AtomicLong(0L)
     @Volatile private var rawModelStatus = "AI chưa bật"
     @Volatile private var yuvTapEnabled = false
@@ -602,6 +605,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
         rawVisionLoading = true
         rawVisionRequested = true
+        val requestId = ++rawVisionSequence
         rawAiButton.isEnabled = false
         rawAiButton.text = "ONNX A500S: ĐANG NẠP MODEL"
         rawModelStatus = "Đang xác minh model đã nhập"
@@ -624,7 +628,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     sourceHeight = A500sRawVisionBridge.EXPECTED_HEIGHT,
                     nowMs = { SystemClock.elapsedRealtime() }
                 ) { outcome ->
-                    if (token == generation && rawVisionRequested) {
+                    if (token == generation && requestId == rawVisionSequence &&
+                        rawVisionRequested) {
                         rawResults.incrementAndGet()
                         rawModelStatus = outcome.status +
                             " · ONNX " + outcome.runtimeMs + "ms"
@@ -640,8 +645,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             val candidate = result
             val problem = failure
             runOnUiThread {
-                if (token != generation || !rawVisionRequested ||
-                    backend != Backend.DIRECT || !yuvTapEnabled || isDestroyed) {
+                if (token != generation || requestId != rawVisionSequence ||
+                    !rawVisionRequested || backend != Backend.DIRECT ||
+                    !yuvTapEnabled || isDestroyed) {
                     candidate?.close()
                     return@runOnUiThread
                 }
@@ -668,6 +674,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun stopRawVision() {
+        ++rawVisionSequence
         rawVisionRequested = false
         rawVisionLoading = false
         rawBridge?.reset()
@@ -810,6 +817,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                             " · bỏ ${model.rejected}" +
                             " · ngắt nhịp ${model.discontinuities}" +
                             " · ${model.lastVerdict}")
+                    }
+                    rawVision?.metrics()?.let { m ->
+                        detailView.append("\nONNX worker: nhận ${m.received}" +
+                            " · xử lý ${m.processed} · quá hạn ${m.stale}" +
+                            " · ghi đè ${m.overwritten} · lỗi ${m.errors}")
                     }
                     previousPackets = s.rtp.packets
                     previousMarkers = s.rtp.markers
