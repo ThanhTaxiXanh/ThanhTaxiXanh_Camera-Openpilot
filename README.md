@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.0-direct-buffer-audit (Lite / AI flavors)  
+**Version**: 1.3.1-rtp-surface-timing (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -359,3 +359,29 @@ See `docs/ONNX_REFERENCE_VECTOR_V1.md` for the fixed reference format.
 - This is a controlled experiment for a later approved A500S trial,
   not evidence that 70mai app performance has been matched. The
   pre-device 90% acceptance gate remains NOT PASS.
+
+## V1.3.1 — RTP timestamp clock and MediaCodec Surface event tracing
+
+- New pure `RtpAuClockAudit`: unwraps 32-bit RTP 90kHz access-unit
+  timestamps into per-session microsecond PTS, tracks arrival-vs-source
+  pacing/drift, rejects source clock regression/jumps, reports P95
+  absolute cadence error and wrap count.
+- Direct MediaCodec uses the per-session normalized timestamps instead
+  of raw 32-bit time offsets. On irrecoverable RTP clock discontinuity
+  it reconnects rather than silently presenting a false timeline.
+- New bounded `SurfaceFrameTimeline` pairs
+  `releaseOutputBuffer(index,true)` timestamps with
+  `MediaCodec.OnFrameRenderedListener` callbacks by PTS, reporting
+  last/P95 release-to-render callback duration, unmatched PTS, and
+  invalid event clocks. Vendor callbacks may be absent.
+- UI now shows RTP clock frame step, packet-arrival cadence,
+  cumulative session pacing drift and real callback matches separately
+  from existing H264 receipt-to-decode timing. Neither measurement
+  equals physical camera exposure-to-screen latency.
+- Pure Kotlin/JVM tests exercise 32-bit wrap, reverse B-frame steps,
+  RTP jump failures, pacing drift, output-render PTS matching,
+  out-of-order callbacks, bad timestamps and bounded buffers.
+- The reported TTX ~3s vs 70mai official ~1s glass-to-glass delay
+  remains **UNRESOLVED** until a real same-scene, same-handset
+  measurement. No new A500S device trial requested yet. See
+  `docs/RTP_CLOCK_SURFACE_RENDER_V1.md`.
