@@ -180,3 +180,11 @@ V1.3.9: the RTP/H264 assembly path and UDP reorder window now isolate SSRC/paylo
 
 
 V1.3.10: 25ms RTP UDP socket timeout vs 55ms reorder window, multi-gap deadline drain, and bounded late-SSRC/PT retirement to avoid jitter buffer epoch flapping. CI tests alone do not establish physical playback latency, camera/AI correctness or ADAS readiness. **7/20=35%**, mandatory #14-17/#20 NOT PASS.
+
+
+V1.3.11: PreviewGopEpochFence rejects any further AU in a Surface MediaCodec
+session following an RTP/H264 GOP loss once a prior preview AU has been queued.
+Old player closes its socket and uses the existing async decoder release latch
+before recovery. RAW/ONNX epoch and YUV evidence are invalidated. Host JVM tests
+do not demonstrate exact hardware frame-flush behavior, exposure delay or
+calibrated lane/lead correctness: **7/20 = 35%**, mandatory #14–17/#20 NOT PASS.

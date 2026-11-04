@@ -9,8 +9,8 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 50
-        versionName = "1.3.10-udp-jitter-guard"
+        versionCode = 51
+        versionName = "1.3.11-preview-gop-fence"
         ndk {
             // Modern A500S Android test device: one CPU architecture only.
             abiFilters += "arm64-v8a"

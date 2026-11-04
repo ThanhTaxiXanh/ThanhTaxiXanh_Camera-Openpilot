@@ -936,6 +936,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     detailView.append("\nDirect: " + activeDirectLatencyPolicy.name +
                         " · AU đợi cũ nhất " + (s.oldestQueueAgeMs?.toString() ?: "—") +
                         "ms · tự ngắt do tuổi đệm " + s.bufferAgeRestarts)
+                    detailView.append("\nH264 GOP epoch: AU xếp hàng " +
+                        s.gopFence.queuedAccessUnits +
+                        " · lỗi " + s.gopFence.damageEvents +
+                        " · reconnect decoder " + s.gopFence.reconnectRequests +
+                        " · phiên cũ bị chặn " + s.gopFence.reconnectRequired)
                     detailView.append("\nAU nhận→MediaCodec output [KHÔNG PHẢI trễ cảnh thực]: " +
                         "P95 " + (decode.p95ReceiptToDecoderMs?.toString() ?: "—") +
                         "ms · mới nhất " + (decode.lastReceiptToDecoderMs?.toString() ?: "—") +
