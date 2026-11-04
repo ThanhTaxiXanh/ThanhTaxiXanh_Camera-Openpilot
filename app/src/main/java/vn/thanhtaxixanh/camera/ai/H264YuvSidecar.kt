@@ -103,7 +103,7 @@ class H264YuvSidecar(
 
     /** RTP damage, dropped access units or codec errors require a new IDR. */
     @Synchronized fun dropPredictionChain() {
-        if (alive.get()) invalidatePredictionChain()
+        if (alive.get() && active.get()) invalidatePredictionChain()
     }
 
     /** Allows the native YUV decoder to be released while video keeps playing. */
@@ -169,16 +169,23 @@ class H264YuvSidecar(
                 val item = try { pending.poll(100, TimeUnit.MILLISECONDS) }
                     catch (_: InterruptedException) { break }
                 if (item == null) {
-                    codec?.let { drain(it, bufferInfo, timeline) { captured, image ->
-                        val now = SystemClock.elapsedRealtime()
-                        if (active.get() && !resetRequested.get() &&
-                            decoderEpoch == epoch.get() &&
-                            now - lastCopyAt >= 300L &&
-                            now - captured in 0..550L) {
-                            lastCopyAt = now
-                            deliver(image, captured)
-                        }
-                    } }
+                    try {
+                        codec?.let { drain(it, bufferInfo, timeline) { captured, image ->
+                            val now = SystemClock.elapsedRealtime()
+                            if (active.get() && !resetRequested.get() &&
+                                decoderEpoch == epoch.get() &&
+                                now - lastCopyAt >= 300L &&
+                                now - captured in 0..550L) {
+                                lastCopyAt = now
+                                deliver(image, captured)
+                            }
+                        } }
+                    } catch (error: Exception) {
+                        // An idle-output exception must not silently kill the
+                        // decoder worker while the network continues offering AUs.
+                        report(error)
+                        dropPredictionChain()
+                    }
                     continue
                 }
                 if (!active.get() || resetRequested.get() ||
