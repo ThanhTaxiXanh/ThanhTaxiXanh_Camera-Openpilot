@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.2.8-xadas-axis-timing-audit (Lite / AI flavors)  
+**Version**: 1.2.9-raw-lineage-timing (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -310,3 +310,27 @@ See `docs/ONNX_REFERENCE_VECTOR_V1.md` for the fixed reference format.
   self-declared, **not independently authenticated**. No real model weights,
   proven model axes, physical lead distance or ADAS warnings are included.
   The 90% device gate is still unmet and no new A500S phone trial is needed.
+
+## V1.2.9 — Synthetic A500S raw integration, GOP epochs and latency semantics
+
+- An independent end-to-end host fixture runs 640x480 YUV420 through
+  ARGB conversion, A500S temporal pair bridge, both 512x256 warps,
+  FLOAT32 12-channel preprocessing, fake inference, and the 1,576-value
+  Openpilot parser. No licensed real model or actual A500S image is bundled.
+- Inference pipeline now uses a nonblocking **epoch invalidation barrier**:
+  RTP packet damage, H264/GOP reset, offscreen YUV fault and reconnect
+  discard pending and in-progress model results from the old source epoch.
+  Camera2 RAW input gets the same temporal discontinuity protection.
+- Source frame pairs are limited to 500ms maximum chronological spacing
+  and the previous input is rechecked against the 550ms age budget.
+- The new `VisionPipelineTiming` records queue, preprocessing, ONNX,
+  postprocessing and A500S **H264 receipt-to-result** age on one monotonic
+  clock, dropping impossible-clock or too-old outcomes.
+- **Receipt-to-result latency is NOT camera exposure-to-screen latency.**
+  The owner-reported ~3s visual delay versus ~1s official 70mai 4.5.0
+  remains unresolved, as do actual camera model weights and calibration.
+- JVM concurrency tests simulate mid-model invalidation, >550ms slow
+  inference and one-slot latest-frame overwrite; Lite and AI builds
+  remain separate. See `docs/RAW_LINEAGE_TIMING_V1.md`.
+- The mandatory >=90% pre-device gate is not met. No fresh phone trial
+  should be requested yet; never derive trusted lead metres from raw data.
