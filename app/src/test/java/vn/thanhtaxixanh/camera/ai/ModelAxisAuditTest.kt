@@ -94,10 +94,12 @@ class ModelAxisAuditTest {
             file().replace("TTXAXIS01","BAD-AXIS"),
             file().replace("local-markers","evil,extra"),
             file().replace("a".repeat(64),"0123"),
-            file().replace("point,S1,","point,S1,NaN,"),
+            file().replace("point,S101,","point,S101,NaN,"),
             file().lines().take(13).joinToString("\n"),
             "A".repeat(ModelAxisFixture.MAX_BYTES+1)
         ).forEach { broken ->
+            assertNotEquals("Negative test fixture must actually be modified",
+                file(), broken)
             try {
                 read(broken)
                 fail("Must reject malformed axis evidence")
