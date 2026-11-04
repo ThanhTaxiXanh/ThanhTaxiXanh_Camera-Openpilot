@@ -78,7 +78,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private var network: Network? = null
     private var url: String? = null
     private var ownerSession: A500sOwnerSession? = null
-    private var generation = 0
+    @Volatile private var generation = 0
     private var retryCount = 0
     private var preferUdp = true
     private var startedAt = 0L
@@ -611,14 +611,15 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             var failure: String? = null
             var runner: VisionInferenceEngine? = null
             try {
-                runner = VisionModelBackend.openEngine(model)
+                val opened = VisionModelBackend.openEngine(model)
                     ?: error("Bản Lite không có ONNX Runtime; sử dụng APK AI.")
+                runner = opened
                 val mainWarp = VirtualCameraWarp.Matrix(doubleArrayOf(
                     1.0,0.0,64.0,0.0,1.0,112.0,0.0,0.0,1.0))
                 val wideWarp = VirtualCameraWarp.Matrix(doubleArrayOf(
                     1.2,0.0,13.0,0.0,1.2,86.0,0.0,0.0,1.0))
                 result = OpenpilotInferencePipeline(
-                    runner, mainWarp, wideWarp, calibration = null,
+                    opened, mainWarp, wideWarp, calibration = null,
                     sourceWidth = A500sRawVisionBridge.EXPECTED_WIDTH,
                     sourceHeight = A500sRawVisionBridge.EXPECTED_HEIGHT,
                     nowMs = { SystemClock.elapsedRealtime() }
