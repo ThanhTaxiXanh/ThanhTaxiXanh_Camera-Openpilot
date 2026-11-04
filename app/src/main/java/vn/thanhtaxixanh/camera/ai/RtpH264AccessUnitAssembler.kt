@@ -27,7 +27,12 @@ class RtpH264AccessUnitAssembler(
     private var lastSequence: Int? = null
     private var broken = false
     private var fragmentOpen = false
+    private var fragmentNalId: Int? = null
     private var awaitingIdr = true
+    // SSRC and dynamic payload type jointly define the RTP stream epoch.
+    // Changing either must never concatenate H264 from different sources.
+    private var sourceSsrc: Long? = null
+    private var sourcePayloadType: Int? = null
 
     /** Pure source eligibility, not a decoder success indication. */
     fun needsIdr(): Boolean = awaitingIdr
@@ -71,6 +76,7 @@ class RtpH264AccessUnitAssembler(
         timestamp = null
         broken = false
         fragmentOpen = false
+        fragmentNalId = null
     }
 
     private fun invalidPacket() {
@@ -126,6 +132,23 @@ class RtpH264AccessUnitAssembler(
             return
         }
 
+        val source = RtpReceiverDiagnostics.unsigned32(packet, 8)
+        val payloadType = packet[1].toInt() and 0x7f
+        if (sourceSsrc != null &&
+            (sourceSsrc != source || sourcePayloadType != payloadType)) {
+            // The old AU can no longer be trusted, even if it had no
+            // missing sequence number or its timestamp coincides.
+            if (timestamp != null) {
+                broken = true
+                finishAccessUnit()
+            } else {
+                awaitingIdr = true
+                onDamaged()
+            }
+            lastSequence = null // New RTP sequence domain.
+        }
+        sourceSsrc = source
+        sourcePayloadType = payloadType
         val sequence = ((packet[2].toInt() and 255) shl 8) or
             (packet[3].toInt() and 255)
         val clock = ((packet[4].toLong() and 255L) shl 24) or
@@ -145,6 +168,8 @@ class RtpH264AccessUnitAssembler(
         lastSequence = sequence
         val marker = (packet[1].toInt() and 0x80) != 0
 
+        // H264 forbidden_zero_bit must be zero in NAL headers.
+        if ((packet[offset].toInt() and 0x80) != 0) broken = true
         when (packet[offset].toInt() and 0x1f) {
             in 1..23 -> {
                 if (fragmentOpen) broken = true
@@ -163,6 +188,7 @@ class RtpH264AccessUnitAssembler(
                         (packet[at + 1].toInt() and 255)
                     at += 2
                     if (size < 1 || size > payloadEnd - at ||
+                        (packet[at].toInt() and 0x80) != 0 ||
                         (packet[at].toInt() and 0x1f) !in 1..23) {
                         broken = true
                         break
@@ -183,6 +209,7 @@ class RtpH264AccessUnitAssembler(
                     val start = (fu and 0x80) != 0
                     val end = (fu and 0x40) != 0
                     val nalType = fu and 0x1f
+                    val nalId = (packet[offset].toInt() and 0xe0) or nalType
                     if ((fu and 0x20) != 0 || (start && end) ||
                         nalType !in 1..23) {
                         broken = true
@@ -194,14 +221,22 @@ class RtpH264AccessUnitAssembler(
                                 nalType).toByte()
                             appendNalHeaderAndBytes(byteArrayOf(nalHeader), 0, 1)
                             appendFragment(packet, offset + 2, payloadEnd - offset - 2)
-                            fragmentOpen = true
+                            if (!broken) {
+                                fragmentOpen = true
+                                fragmentNalId = nalId
+                            }
                         }
                     } else {
-                        if (!fragmentOpen) {
+                        if (!fragmentOpen || fragmentNalId != nalId) {
+                            // Do not concatenate different FU-A NAL types or
+                            // incompatible NRI bits into one fabricated NAL.
                             broken = true
                         } else {
                             appendFragment(packet, offset + 2, payloadEnd - offset - 2)
-                            if (end) fragmentOpen = false
+                            if (end) {
+                                fragmentOpen = false
+                                fragmentNalId = null
+                            }
                         }
                     }
                 }

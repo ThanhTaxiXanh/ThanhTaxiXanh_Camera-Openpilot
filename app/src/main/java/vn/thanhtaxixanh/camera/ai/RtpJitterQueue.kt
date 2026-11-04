@@ -17,6 +17,11 @@ class RtpJitterQueue(
     private data class Stored(val bytes: ByteArray, val receivedAtMs: Long)
     private val pending = HashMap<Int, Stored>()
     private var nextSequence: Int? = null
+    private var sourceSsrc: Long? = null
+    private var sourcePayloadType: Int? = null
+
+    @Volatile var sourceEpochResets: Long = 0L
+        private set
 
     @Volatile
     var outOfOrderPackets: Long = 0L
@@ -41,6 +46,19 @@ class RtpJitterQueue(
             emit(data)
             return
         }
+        val source = RtpReceiverDiagnostics.unsigned32(data,8)
+        val payloadType = data[1].toInt() and 0x7f
+        if (sourceSsrc != null &&
+            (sourceSsrc != source || sourcePayloadType != payloadType)) {
+            // Never hold UDP packets from two RTP sequence domains together.
+            // The downstream H264 assembler sees the changed epoch and waits
+            // for an IDR before issuing new codec input.
+            pending.clear()
+            nextSequence = null
+            sourceEpochResets++
+        }
+        sourceSsrc = source
+        sourcePayloadType = payloadType
         val seq = ((data[2].toInt() and 0xff) shl 8) or (data[3].toInt() and 0xff)
         if (nextSequence == null) {
             nextSequence = (seq + 1) and 65535
