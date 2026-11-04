@@ -27,6 +27,7 @@ import tv.danmaku.ijk.media.player.IjkMediaPlayer
 import java.util.Locale
 import java.net.Inet4Address
 import java.security.SecureRandom
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * TTX Camera AI — compact PLAYBACK BENCHMARK ONLY.
@@ -56,6 +57,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var stopButton: Button
     private lateinit var pairButton: Button
     private lateinit var latencyButton: Button
+    private lateinit var yuvTapButton: Button
+    @Volatile private var yuvTapEnabled = false
+    private val yuvFrames = AtomicLong(0L)
+    @Volatile private var yuvShape = "chưa có khung"
     private var ijkProfile = IjkPlaybackProfile.SMOOTH
     private var activeIjkProfile = IjkPlaybackProfile.SMOOTH
 
@@ -178,6 +183,26 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             setOnClickListener { pairA500s() }
         }
         root.addView(pairButton)
+
+        yuvTapButton = Button(this).apply {
+            text = "YUV A500S: TẮT · CHẨN ĐOÁN OFFSCREEN"
+            textSize = 11f
+            setOnClickListener {
+                if (backend != Backend.DIRECT) {
+                    showStatus("YUV offscreen chỉ có ở bộ phát Direct MediaCodec. " +
+                        "IJK vẫn phát độc lập, không sao chép Surface.")
+                    return@setOnClickListener
+                }
+                yuvTapEnabled = !yuvTapEnabled
+                text = if (yuvTapEnabled) "YUV A500S: BẬT · KHÔNG PHÁT CẢNH BÁO"
+                    else "YUV A500S: TẮT · CHẨN ĐOÁN OFFSCREEN"
+                showStatus(if (yuvTapEnabled)
+                    "Đang đợi IDR để tạo decoder YUV thứ hai; " +
+                        "giữ nguyên Surface và luồng RTSP đang phát."
+                    else "Đã tắt nhánh YUV; video Direct tiếp tục độc lập.")
+            }
+        }
+        root.addView(yuvTapButton)
 
         root.addView(Button(this).apply {
             text = "PiP · CỬA SỔ VIDEO NHỎ"
@@ -552,7 +577,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         val selectedUdp = preferUdp
         val player = DirectRtspPlayer(
             wifi, currentUrl, surfaceView.holder.surface,
-            { false },
+            { yuvTapEnabled },
             { message ->
                 runOnUiThread {
                     if (token == generation && backend == Backend.DIRECT)
@@ -573,7 +598,15 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         recoverDirect(token, reason)
                 }
             },
-            selectedUdp
+            selectedUdp,
+            { yuv, _ ->
+                if (token == generation && backend == Backend.DIRECT && yuvTapEnabled) {
+                    yuvFrames.incrementAndGet()
+                    yuvShape = "${yuv.width}x${yuv.height}"
+                    // The frame is intentionally not passed to ADAS until
+                    // intrinsics and model axes are verified with golden data.
+                }
+            }
         )
         direct = player
         player.start()
@@ -633,6 +666,17 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         s.rtp.sequenceGaps, s.discardedAccessUnits, s.queueDepth,
                         s.udpReordered, s.udpRecovered, s.udpSkipped,
                         s.keepAliveOk, s.keepAliveSent, retryCount)
+                    s.sidecar?.let { yuv ->
+                        detailView.append("\nYUV OFFSCREEN: " +
+                            (if (yuvTapEnabled) "BẬT" else "TẮT") +
+                            " · ${yuvFrames.get()} frame ${yuvShape}" +
+                            " · giải mã ${yuv.decoded}" +
+                            " · đợi IDR ${yuv.skippedToIdr}" +
+                            " · reset ${yuv.resets} · tràn ${yuv.overflows}" +
+                            " · lỗi ${yuv.errors}")
+                        if (yuv.lastFailure.isNotBlank())
+                            detailView.append("\n" + yuv.lastFailure)
+                    }
                     previousPackets = s.rtp.packets
                     previousMarkers = s.rtp.markers
                     previousRtpClocks = s.rtp.timestampChanges
@@ -695,6 +739,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun stopPlayback() {
+        yuvTapEnabled = false
+        if (::yuvTapButton.isInitialized)
+            yuvTapButton.text = "YUV A500S: TẮT · CHẨN ĐOÁN OFFSCREEN"
         generation++
         backend = null
         ownerSession?.close()
