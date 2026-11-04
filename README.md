@@ -182,6 +182,8 @@ CI also runs on pull requests so both variants must pass before merging.
 
 ## V1.2.4 — offscreen decoder epoch recovery and test-vector correctness
 
+- A frame's local access-unit receipt time is captured before any preview
+  queue wait, so a stale frame cannot appear newly arrived to the AI gate.
 - Sidecar MediaCodec presentation timestamps now use a unique **local monotonic
   input-receipt clock** for offscreen output correlation, avoiding ambiguous
   32-bit RTP clock wraps or multiple access units sharing a timestamp.
