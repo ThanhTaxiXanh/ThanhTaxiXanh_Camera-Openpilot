@@ -27,6 +27,7 @@ class StreamCadenceAudit(
     enum class Status {
         WARMUP,
         SOURCE_AU_STALLED,
+        RTP_RECEIPT_RATE_MISMATCH,
         CODEC_INPUT_LAGGING,
         CODEC_OUTPUT_LAGGING,
         CODEC_OUTPUT_MEDIA_BACKLOG,
@@ -142,6 +143,10 @@ class StreamCadenceAudit(
             Status.SOURCE_AU_STALLED
         else if (events[Stage.AU_RECEIVED.ordinal].size < 30)
             Status.WARMUP
+        else if (sourceClockFps != null &&
+            (rates[Stage.AU_RECEIVED.ordinal] < sourceClockFps*.85 ||
+                rates[Stage.AU_RECEIVED.ordinal] > sourceClockFps*1.20))
+            Status.RTP_RECEIPT_RATE_MISMATCH
         else if (rates[Stage.CODEC_INPUT.ordinal] <
             rates[Stage.AU_RECEIVED.ordinal]*.80)
             Status.CODEC_INPUT_LAGGING
