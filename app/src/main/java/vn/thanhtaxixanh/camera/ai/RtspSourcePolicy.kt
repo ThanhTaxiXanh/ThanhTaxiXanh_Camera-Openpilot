@@ -18,7 +18,7 @@ object RtspSourcePolicy {
         val nums=parts.map { it.toIntOrNull() ?: return false }
         return nums.all { it in 0..255 } &&
             nums[0] in 1..223 && nums[0]!=127 &&
-            nums != listOf(169,254,0,0)
+            !(nums[0]==169 && nums[1]==254)
     }
 
     fun check(url:String):String {
