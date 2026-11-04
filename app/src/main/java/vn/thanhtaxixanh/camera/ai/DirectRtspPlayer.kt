@@ -65,7 +65,9 @@ class DirectRtspPlayer(
         val oldestQueueAgeMs: Long?,
         val decodeTimeline: PreviewDecodeTimeline.Snapshot,
         val bufferAgeRestarts: Long,
-        val staleDecodedSuppressed: Long
+        val staleDecodedSuppressed: Long,
+        val rtpAuClock: RtpAuClockAudit.Snapshot,
+        val surfaceTimeline: SurfaceFrameTimeline.Snapshot
     )
     private data class Sample(
         val data: ByteArray, val timestampUs: Long, val receivedAtMs: Long
@@ -86,6 +88,8 @@ class DirectRtspPlayer(
     private val staleDecodedSuppressed = AtomicLong()
     private val oldCodecOutputStreak = AtomicInteger()
     private val outputTimeline = PreviewDecodeTimeline()
+    private val surfaceTimeline = SurfaceFrameTimeline()
+    private val rtpAuClock = RtpAuClockAudit()
     private val queuePeak = AtomicLong()
     private val keepAliveSent = AtomicLong()
     private val keepAliveOk = AtomicLong()
@@ -136,7 +140,9 @@ class DirectRtspPlayer(
         },
         outputTimeline.snapshot(),
         bufferAgeRestarts.get(),
-        staleDecodedSuppressed.get()
+        staleDecodedSuppressed.get(),
+        rtpAuClock.snapshot(),
+        surfaceTimeline.snapshot()
     )
     fun start() {
         check(alive.compareAndSet(false, true)) { "Already started" }
@@ -214,6 +220,13 @@ class DirectRtspPlayer(
         val codecHandler = Handler(t.looper)
         val decoder=MediaCodec.createDecoderByType("video/avc")
         codec=decoder
+        // This is a *local codec event*, not physical screen scanout.
+        // MediaCodec renders into Surface asynchronously after
+        // releaseOutputBuffer(index, true); correlate by original PTS.
+        decoder.setOnFrameRenderedListener({ _, ptsUs, renderNanoTime ->
+            if (alive.get())
+                surfaceTimeline.rendered(ptsUs,renderNanoTime)
+        },codecHandler)
         decoder.setCallback(object:MediaCodec.Callback() {
             override fun onInputBufferAvailable(c:MediaCodec,i:Int) { if (alive.get()) input.offer(i) }
             override fun onOutputFormatChanged(c:MediaCodec,f:MediaFormat) {
@@ -262,7 +275,14 @@ class DirectRtspPlayer(
                         }
                     } else if (info.size > 0) {
                         oldCodecOutputStreak.set(0)
-                        c.releaseOutputBuffer(i, true)
+                        surfaceTimeline.released(info.presentationTimeUs,
+                            System.nanoTime())
+                        try {
+                            c.releaseOutputBuffer(i, true)
+                        } catch (failure: Exception) {
+                            surfaceTimeline.forget(info.presentationTimeUs)
+                            throw failure
+                        }
                         rendered.incrementAndGet()
                         if (shown.compareAndSet(false,true)) firstPicture()
                     } else {
@@ -381,7 +401,16 @@ class DirectRtspPlayer(
         // Mark AU receipt BEFORE any preview queue backpressure. Otherwise a
         // frame that waited 900ms would be stamped as newly captured for AI.
         val receivedAtMs = SystemClock.elapsedRealtime()
-        val sample=Sample(bytes,ts*1000000L/90000L,receivedAtMs)
+        val stamp=rtpAuClock.observe(ts,receivedAtMs)
+        if (!stamp.acceptable || stamp.presentationTimeUs == null) {
+            // This is a source 90kHz RTP discontinuity. The decoder must
+            // recover from a new IDR: never fabricate a smooth PTS sequence.
+            bufferAgeRestarts.incrementAndGet()
+            throw IllegalStateException(
+                "A500S RTP AU clock discontinuity: " + stamp.status +
+                    " (reconnect, await new H264 IDR)")
+        }
+        val sample=Sample(bytes,stamp.presentationTimeUs,receivedAtMs)
         // A growing backlog must be measured before accepting another AU.
         // Never remove only its old P-frames: restart the decoder and
         // reacquire IDR when the selected freshness policy cannot be met.
@@ -748,6 +777,7 @@ class DirectRtspPlayer(
         frames.clear()
         input.clear()
         outputTimeline.clear()
+        surfaceTimeline.clear()
         yuvSidecar?.close()
         yuvSidecar = null
         val oldCodec=codec
