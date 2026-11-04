@@ -20,7 +20,7 @@ import kotlin.math.max
 object ReferenceTensorFixture {
     private val MAGIC = "TTXREF01".toByteArray(Charsets.US_ASCII)
     const val MODEL_HASH_BYTES = 32
-    const val EXPECTED_BYTES =
+    val EXPECTED_BYTES =
         8L + MODEL_HASH_BYTES +
             (SupercomboV027Contract.INPUT_ELEMENTS.toLong() * 2L +
                 SupercomboV027Contract.TENSOR_ELEMENTS.toLong()) * 4L
