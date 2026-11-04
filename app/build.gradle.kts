@@ -9,8 +9,8 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 34
-        versionName = "1.2.4-xadas-yuv-resilience"
+        versionCode = 35
+        versionName = "1.2.5-xadas-reference-audit"
         ndk {
             // Modern A500S Android test device: one CPU architecture only.
             abiFilters += "arm64-v8a"
