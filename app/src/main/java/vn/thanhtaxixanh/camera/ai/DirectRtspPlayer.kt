@@ -70,7 +70,8 @@ class DirectRtspPlayer(
         val rtpAuClock: RtpAuClockAudit.Snapshot,
         val surfaceTimeline: SurfaceFrameTimeline.Snapshot,
         val streamCadence: StreamCadenceAudit.Snapshot,
-        val streamHealth: DirectStreamHealth.Snapshot
+        val streamHealth: DirectStreamHealth.Snapshot,
+        val gopFence: PreviewGopEpochFence.Snapshot
     )
     private data class Sample(
         val data: ByteArray, val timestampUs: Long, val receivedAtMs: Long
@@ -95,6 +96,7 @@ class DirectRtspPlayer(
     private val rtpAuClock = RtpAuClockAudit()
     private val streamCadence = StreamCadenceAudit()
     private val streamHealth = DirectStreamHealth()
+    private val gopFence = PreviewGopEpochFence()
     private val codecReleased = CountDownLatch(1)
     private val queuePeak = AtomicLong()
     private val keepAliveSent = AtomicLong()
@@ -150,7 +152,8 @@ class DirectRtspPlayer(
         rtpAuClock.snapshot(),
         surfaceTimeline.snapshot(),
         streamCadence.snapshot(SystemClock.elapsedRealtime()),
-        streamHealth.snapshot(SystemClock.elapsedRealtime())
+        streamHealth.snapshot(SystemClock.elapsedRealtime()),
+        gopFence.snapshot()
     )
     /**
      * Called ONLY by the detached RTSP recovery worker. Never block
@@ -433,6 +436,9 @@ class DirectRtspPlayer(
         onLuma(data,w,h)
     }
     private fun enqueue(bytes:ByteArray,ts:Long) {
+        if (!gopFence.mayQueue())
+            throw IllegalStateException(
+                "Preview H264 reference epoch revoked; MediaCodec reconnect required")
         // Mark AU receipt BEFORE any preview queue backpressure. Otherwise a
         // frame that waited 900ms would be stamped as newly captured for AI.
         val receivedAtMs = SystemClock.elapsedRealtime()
@@ -461,6 +467,9 @@ class DirectRtspPlayer(
                     "ms; reconnect bảo vệ chuỗi H264 P-frame."
             )
         }
+        // Accepted the AU into the preview queue. Even if the feeder has
+        // not dequeued it yet, all later GOP damage revokes this decoder.
+        gopFence.queued()
         receivedAccessUnits.incrementAndGet()
         streamCadence.observe(
             StreamCadenceAudit.Stage.AU_RECEIVED,
@@ -559,10 +568,28 @@ class DirectRtspPlayer(
             val assemble = RtpH264AccessUnitAssembler(
                 emit = ::enqueue,
                 onDamaged = {
-                // A discarded AU can break the reference-picture chain.
-                // Reset the optional AI decoder and temporal pair, never
-                // the independent Surface preview.
-                yuvSidecar?.dropPredictionChain()
+                    // An offscreen decoder can reset its own GOP, but the
+                    // Surface preview still owns queued/in-flight P pictures.
+                    val verdict = gopFence.damaged()
+                    if (verdict ==
+                        PreviewGopEpochFence.Recovery.RECONNECT_PREVIEW) {
+                        lastNetworkFailure =
+                            "RTP H264 GOP lost after preview input; " +
+                            "reconnect Surface MediaCodec from fresh IDR"
+                        // Gate future native output callbacks before tearing
+                        // down the network/MediaCodec session.
+                        alive.set(false)
+                        try { socket?.close() } catch (_: Exception) {}
+                    }
+                    // Do not allow an old RAW inference or YUV fixture to
+                    // survive an RTP discontinuity even when the sidecar
+                    // decoder was not enabled by the owner.
+                    try { onYuvDiscontinuity?.invoke() }
+                    catch (_: Exception) {}
+                    yuvSidecar?.dropPredictionChain()
+                    if (verdict ==
+                        PreviewGopEpochFence.Recovery.RECONNECT_PREVIEW)
+                        throw IllegalStateException(lastNetworkFailure)
                 },
                 onPacket = { rtpDiagnostics.observe(it) },
                 onLostSequence = { dropped.incrementAndGet() },
