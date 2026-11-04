@@ -21,7 +21,7 @@ class ModelAxisAuditTest {
                     else -> .9
                 }
                 ModelAxisAudit.Sample(
-                    "S${++index}",
+                    "S${++index + 100}",
                     distance + depthOffset,
                     modelYSign * right,
                     modelZSign * up * upScale,
