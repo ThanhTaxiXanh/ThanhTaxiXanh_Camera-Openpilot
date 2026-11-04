@@ -1,6 +1,6 @@
 # TTX Camera AI — acceptance criteria before the next phone test
 
-Updated: 2026-11-04. V1.3.5. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-04. V1.3.6. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
 
 ## 90% engineering gate
 
@@ -155,3 +155,16 @@ source/gateway validation gains malformed URI/IP guardrails but
 does not implement missing vendor protocols. No PASS promotion:
 **7/20 = 35% verified; 11 further PASS required for >=90%**, with
 mandatory #14–17 and #20 still not met.
+
+V1.3.6 offline provenance evidence: TTXEVD01 owner-selected
+eight-line ASCII manifest binds full SHA-256 of the selected
+TTXYUV01 bytes, the selected TTXREF01 bytes, the installed ONNX
+file and the reference's embedded model hash. The app rejects
+tampering, malformed metadata, invalid UTC and missing files.
+Source, instrument and permission identifiers are **self-declared**,
+with no independently trusted signature, original A500S capture,
+optical calibration or legal provenance evidence. Therefore
+MATCHED_SELF_DECLARED **never** promotes #14–17 or #20:
+**7/20 = 35% PASS CI, 11 additional verified PASS needed for 90%**.
+Mandatory physical-device criteria cannot be independently proven
+with synthetic tests alone, a dependency that must remain visible.
