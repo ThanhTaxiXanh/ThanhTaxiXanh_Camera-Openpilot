@@ -17,8 +17,18 @@ class RtpJitterQueue(
     private data class Stored(val bytes: ByteArray, val receivedAtMs: Long)
     private val pending = HashMap<Int, Stored>()
     private var nextSequence: Int? = null
-    private var sourceSsrc: Long? = null
-    private var sourcePayloadType: Int? = null
+    // A late packet from a retired RTP epoch must not switch the queue BACK.
+    // Remember only a small, bounded number of old identities, for 256
+    // observed packets (not a wall-clock or camera exposure measurement).
+    private data class Identity(val ssrc: Long, val payloadType: Int)
+    private data class Retired(val id: Identity, val expiresAfter: Long)
+    private val retired = ArrayDeque<Retired>()
+    private var acceptedPacketOrdinal = 0L
+    private var activeIdentity: Identity? = null
+    private val retiredHoldPackets = 256L
+
+    @Volatile var lateEpochPackets: Long = 0L
+        private set
 
     @Volatile var sourceEpochResets: Long = 0L
         private set
@@ -46,19 +56,33 @@ class RtpJitterQueue(
             emit(data)
             return
         }
-        val source = RtpReceiverDiagnostics.unsigned32(data,8)
-        val payloadType = data[1].toInt() and 0x7f
-        if (sourceSsrc != null &&
-            (sourceSsrc != source || sourcePayloadType != payloadType)) {
+        acceptedPacketOrdinal++
+        while (retired.isNotEmpty() &&
+            retired.first().expiresAfter < acceptedPacketOrdinal)
+            retired.removeFirst()
+        val source = Identity(RtpReceiverDiagnostics.unsigned32(data,8),
+            data[1].toInt() and 0x7f)
+        val current = activeIdentity
+        if (current != null && current != source) {
+            // Ignore packets that arrive late from a previous stream epoch.
+            // A former SSRC/PT is allowed again after a bounded quarantine;
+            // this is not an assumption about the camera's source identity.
+            if (retired.any { it.id == source }) {
+                lateEpochPackets++
+                oldOrDuplicatePackets++
+                return
+            }
+            retired.addLast(Retired(current,
+                acceptedPacketOrdinal + retiredHoldPackets))
+            while (retired.size > 4) retired.removeFirst()
             // Never hold UDP packets from two RTP sequence domains together.
-            // The downstream H264 assembler sees the changed epoch and waits
-            // for an IDR before issuing new codec input.
+            // The downstream H264 assembler will reject non-IDR frames
+            // after the new SSRC/PT appears.
             pending.clear()
             nextSequence = null
             sourceEpochResets++
         }
-        sourceSsrc = source
-        sourcePayloadType = payloadType
+        activeIdentity = source
         val seq = ((data[2].toInt() and 0xff) shl 8) or (data[3].toInt() and 0xff)
         if (nextSequence == null) {
             nextSequence = (seq + 1) and 65535
@@ -89,9 +113,17 @@ class RtpJitterQueue(
     }
 
     fun tick(timeMs: Long, emit: (ByteArray) -> Unit) {
-        if (pending.isNotEmpty() &&
-            pending.values.any { timeMs - it.receivedAtMs >= maxDelayMs }) {
+        // More than one independent sequence gap can expire while the UDP
+        // socket is quiet. Drain EVERY expired gap in one bounded tick,
+        // rather than leaving older packets for another socket timeout.
+        var released = 0
+        while (pending.isNotEmpty() && released < capacity &&
+            pending.values.any {
+                timeMs >= it.receivedAtMs &&
+                    timeMs - it.receivedAtMs >= maxDelayMs
+            }) {
             releaseOldestGap(emit)
+            released++
         }
     }
 

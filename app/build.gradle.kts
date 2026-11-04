@@ -9,8 +9,8 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 49
-        versionName = "1.3.9-rtp-epoch-replay"
+        versionCode = 50
+        versionName = "1.3.10-udp-jitter-guard"
         ndk {
             // Modern A500S Android test device: one CPU architecture only.
             abiFilters += "arm64-v8a"

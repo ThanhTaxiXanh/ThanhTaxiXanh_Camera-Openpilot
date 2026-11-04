@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.9-rtp-epoch-replay (Lite / AI flavors)  
+**Version**: 1.3.10-udp-jitter-guard (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -529,3 +529,20 @@ Extracted RFC 6184 depacketizer with strict FU-A start/end, STAP-A length, RTP h
 ## V1.3.9 — RTP source epochs and deterministic H264 replay
 
 The Direct RTP/H264 builder and UDP jitter window now isolate SSRC/payload-type stream changes, reject FU-A NAL mismatch/forbidden bits, and wait for a complete IDR after corruption. A synthetic long-running RTP replay tests loss/reorder/stream-switch recovery; see docs/RTP_STREAM_EPOCH_REPLAY_V1.md. This does not demonstrate the ~1s optical video delay or calibrated ADAS; acceptance remains 7/20=35%.
+
+
+## V1.3.10 — Bounded UDP jitter deadline and retired-epoch quarantine
+
+- RTP socket now wakes at 25ms instead of 100ms when idle, below the 55ms
+  reorder target; real scheduling and camera latency are still unknown.
+- An expired UDP reorder window releases all independently expired gaps
+  during the same tick rather than withholding later expired packets.
+- On SSRC or payload-type changes, the queue clears pending old packets and
+  temporarily quarantines late packets from up to four retired identities,
+  avoiding oscillation between old/new RTP streams. The guard is bounded to
+  256 packet arrivals and does not block a legitimate later source return.
+- Five pure JVM tests cover source fallback, late packets, payload changes,
+  sequence wrap and multi-gap idle expiry. Preview/MediaCodec/pairing remain
+  unchanged. See docs/UDP_JITTER_EPOCH_GUARD_V1.md.
+- **7/20 = 35% PASS CI**; there is no measured camera-to-glass improvement
+  or new A500S hardware, calibration, model or ADAS evidence.

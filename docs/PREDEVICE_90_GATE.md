@@ -177,3 +177,6 @@ V1.3.8: independently unit-tested RTP/H264 FU-A/STAP-A reassembly guards and con
 
 
 V1.3.9: the RTP/H264 assembly path and UDP reorder window now isolate SSRC/payload-type stream epochs; inconsistent FU-A NAL identities are rejected, with deterministic synthetic replay and bytewise AU tests. No real A500S model/latency evidence. **7/20=35%**, mandatory #14–17 and #20 NOT PASS.
+
+
+V1.3.10: 25ms RTP UDP socket timeout vs 55ms reorder window, multi-gap deadline drain, and bounded late-SSRC/PT retirement to avoid jitter buffer epoch flapping. CI tests alone do not establish physical playback latency, camera/AI correctness or ADAS readiness. **7/20=35%**, mandatory #14-17/#20 NOT PASS.
