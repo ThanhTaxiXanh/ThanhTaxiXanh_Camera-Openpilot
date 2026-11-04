@@ -1,6 +1,6 @@
 # TTX Camera AI — acceptance criteria before the next phone test
 
-Updated: 2026-11-04. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-04. V1.2.3. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
 
 ## 90% engineering gate
 
@@ -21,7 +21,7 @@ Twenty criteria must be independently implemented and demonstrated with unit or 
 | 11 | ONNX Runtime graph loading and worker | CODED; no golden model tests |
 | 12 | NCNN alternate engine | NOT READY |
 | 13 | xADAS 1576-output lane/lead/road-edge parser | PASS CI |
-| 14 | Non-disruptive A500S decoded YUV to AI (mandatory) | CODED PARTIAL: optional Direct offscreen YUV sidecar; no calibrated AI hookup or IJK access; not PASS |
+| 14 | Non-disruptive A500S decoded YUV to AI (mandatory) | CODED RAW DIAGNOSTIC in Direct: sidecar YUV -> temporal pair -> ONNX; no calibrated model and no device validation. NOT PASS |
 | 15 | Verified A500S intrinsics, model axes and warp (mandatory) | NOT READY |
 | 16 | Licensed model with ground-truth inference results (mandatory) | NOT READY |
 | 17 | Validated live lane and metric lead HUD (mandatory) | NOT READY |
@@ -43,3 +43,9 @@ Verdict: BELOW 90%. Do not ask the owner for a new on-device test yet. Only PASS
 Privacy: no recording or model upload, no proprietary xADAS weights, no camera-auth bypass, no steering or braking.
 
 V1.2.2 offline evidence: H264 Annex-B/IDR tests + both flavor build checks; no YUV from A500S hardware has been captured in this milestone. A successful CI run verifies compilation only, not camera throughput, additional decoder capacity, frame timestamps, or actual model safety.
+
+V1.2.3 validation note: Offline unit testing covers timestamp, frame dimensions,
+pair reset and fail-closed behavior, and CI can verify both APK flavors compile.
+A second AVC decoder may be unsupported by the handset; calibration, valid
+model artifacts, observed confidence, lead geometry and true source timestamp
+remain unknown. Raw tensor output must NEVER count as ADAS acceptance.
