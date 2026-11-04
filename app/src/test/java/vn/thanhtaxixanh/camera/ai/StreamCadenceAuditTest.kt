@@ -5,7 +5,6 @@ import org.junit.Test
 
 /** Pure deterministic multi-second local video pipeline fixture. */
 class StreamCadenceAuditTest {
-    private val stage=StreamCadenceAudit.Stage
 
     private fun simulate(
         frameCount:Int = 601,
@@ -22,20 +21,20 @@ class StreamCadenceAuditTest {
         for (i in 0 until frameCount) {
             val now=i*receiveEveryMs
             val pts=1_000_000L+i*sourcePtsStepUs
-            assertTrue(monitor.observe(stage.AU_RECEIVED,pts,now))
+            assertTrue(monitor.observe(StreamCadenceAudit.Stage.AU_RECEIVED,pts,now))
             if(i%inputEvery==0)
-                assertTrue(monitor.observe(stage.CODEC_INPUT,pts,now))
+                assertTrue(monitor.observe(StreamCadenceAudit.Stage.CODEC_INPUT,pts,now))
             if(i%decodedEvery==0 && i>=decodePtsBehind) {
                 val decodePts=1_000_000L+(i-decodePtsBehind)*sourcePtsStepUs
-                assertTrue(monitor.observe(stage.CODEC_OUTPUT,decodePts,now))
+                assertTrue(monitor.observe(StreamCadenceAudit.Stage.CODEC_OUTPUT,decodePts,now))
             }
             if(i%releaseEvery==0 && i>=releasePtsBehind) {
                 val releasePts=1_000_000L+(i-releasePtsBehind)*sourcePtsStepUs
-                assertTrue(monitor.observe(stage.SURFACE_RELEASE,releasePts,now))
+                assertTrue(monitor.observe(StreamCadenceAudit.Stage.SURFACE_RELEASE,releasePts,now))
             }
             if(callbackEvery>0 && i%callbackEvery==0 && i>=releasePtsBehind) {
                 val cbPts=1_000_000L+(i-releasePtsBehind)*sourcePtsStepUs
-                assertTrue(monitor.observe(stage.RENDER_CALLBACK,cbPts,now))
+                assertTrue(monitor.observe(StreamCadenceAudit.Stage.RENDER_CALLBACK,cbPts,now))
             }
         }
         return monitor
@@ -107,19 +106,19 @@ class StreamCadenceAuditTest {
 
     @Test fun invalidClockInputsAndLongStreamCapacityAreBounded() {
         val s=StreamCadenceAudit(windowMs=4_000L,maxEventsPerStage=128)
-        assertFalse(s.observe(stage.CODEC_OUTPUT,1_000L,10L))
-        assertFalse(s.observe(stage.AU_RECEIVED,-1L,10L))
-        assertTrue(s.observe(stage.AU_RECEIVED,1_000L,10L))
-        assertFalse(s.observe(stage.AU_RECEIVED,2_000L,9L))
+        assertFalse(s.observe(StreamCadenceAudit.Stage.CODEC_OUTPUT,1_000L,10L))
+        assertFalse(s.observe(StreamCadenceAudit.Stage.AU_RECEIVED,-1L,10L))
+        assertTrue(s.observe(StreamCadenceAudit.Stage.AU_RECEIVED,1_000L,10L))
+        assertFalse(s.observe(StreamCadenceAudit.Stage.AU_RECEIVED,2_000L,9L))
         assertEquals(3L,s.snapshot(10L).invalidEvents)
         for (i in 1..2000) {
             val now=10L+i*4L
             val pts=1_000L+i*40_000L
-            assertTrue(s.observe(stage.AU_RECEIVED,pts,now))
-            assertTrue(s.observe(stage.CODEC_INPUT,pts,now))
-            assertTrue(s.observe(stage.CODEC_OUTPUT,pts,now))
-            assertTrue(s.observe(stage.SURFACE_RELEASE,pts,now))
-            assertTrue(s.observe(stage.RENDER_CALLBACK,pts,now))
+            assertTrue(s.observe(StreamCadenceAudit.Stage.AU_RECEIVED,pts,now))
+            assertTrue(s.observe(StreamCadenceAudit.Stage.CODEC_INPUT,pts,now))
+            assertTrue(s.observe(StreamCadenceAudit.Stage.CODEC_OUTPUT,pts,now))
+            assertTrue(s.observe(StreamCadenceAudit.Stage.SURFACE_RELEASE,pts,now))
+            assertTrue(s.observe(StreamCadenceAudit.Stage.RENDER_CALLBACK,pts,now))
         }
         val snap=s.snapshot(8_010L)
         assertTrue(snap.boundedEvictions > 0L)
@@ -133,11 +132,11 @@ class StreamCadenceAuditTest {
         for (i in 0 until 36_000) {
             now=i*33L
             val pts=1_000_000L+i*33_000L
-            m.observe(stage.AU_RECEIVED,pts,now)
-            m.observe(stage.CODEC_INPUT,pts,now)
-            m.observe(stage.CODEC_OUTPUT,pts,now)
-            m.observe(stage.SURFACE_RELEASE,pts,now)
-            if(i%10==0) m.observe(stage.RENDER_CALLBACK,pts,now)
+            m.observe(StreamCadenceAudit.Stage.AU_RECEIVED,pts,now)
+            m.observe(StreamCadenceAudit.Stage.CODEC_INPUT,pts,now)
+            m.observe(StreamCadenceAudit.Stage.CODEC_OUTPUT,pts,now)
+            m.observe(StreamCadenceAudit.Stage.SURFACE_RELEASE,pts,now)
+            if(i%10==0) m.observe(StreamCadenceAudit.Stage.RENDER_CALLBACK,pts,now)
         }
         val s=m.snapshot(now)
         assertEquals(StreamCadenceAudit.Status.RENDER_CALLBACK_UNCONFIRMED,
