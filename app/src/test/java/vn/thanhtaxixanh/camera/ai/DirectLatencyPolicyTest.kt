@@ -29,6 +29,15 @@ class DirectLatencyPolicyTest {
         assertFalse(strict.inputWaitExceeded(1000L,1350L))
         assertTrue(strict.inputWaitExceeded(1000L,1351L))
         assertTrue(strict.inputWaitExceeded(1000L,999L))
+        assertFalse(DirectLatencyPolicy.SMOOTH
+            .shouldSuppressDecodedOutputAge(99999L))
+        assertFalse(strict.shouldSuppressDecodedOutputAge(null))
+        assertFalse(strict.shouldSuppressDecodedOutputAge(850L))
+        assertTrue(strict.shouldSuppressDecodedOutputAge(851L))
+        assertFalse(strict.shouldReconnectForStaleOutputs(3))
+        assertTrue(strict.shouldReconnectForStaleOutputs(4))
+        assertFalse(DirectLatencyPolicy.SMOOTH
+            .shouldReconnectForStaleOutputs(400))
         assertEquals(DirectLatencyPolicy.AgeStatus.FRESH,
             DirectLatencyPolicy.SMOOTH.checkAge(1000L,2800L))
         assertEquals(DirectLatencyPolicy.AgeStatus.TOO_OLD,
