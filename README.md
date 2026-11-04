@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.8-rtp-h264-integrity (Lite / AI flavors)  
+**Version**: 1.3.9-rtp-epoch-replay (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -524,3 +524,8 @@ Owner explicitly enables Direct YUV and captures four frames to a locally select
 ## V1.3.8 — Direct RTP/H264 access-unit integrity
 
 Extracted RFC 6184 depacketizer with strict FU-A start/end, STAP-A length, RTP header/padding bounds, cross-timestamp packet-loss quarantine and IDR reacquisition. Unit tests cover damaged/missing RTP fragments and recovery. See docs/RTP_H264_AU_INTEGRITY_V1.md. No claimed ~1s glass delay or calibrated AI; 7/20=35% PASS CI.
+
+
+## V1.3.9 — RTP source epochs and deterministic H264 replay
+
+The Direct RTP/H264 builder and UDP jitter window now isolate SSRC/payload-type stream changes, reject FU-A NAL mismatch/forbidden bits, and wait for a complete IDR after corruption. A synthetic long-running RTP replay tests loss/reorder/stream-switch recovery; see docs/RTP_STREAM_EPOCH_REPLAY_V1.md. This does not demonstrate the ~1s optical video delay or calibrated ADAS; acceptance remains 7/20=35%.
