@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.11-preview-gop-fence (Lite / AI flavors)  
+**Version**: 1.3.12-onnx-audit-receipt (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -565,3 +565,8 @@ thread or drops arbitrary H264 P frames. The existing rolling reconnect
 limit prevents unbounded retries. See docs/PREVIEW_GOP_EPOCH_FENCE_V1.md.
 This is NOT a measured one-second A500S preview or verified lane/lead ADAS.
 CI engineering gate stays 7/20=35%.
+
+
+## V1.3.12 — Reproducible ONNX model parity receipt
+
+The model screen produces TTXONNX-AUDIT-01 text-only receipt with exact model SHA256, canonical big-endian raw IEEE754 Float32 hashes for both input tensors, reference output and actual AI runtime output, plus numerical discrepancy metrics. Owner can share only text hashes without sharing weights or camera images. Numeric match is classified MATCHED_UNVERIFIED, pending independent reference source and permitted model evidence. Four synthetic JVM tests cover endianness, tamper and wrong-model/NaN rejection. Criterion #11 and mandatory #14–17/#20 remain NOT PASS. Gate 7/20=35%.

@@ -22,3 +22,7 @@ Passing #11 demonstrates **graph loading, execution and reference parity only** 
 - Do not promote any acceptance criterion from this document or a green build alone.
 
 Baseline: **7/20 = 35% PASS CI**; follow-up alert threshold **9/20**, final engineering target **18/20** with mandatory #14–17/#20. No new on-device trial is requested by this proposal.
+
+## Implemented local audit receipt
+
+TTXONNX-AUDIT-01 records exact SHA256 of installed ONNX model, canonical big-endian IEEE754 Float32 digests for each input and reference/real runtime output, plus comparison metrics. Owner can share the text report via Android ACTION_SEND. No weights, source frames or public upload. A matching self-imported vector remains MATCHED_UNVERIFIED, not independently accepted. Four JVM synthetic regression tests verify endianness and failure behavior. Criterion #11 remains NOT PASS until legal model/reference independently corroborated.
