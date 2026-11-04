@@ -1,6 +1,7 @@
 package vn.thanhtaxixanh.camera.ai
 
 import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.OnnxJavaType
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import ai.onnxruntime.TensorInfo
@@ -66,11 +67,20 @@ class OnnxVisionEngine private constructor(
                 require(outputs.containsKey("vout_pass")) {
                     "Model không có vout_pass."
                 }
-                fun hasShape(info: TensorInfo?, shape: LongArray): Boolean =
-                    info?.shape?.contentEquals(shape) == true
-                require(hasShape(inputs["img"]?.info as? TensorInfo, inputShape))
-                require(hasShape(inputs["big_img"]?.info as? TensorInfo, inputShape))
-                require(hasShape(outputs["vout_pass"]?.info as? TensorInfo, outputShape))
+                // Shape-only matching accepts FLOAT16/INT32 models that cannot
+                // consume our FloatBuffer input or return meaningful float32.
+                fun hasFloat32Shape(info: TensorInfo?, shape: LongArray): Boolean =
+                    info != null && info.type == OnnxJavaType.FLOAT &&
+                        info.shape.contentEquals(shape)
+                require(hasFloat32Shape(inputs["img"]?.info as? TensorInfo, inputShape)) {
+                    "img must be FLOAT32 [1,12,128,256]"
+                }
+                require(hasFloat32Shape(inputs["big_img"]?.info as? TensorInfo, inputShape)) {
+                    "big_img must be FLOAT32 [1,12,128,256]"
+                }
+                require(hasFloat32Shape(outputs["vout_pass"]?.info as? TensorInfo, outputShape)) {
+                    "vout_pass must be FLOAT32 [1,1576]"
+                }
                 return OnnxVisionEngine(env, options, session)
             } catch (t: Throwable) {
                 try { session?.close() } catch (_: Throwable) {}
@@ -85,7 +95,7 @@ class OnnxVisionEngine private constructor(
     override fun run(img: FloatArray, bigImg: FloatArray): FloatArray {
         require(img.size == SupercomboV027Contract.INPUT_ELEMENTS)
         require(bigImg.size == SupercomboV027Contract.INPUT_ELEMENTS)
-        require(img.all { it.isFinite() } && bigImg.all { it.isFinite() })
+        VisionInputContract.requireRawStudioByteTensors(img, bigImg)
         fun tensor(data: FloatArray): OnnxTensor {
             val buf = ByteBuffer.allocateDirect(data.size * 4)
                 .order(ByteOrder.nativeOrder()).asFloatBuffer()
