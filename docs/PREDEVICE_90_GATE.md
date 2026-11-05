@@ -327,3 +327,18 @@ This ONLY proves criterion #8 on the tested Android handset: **Gate A
 8/20 (40%)**, target >=18/20; **Gate B remains 0/5**, because none of
 #14/#15/#16/#17/#20 A500S/ADAS evidence was provided. Neither Camera2's
 80ms max sensor-to-callback age nor the video proves optical latency.
+
+
+V1.3.34: Existing TTXLIVE01 five-minute recorder now optionally captures
+synchronous Direct Surface-release and independent A500S offscreen YUV
+callback progress, per-session decoder error/reset deltas, and optional
+RAW temporal-pair/ONNX-result counters. YUV must be explicitly enabled
+before arming the trace. The recorder treats a stalled/disconnected YUV tap
+as a failure even while the preview Surface counter still advances. Nine
+JVM regression tests exercise healthy dual-stream signals and all key
+failure paths. This is new physical-evidence COLLECTION capability, not
+physical evidence or performance improvement: user must provide a real
+A500S TTXLIVE01, 4-frame TTXYUV01 and preview footage. No optical clock
+or legally trained driving model is added; #14 and #20 remain NOT PASS.
+Gate A **8/20 (40%)** (includes independently reviewed phone Camera2 #8),
+Gate B **0/5**.

@@ -1,10 +1,18 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.33-camera2-multilens-yuv (Lite / AI flavors)  
+**Version**: 1.3.34-a500s-dual-yuv-trace (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
+
+V1.3.34: owner-triggered TTXLIVE01 5-minute trace now records independent
+Direct preview Surface-release and A500S offscreen MediaCodec YUV callback
+progress when YUV tap is enabled BEFORE starting the trace. It detects YUV
+stall/disabled tap/missing decoder metrics/new resets/new errors and exports
+local RAW/ONNX counters separately without declaring model accuracy or
+optical latency. See docs/A500S_DUAL_STREAM_FIELD_TRACE_V1334.md.
+
 
 V1.3.33 selects the Camera2 phone lens by its advertised physical
 640x480 YUV_420_888 support instead of blindly taking the first rear
