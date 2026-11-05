@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.18-camera2-lifecycle (Lite / AI flavors)  
+**Version**: 1.3.19-onnx-cpu-parity (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
@@ -652,3 +652,15 @@ do not match the tensor source contract. Pausing no longer joins the
 Camera2 HandlerThread on the UI thread. Nine pure JVM tests verify lease
 revocation across 20,000 synthetic transitions. This remains CODED in
 Gate A item #8, not a claim of hardware verification; A=7/20, B=0/5.
+
+
+## V1.3.19 — Actual CPU ONNX contract fixture, independent arithmetic oracle
+
+CI now generates an ORIGINAL arithmetic-only ONNX model with exact two FLOAT32
+[1,12,128,256] inputs and [1,1576] output, executes it with actual
+ONNX Runtime CPU and independently calculates all 1,576 expected outputs.
+The exported ONNX/TTXREF01/manifest artifact supports an optional Android AI
+smoke test without copying proprietary xADAS weights or including any model
+in the APK. It is NOT a trained driving model, optical calibration or metric
+lead reference. See docs/ONNX_CPU_CONTRACT_FIXTURE_V1319.md.
+Gate A remains 7/20=35% and mandatory Gate B remains 0/5.

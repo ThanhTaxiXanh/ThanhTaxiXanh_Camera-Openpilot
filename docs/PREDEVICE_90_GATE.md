@@ -209,3 +209,6 @@ V1.3.17 migration: two-gate policy and a fail-closed machine ledger separate eng
 
 
 V1.3.18: phone Camera2/ONNX lifecycle now rejects stale `onOpened`, `onConfigured` and pending model load completions after Activity pause/Surface teardown. Added nine host lease tests; a real Camera2+YUV run is still missing. Two-gate totals unchanged: **A 7/20, B 0/5**.
+
+
+V1.3.19: CI generates an original synthetic, arithmetic-only ONNX graph with exact two-input/1576-output shape, runs a real independent CPU ONNX Runtime inference, checks full outputs with a separately calculated formula, and exports TTXREF01 + hashes for Android AI smoke-testing. This does not demonstrate a licensed production ADAS model, independent driving ground truth or actual A500S data. #11 remains CODED; Gate A **7/20=35%**, Gate B **0/5**.
