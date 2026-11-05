@@ -1223,6 +1223,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                             " · YUV hết hạn ${yuv.staleYuvOutputs}" +
                             " · YUV sai epoch ${yuv.revokedYuvOutputs}" +
                             " · YUV sai định dạng ${yuv.unsupportedYuvOutputs}" +
+                            " · codec ${yuv.decoderName}" +
+                            (if (yuv.softwareDecoder) " [SOFTWARE]" else " [DEFAULT]") +
+                            " · thử codec mềm ${yuv.softwareCodecAttempts}" +
+                            " · đợi input ${yuv.transientInputWaits}" +
+                            " · thiếu input liên tiếp ${yuv.exhaustedInputWaits}" +
+                            " · output chưa có Image ${yuv.nullOutputImages}" +
                             " · lỗi ${yuv.errors}")
                         if (yuv.lastFailure.isNotBlank())
                             detailView.append("\n" + yuv.lastFailure)
