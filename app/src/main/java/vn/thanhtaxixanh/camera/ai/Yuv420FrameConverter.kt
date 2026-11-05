@@ -18,11 +18,11 @@ object Yuv420FrameConverter {
             require(rowStride > 0 && pixelStride > 0 && offset >= 0)
         }
         fun sample(x:Int,y:Int):Int {
-            val index=offset+y*rowStride+x*pixelStride
-            require(index >= 0 && index < bytes.size) {
+            val index=offset.toLong()+y.toLong()*rowStride+x.toLong()*pixelStride
+            require(x >= 0 && y >= 0 && index in 0L until bytes.size.toLong()) {
                 "Invalid YUV plane bounds: x=$x y=$y offset=$offset"
             }
-            return bytes[index].toInt() and 255
+            return bytes[index.toInt()].toInt() and 255
         }
     }
 
@@ -31,9 +31,14 @@ object Yuv420FrameConverter {
         val height:Int,
         val y:Plane,
         val u:Plane,
-        val v:Plane
+        val v:Plane,
+        val chromaXPhase:Int=0,
+        val chromaYPhase:Int=0
     ) {
-        init { require(width in 2..8192 && height in 2..8192) }
+        init {
+            require(width in 2..8192 && height in 2..8192)
+            require(chromaXPhase in 0..1 && chromaYPhase in 0..1)
+        }
     }
 
     fun argb(frame:Frame):IntArray {
@@ -44,8 +49,10 @@ object Yuv420FrameConverter {
         for (row in 0 until height) {
             for (col in 0 until width) {
                 val yy=frame.y.sample(col,row)
-                val uu=frame.u.sample(col/2,row/2)
-                val vv=frame.v.sample(col/2,row/2)
+                val cx=(col+frame.chromaXPhase)/2
+                val cy=(row+frame.chromaYPhase)/2
+                val uu=frame.u.sample(cx,cy)
+                val vv=frame.v.sample(cx,cy)
                 val c=(yy-16).coerceAtLeast(0)
                 val d=uu-128
                 val e=vv-128

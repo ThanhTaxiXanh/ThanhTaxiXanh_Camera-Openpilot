@@ -197,3 +197,6 @@ V1.3.13: monotonic GPS fix-age gate replaces callback-receipt age, rejects cache
 
 
 V1.3.14: per-Direct player callback leases filter late YUV/ONNX/status/SAF callbacks across internal reconnects. Seven synthetic JVM tests. No hardware evidence, #14–17/#20 not PASS. **7/20=35%**.
+
+
+V1.3.15: Android YUV420 image cropping now retains odd X/Y chroma phases and the native ByteBuffer valid limit. Long-safe plane-copy bounds check rejects malformed strides. Nine host tests are synthetic only, no physical A500S/ONNX or #14–17/#20 PASS. Engineering gate **7/20=35%**.

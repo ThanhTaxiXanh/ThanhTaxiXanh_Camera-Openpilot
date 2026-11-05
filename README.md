@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.14-direct-epoch-fence (Lite / AI flavors)  
+**Version**: 1.3.15-yuv-crop-phase (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -600,3 +600,8 @@ checks the lease for YUV/ONNX, status, discontinuity and delayed SAF callbacks.
 Activity generation previously remained unchanged across internal reconnects.
 Seven JVM tests include 20,000 session changes; hardware/model parity is
 not claimed and the engineering gate remains **7/20=35%**.
+
+
+## V1.3.15 — Correct MediaCodec YUV420 odd-crop chroma phase
+
+An odd YUV crop origin must shift chroma lookup: pixel col uses (col + left%2)/2, not col/2. The Android Image reader also used ByteBuffer.clear() which expanded the native plane limit to capacity. Both are corrected using explicit chroma phase and a limit-preserving, Long-safe plane snapshot helper. Nine JVM tests validate odd/even crop phase, padded interleaved UV and malformed/truncated buffers. No A500S or physical AI verification; acceptance 7/20=35%.
