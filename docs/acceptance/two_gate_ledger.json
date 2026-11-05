@@ -58,7 +58,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "Complete deterministic RTSP/transport fallback replay; physical playback is Gate B evidence if claimed"
+        "next_required": "V1.3.26 fixes both Direct Surface and offscreen YUV MediaCodec creation from validated RTSP SDP H264 SPS dimensions instead of hardcoded 1280x720 (known A500S profile 640x480); 11 pure Kotlin SPS tests. Must independently replay actual A500S RTSP transport and decoder startup/fallback, verify hardware output format and timing before #3 PASS."
       },
       "field": {
         "status": "NOT_REQUIRED",
@@ -238,7 +238,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "V1.3.25 adds phone YUV->dual warp->actual ONNX->TTXREF01 export plus independent CPU ORT replay for future A500S frames. Need independent real A500S uninterrupted hardware YUV/AI trace and physical timing before Gate A or B PASS."
+        "next_required": "V1.3.26 aligns Direct and sidecar decoders with H264 SPS dimensions, in addition to V1.3.25 Android-YUV/ONNX parity tooling. Still requires real A500S H264->MediaCodec YUV->ONNX uninterrupted hardware trace and independently reviewed model/device proof before #14 PASS."
       },
       "field": {
         "status": "NOT_VERIFIED",
