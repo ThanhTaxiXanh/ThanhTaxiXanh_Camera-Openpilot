@@ -136,7 +136,13 @@ class H264YuvSidecar(
     }
 
     private fun createDecoder(): MediaCodec {
-        val format = MediaFormat.createVideoFormat("video/avc", 1280, 720)
+        // Sidecar YUV and Direct Surface codecs MUST start with the same
+        // validated H264 SPS picture dimensions, including cropped 4:2:0.
+        // Hardcoding 1280x720 for a 640x480 A500S stream can cause vendor
+        // decoder reconfigure stalls or oversized buffer allocations.
+        val dimensions = H264SpsDimensions.configuredSize(sps)
+        val format = MediaFormat.createVideoFormat(
+            "video/avc", dimensions.width, dimensions.height)
         if (sps != null && pps != null) {
             format.setByteBuffer("csd-0",
                 ByteBuffer.wrap(byteArrayOf(0, 0, 0, 1) + sps))
