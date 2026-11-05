@@ -1,10 +1,15 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.27-sdp-h264-csd (Lite / AI flavors)  
+**Version**: 1.3.28-rtp-selected-pt (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
+
+V1.3.28 prevents foreign RTP payload types from entering the selected H.264
+Direct video decoder or UDP reorder queue; tested with synthetic loss/reorder
+fixtures. See docs/RTP_SELECTED_PAYLOAD_GUARD_V1328.md. No physical A500S
+validation is claimed.
 
 V1.3.27 restricts H.264 SPS/PPS in RTSP SDP to the selected video media
 section and matching payload type; malformed/mismatched codec headers are
