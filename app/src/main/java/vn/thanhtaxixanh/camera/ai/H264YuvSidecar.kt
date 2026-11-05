@@ -353,7 +353,8 @@ class H264YuvSidecar(
             onFrame(frame, capturedAtMs)
             // Discontinuity may be raised synchronously from the consumer.
             // Count only a callback that completed within the same GOP.
-            if (inspect() != OffscreenYuvOutputGate.Verdict.DELIVER) {
+            if (!alive.get() || !active.get() || resetRequested.get() ||
+                decoderEpoch != epoch.get()) {
                 revokedYuvOutputs.incrementAndGet()
                 return false
             }
