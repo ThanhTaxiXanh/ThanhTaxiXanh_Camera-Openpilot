@@ -86,6 +86,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private var backend: Backend? = null
     private var direct: DirectRtspPlayer? = null
+    private val directCallbackEpoch = DirectCallbackEpochGate()
     private var ijk: IjkMediaPlayer? = null
     private var network: Network? = null
     private var url: String? = null
@@ -768,6 +769,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         previousDecoded = 0L
         previousRendered = 0L
         val selectedUdp = preferUdp
+        val callbackLease = directCallbackEpoch.begin()
         // A callback from an old RTSP session must never restart the new one.
         lateinit var player: DirectRtspPlayer
         player = DirectRtspPlayer(
@@ -775,13 +777,15 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             { yuvTapEnabled },
             { message ->
                 runOnUiThread {
-                    if (token == generation && backend == Backend.DIRECT)
+                    if (directCallbackEpoch.isCurrent(callbackLease) &&
+                        token == generation && backend == Backend.DIRECT)
                         showStatus("xADAS-style: " + message)
                 }
             },
             {
                 runOnUiThread {
-                    if (token == generation && backend == Backend.DIRECT)
+                    if (directCallbackEpoch.isCurrent(callbackLease) &&
+                        token == generation && backend == Backend.DIRECT)
                         showStatus("MediaCodec đã xuất khung giải mã · " +
                             if (selectedUdp) "RTP/UDP" else "RTP/TCP")
                 }
@@ -789,20 +793,23 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             { _, _, _ -> }, // Deliberately no AI/frame copying in benchmark
             { reason ->
                 runOnUiThread {
-                    if (token == generation && backend == Backend.DIRECT &&
+                    if (directCallbackEpoch.isCurrent(callbackLease) &&
+                        token == generation && backend == Backend.DIRECT &&
                         direct === player)
                         recoverDirect(token, reason)
                 }
             },
             selectedUdp,
             { yuv, capturedAtMs ->
-                if (token == generation && backend == Backend.DIRECT && yuvTapEnabled) {
+                if (directCallbackEpoch.isCurrent(callbackLease) &&
+                    token == generation && backend == Backend.DIRECT && yuvTapEnabled) {
                     yuvFrames.incrementAndGet()
                     yuvShape = "${yuv.width}x${yuv.height}"
                     // Only the sidecar worker copies frames. Preview remains independent.
                     val completed = liveYuvCapture.accept(yuv, capturedAtMs)
                     if (completed != null) runOnUiThread {
-                        if (token == generation && backend == Backend.DIRECT &&
+                        if (directCallbackEpoch.isCurrent(callbackLease) &&
+                            token == generation && backend == Backend.DIRECT &&
                             yuvTapEnabled && !isDestroyed && pendingYuvEvidence == null) {
                             pendingYuvEvidence = completed
                             yuvCaptureButton.text = "ĐỦ 4 KHUNG · CHỌN NƠI LƯU"
@@ -838,7 +845,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             {
                 // A damaged RTP AU, overload, or codec restart must discard
                 // the previous temporal frame, even if the gap is <850 ms.
-                if (token == generation) {
+                if (directCallbackEpoch.isCurrent(callbackLease) &&
+                    token == generation) {
                     rawPairResetPending.set(true)
                     liveYuvCapture.cancel()
                     // Nonblocking: an in-flight ONNX result from the damaged
@@ -865,6 +873,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             return
         }
         directRecoveryPending = true
+        directCallbackEpoch.revoke()
         liveYuvCapture.cancel()
         if (::yuvCaptureButton.isInitialized)
             yuvCaptureButton.text = "LƯU 4 KHUNG YUV A500S · TẮT"
@@ -1123,6 +1132,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun stopPlayback() {
+        directCallbackEpoch.revoke()
         directRecoveryPending = false
         directReconnectBudget.reset()
         retryCount = 0

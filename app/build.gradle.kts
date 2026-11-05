@@ -9,8 +9,8 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 53
-        versionName = "1.3.13-gps-freshness-pip"
+        versionCode = 54
+        versionName = "1.3.14-direct-epoch-fence"
         ndk {
             // Modern A500S Android test device: one CPU architecture only.
             abiFilters += "arm64-v8a"
