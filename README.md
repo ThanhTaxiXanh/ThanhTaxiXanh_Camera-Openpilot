@@ -1,10 +1,16 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.28-rtp-selected-pt (Lite / AI flavors)  
+**Version**: 1.3.29-rtcp-epoch-report (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
+
+V1.3.29 corrects RTP source-epoch accounting and RFC 3550 RTCP Receiver
+Report intervals (including signed cumulative loss, late packets and SSRC 0).
+See docs/RTCP_RECEIVER_REPORT_EPOCH_V1329.md. This does not demonstrate
+hardware playback or a camera-to-screen latency reduction.
+
 
 V1.3.28 prevents foreign RTP payload types from entering the selected H.264
 Direct video decoder or UDP reorder queue; tested with synthetic loss/reorder
