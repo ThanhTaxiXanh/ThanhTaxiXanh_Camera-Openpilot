@@ -29,7 +29,7 @@ class RtpSelectedPayloadGate(val expectedPayloadType: Int?) {
     init { require(expectedPayloadType == null || expectedPayloadType in 0..127) }
 
     fun classify(packet: ByteArray): Verdict {
-        if (packet.size < 12 || packet[0].toInt() and 0xc0 != 0x80) {
+        if (packet.size < 12 || (packet[0].toInt() and 0xc0) != 0x80) {
             malformed.incrementAndGet()
             return Verdict.MALFORMED
         }
