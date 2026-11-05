@@ -9,8 +9,8 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 68
-        versionName = "1.3.28-rtp-selected-pt"
+        versionCode = 69
+        versionName = "1.3.29-rtcp-epoch-report"
         ndk {
             // Modern A500S Android test device: one CPU architecture only.
             abiFilters += "arm64-v8a"
