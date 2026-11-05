@@ -221,3 +221,6 @@ V1.3.21: owner can explicitly start and SAF-export bounded TTXLIVE01 five-minute
 
 
 V1.3.22: GPS HUD now respects persisted km/h/m vs mph/ft display units on resume. SHOW_LOGO hides only the TTX brand, never all GPS or verified lead data; 5m round-distance setting applies only to separately verified metres. Fourteen pure JVM formatting tests do not independently verify Android GNSS/PiP lifecycle. #19 remains CODED. Gate A **7/20=35%**, Gate B **0/5**.
+
+
+V1.3.23: owner-controlled Android GPS/PiP/settings TTXGPIP01 trace now records permission/provider/current fix presence, PiP request/result vs real onPictureInPictureModeChanged entry/exit callback, Surface validity and persisted HUD options. Bounded privacy-safe text export through SAF; synthetic JVM tests cannot prove live GPS/PiP hardware. #19 still CODED pending independent review, Gate A **7/20 (35%)**, Gate B **0/5**.
