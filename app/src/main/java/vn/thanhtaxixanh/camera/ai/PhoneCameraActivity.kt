@@ -1,6 +1,7 @@
 package vn.thanhtaxixanh.camera.ai
 
 import android.Manifest
+import android.content.Intent
 import android.app.Activity
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
@@ -11,6 +12,7 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
 import android.media.ImageReader
 import android.os.Bundle
 import android.os.Handler
@@ -47,6 +49,14 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
     @Volatile private var previousVisionFrame: IntArray? = null
     @Volatile private var previousVisionCaptureMs = 0L
     private lateinit var aiButton: Button
+    private lateinit var evidenceButton: Button
+    private lateinit var evidenceStatus: TextView
+    @Volatile private var activePhoneEvidence: PhoneCameraFieldEvidence? = null
+    private var pendingPhoneEvidence: String? = null
+    private val phoneEvidenceSaveRequestCode = 441
+    @Volatile private var selectedCameraId = ""
+    @Volatile private var selectedRearCamera = false
+    private var lastEvidenceUiUpdateMs = 0L
     private var loadingAi = false
     private val cameraLease = PhoneCameraSessionLease()
     private val modelLease = PhoneCameraSessionLease()
@@ -86,6 +96,17 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
             setOnClickListener { toggleVisionDiagnostics() }
         }
         body.addView(aiButton)
+        evidenceStatus=TextView(this).apply {
+            text="Kiểm chứng Camera2 thực tế 30 giây · không cần ONNX/A500S"
+            textSize=12f
+            setPadding(10,8,10,8)
+        }
+        body.addView(evidenceStatus)
+        evidenceButton=Button(this).apply {
+            text="GHI BẰNG CHỨNG CAMERA2 · 30 GIÂY"
+            setOnClickListener { togglePhoneEvidence() }
+        }
+        body.addView(evidenceButton)
         body.addView(Button(this).apply {
             text="ĐÓNG CAMERA"
             setOnClickListener { finish() }
@@ -93,6 +114,78 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
         setContentView(body)
     }
 
+
+    /**
+     * Owner-initiated metadata evidence. No image payload leaves the phone.
+     * Saving uses Android Storage Access Framework: no storage permission.
+     */
+    private fun togglePhoneEvidence() {
+        val recording=activePhoneEvidence
+        if (recording!=null) {
+            val report=recording.finish(SystemClock.elapsedRealtime(),
+                preview.holder.surface.isValid && session!=null)
+            activePhoneEvidence=null
+            pendingPhoneEvidence=report.text
+            evidenceStatus.text=(if(report.reviewable)
+                "ĐỦ MẪU · CẦN ĐỐI CHIẾU VIDEO MÀN HÌNH THỰC TẾ"
+                else "CHƯA ĐỦ / KHÔNG HỢP LỆ · tệp sẽ ghi lý do") +
+                " · " + report.cameraCaptures + " capture · " +
+                report.yuvCopies + " mẫu YUV"
+            evidenceButton.text="LƯU TỆP BẰNG CHỨNG CAMERA2"
+            launchPhoneEvidenceSave()
+            return
+        }
+        if (pendingPhoneEvidence!=null) {
+            launchPhoneEvidenceSave()
+            return
+        }
+        if (!inForeground || !started || session==null || camera==null ||
+            !preview.holder.surface.isValid ||
+            !cameraLease.owns(activeCameraToken)) {
+            evidenceStatus.text="Mở Camera2 preview thành công trước khi ghi bằng chứng."
+            return
+        }
+        val trace=PhoneCameraFieldEvidence(selectedCameraId,selectedRearCamera,
+            realtimeSensorClock,SystemClock.elapsedRealtime())
+        trace.markPreviewConfigured()
+        activePhoneEvidence=trace
+        lastEvidenceUiUpdateMs=0L
+        evidenceButton.text="DỪNG & LƯU BẰNG CHỨNG CAMERA2"
+        evidenceStatus.text="Đang thu 30 giây: cần có preview, capture và YUV thật."
+    }
+
+    private fun launchPhoneEvidenceSave() {
+        if (pendingPhoneEvidence==null) return
+        try {
+            startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type="text/plain"
+                putExtra(Intent.EXTRA_TITLE,"TTX-PhoneCamera2-30s.ttxphone.txt")
+            },phoneEvidenceSaveRequestCode)
+        } catch (e: Exception) {
+            evidenceStatus.text="Không mở được nơi lưu: " + e.javaClass.simpleName
+        }
+    }
+
+    override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
+        super.onActivityResult(requestCode,resultCode,data)
+        if(requestCode!=phoneEvidenceSaveRequestCode || resultCode!=RESULT_OK)
+            return
+        val text=pendingPhoneEvidence ?: return
+        val uri=data?.data ?: return
+        try {
+            contentResolver.openOutputStream(uri)?.use {
+                it.write(text.toByteArray(Charsets.UTF_8))
+            } ?: error("SAF output stream is null")
+            pendingPhoneEvidence=null
+            evidenceButton.text="GHI BẰNG CHỨNG CAMERA2 · 30 GIÂY"
+            evidenceStatus.text="Đã lưu TTXPHONE01. Gửi tệp cùng video 30s màn hình " +
+                "để nghiệm thu Camera2 độc lập."
+        } catch (e: Exception) {
+            evidenceStatus.text="Lưu bằng chứng thất bại: " +
+                e.javaClass.simpleName + "; bấm để thử lại"
+        }
+    }
 
     /**
      * Toggle real ONNX inference of an authorized user model.
