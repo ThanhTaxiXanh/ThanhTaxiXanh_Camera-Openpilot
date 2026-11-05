@@ -38,6 +38,13 @@ class AdasHudView(context: Context) : View(context) {
         set(value) { field = value; invalidate() }
     var hudVisible = true
         set(value) { field = value; invalidate() }
+    // These settings do not control global HUD visibility.
+    var showBrandLabel = true
+        set(value) { field = value; invalidate() }
+    var speedUnit = HudDisplayFormat.UnitMode.METRIC
+        set(value) { field = value; invalidate() }
+    var roundLeadDistance = false
+        set(value) { field = value; invalidate() }
 
     private var modelLanes: List<LaneProjection.ProjectedLane> = emptyList()
     private var validatedState: VisionSafetyGate.VisibleState? = null
@@ -88,13 +95,15 @@ class AdasHudView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (!hudVisible) return
-        speedKmh?.let { speed ->
-            if (speed.isFinite() && speed >= 0f)
-                canvas.drawText("%.0f km/h".format(java.util.Locale.US, speed),
-                    12f, 42f, caption)
+        // Unit preference must change real display units, not only persist.
+        // A hidden TTX logo MUST NOT hide the independently sampled GPS speed.
+        val labels = HudDisplayFormat.labels(speedKmh, null, speedUnit,
+            showBrandLabel, roundLeadDistance)
+        labels.speed?.let { canvas.drawText(it, 12f, 42f, caption) }
+        labels.brand?.let {
+            canvas.drawText(it, 12f,
+                (height - 24).coerceAtLeast(30).toFloat(), caption)
         }
-        canvas.drawText("TTX Camera AI · VIDEO / ADAS", 12f,
-            (height - 24).coerceAtLeast(30).toFloat(), caption)
 
         if (modelFrameTime <= 0L ||
             SystemClock.elapsedRealtime() - modelFrameTime >
@@ -120,10 +129,13 @@ class AdasHudView(context: Context) : View(context) {
         // No fake vehicle rectangle is drawn: a metric-calibrated lead image
         // anchor is not available from raw xADAS model outputs alone.
         if (state.leadVisible && state.leadDistanceMeters!=null) {
-            canvas.drawText(
-                "%.0f m · CHỈ THAM KHẢO".format(
-                    java.util.Locale.US,state.leadDistanceMeters),
-                12f,(height-65).coerceAtLeast(38).toFloat(),distanceLabel)
+            // Real model and calibration validation are still enforced
+            // by VisionSafetyGate before this conversion is ever reached.
+            HudDisplayFormat.labels(null, state.leadDistanceMeters,
+                speedUnit, false, roundLeadDistance).lead?.let { label ->
+                canvas.drawText(label, 12f,
+                    (height-65).coerceAtLeast(38).toFloat(), distanceLabel)
+            }
         }
     }
 }
