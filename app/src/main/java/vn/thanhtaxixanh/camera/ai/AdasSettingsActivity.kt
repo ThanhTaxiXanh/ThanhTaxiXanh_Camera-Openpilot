@@ -62,7 +62,7 @@ class AdasSettingsActivity : Activity() {
 
         heading("Cảnh báo khoảng cách")
         futureSlider("Tốc độ bắt đầu đo", AdasPrefs.START_SPEED, 0, 150, 10, "km/h",
-            "Lưu tham số; chưa có bộ đo tốc độ GPS đáng tin cậy để kích hoạt cảnh báo.")
+            "GPS hiển thị tốc độ khi fix còn mới và đạt lọc chất lượng; CHƯA dùng tốc độ này để kích hoạt cảnh báo ADAS.")
         futureChoice("Phương pháp cảnh báo", AdasPrefs.ALERT_MODE,
             listOf("Việt Nam", "Theo giây"), "Theo giây",
             "Chế độ Việt Nam chỉ là tham chiếu giao diện xADAS; chưa xác thực quy định và chưa kích hoạt cảnh báo.")
@@ -102,7 +102,7 @@ class AdasSettingsActivity : Activity() {
             "Chưa dùng cho cảnh báo; chỉ lưu tham số cấu hình.")
 
         heading("Chạy nền và chia sẻ")
-        info("PiP · Cửa sổ nổi", "Chưa bật vì cần kiểm thử Android foreground service, quyền hiển thị và tính ổn định của camera.")
+        info("PiP · Cửa sổ nổi", "Có chế độ PiP thử nghiệm khi phát IJK; chưa được kiểm chứng vòng đời Surface và ổn định trên điện thoại thật.")
         info("Chia sẻ khoảng cách với ứng dụng khác", "Chưa xuất dữ liệu khoảng cách chưa hiệu chuẩn sang ứng dụng khác.")
         futureSlider("Chuyển nền tối sau", AdasPrefs.NIGHT_MINUTES, 1, 30, 1, "phút",
             "Đã lưu tham số nhưng chưa có bộ chuyển nền tự động.")

@@ -289,9 +289,15 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 }
                 try {
                     pipTransitioning = true
-                    enterPictureInPictureMode(
+                    val entered = enterPictureInPictureMode(
                         PictureInPictureParams.Builder()
                             .setAspectRatio(Rational(4, 3)).build())
+                    if (!entered) {
+                        // Android can return false WITHOUT throwing. A stuck
+                        // transition flag would then mis-handle Surface teardown.
+                        pipTransitioning = false
+                        showStatus("PiP bị Android từ chối; tiếp tục xem video bình thường.")
+                    }
                 } catch (e: Exception) {
                     pipTransitioning = false
                     showStatus("PiP không thể mở: " + e.javaClass.simpleName)

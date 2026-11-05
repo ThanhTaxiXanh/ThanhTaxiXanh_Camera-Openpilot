@@ -10,22 +10,33 @@ import android.location.LocationManager
 import android.os.Looper
 import android.os.SystemClock
 
-/** Live GPS-only speed; never infer speed from an old or uncertain fix. */
+/**
+ * Passive GPS speed, fail-closed on cached/stale/inaccurate fixes.
+ * NOT a calibrated vehicle speed sensor and never feeds ADAS warnings.
+ */
 class GpsSpeedMonitor(private val activity: Activity) {
     private val manager: LocationManager =
         activity.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    private var active = false
-    @Volatile private var value: Float? = null
-    @Volatile private var receivedAt = 0L
+    private val trust = GpsSpeedTrustGate()
+
+    @Volatile private var active = false
 
     private val listener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
-            if (!location.hasSpeed()) return
-            val v = location.speed * 3.6f
-            if (v.isFinite() && v in 0f..240f) {
-                value = v
-                receivedAt = SystemClock.elapsedRealtime()
-            }
+            // All timestamps are in the same monotonic boot timebase;
+            // Location.time (UTC) cannot safely be mixed with these.
+            val accuracy = if (location.hasSpeedAccuracy()) location.speedAccuracyMetersPerSecond
+                else null
+            trust.observe(
+                speedMps = if (location.hasSpeed()) location.speed else null,
+                fixElapsedNs = location.elapsedRealtimeNanos,
+                receivedElapsedNs = SystemClock.elapsedRealtimeNanos(),
+                speedAccuracyMps = accuracy
+            )
+        }
+
+        override fun onProviderDisabled(provider: String) {
+            if (provider == LocationManager.GPS_PROVIDER) trust.reset()
         }
     }
 
@@ -36,22 +47,37 @@ class GpsSpeedMonitor(private val activity: Activity) {
         if (!hasPermission()) return false
         if (active) return true
         return try {
+            if (!manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                trust.reset()
+                return false
+            }
+            trust.reset()
             manager.requestLocationUpdates(
                 LocationManager.GPS_PROVIDER, 800L, 0f, listener, Looper.getMainLooper())
             active = true
             true
-        } catch (_: Exception) { false }
+        } catch (_: Exception) {
+            trust.reset()
+            false
+        }
     }
 
-    fun currentSpeed(): Float? = if (active &&
-        SystemClock.elapsedRealtime() - receivedAt < 3500L) value else null
+    fun currentSpeed(): Float? {
+        if (!active || !hasPermission()) return null
+        return try {
+            if (!manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                trust.reset()
+                null
+            } else trust.currentKmh(SystemClock.elapsedRealtimeNanos())
+        } catch (_: Exception) {
+            trust.reset()
+            null
+        }
+    }
 
     fun stop() {
-        if (active) {
-            try { manager.removeUpdates(listener) } catch (_: Exception) {}
-        }
         active = false
-        value = null
-        receivedAt = 0L
+        try { manager.removeUpdates(listener) } catch (_: Exception) {}
+        trust.reset()
     }
 }

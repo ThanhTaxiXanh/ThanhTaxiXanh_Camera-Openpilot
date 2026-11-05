@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.12-onnx-audit-receipt (Lite / AI flavors)  
+**Version**: 1.3.13-gps-freshness-pip (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -570,3 +570,23 @@ CI engineering gate stays 7/20=35%.
 ## V1.3.12 — Reproducible ONNX model parity receipt
 
 The model screen produces TTXONNX-AUDIT-01 text-only receipt with exact model SHA256, canonical big-endian raw IEEE754 Float32 hashes for both input tensors, reference output and actual AI runtime output, plus numerical discrepancy metrics. Owner can share only text hashes without sharing weights or camera images. Numeric match is classified MATCHED_UNVERIFIED, pending independent reference source and permitted model evidence. Four synthetic JVM tests cover endianness, tamper and wrong-model/NaN rejection. Criterion #11 and mandatory #14–17/#20 remain NOT PASS. Gate 7/20=35%.
+
+
+## V1.3.13 — Monotonic GPS freshness and PiP rejection fix
+
+Android Location callbacks may deliver cached GPS fixes that are much older
+than callback receipt time. GpsSpeedTrustGate now uses the original
+Location.elapsedRealtimeNanos and the Android monotonic boot clock, rejects
+outdated/impossible/poor-speed-accuracy measurements, ignores older or
+duplicate fixes, invalidates the displayed speed when a newer fix has no
+usable speed, and expires every displayed value from FIX age (not listener
+age). Provider/permission loss resets the signal. This never feeds
+uncalibrated ADAS alerts.
+
+A PiP entry that returns false (without throwing) now clears its transition
+flag so Surface destruction does not inherit a stuck PiP state. Settings
+describes PiP as an experiment rather than an unimplemented feature.
+
+11 pure JVM regression tests validate the GPS gate. Device GPS, Android
+PiP lifecycle and actual 70mai video remain unverified. Criterion #19 is
+not promoted solely from synthetic tests. Engineering gate 7/20=35%.
