@@ -1,10 +1,17 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.30-raw-gop-epoch-fence (Lite / AI flavors)  
+**Version**: 1.3.31-offscreen-yuv-lease (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
+
+V1.3.31 fences the offscreen MediaCodec YUV output by source epoch and
+receipt freshness BOTH before and after native Image plane copying.
+Rejected/unsupported YUV never updates cadence; diagnostics expose discard
+reasons. See docs/OFFSCREEN_YUV_DELIVERY_LEASE_V1331.md. No camera hardware
+claim or acceptance promotion.
+
 
 V1.3.30 applies a nonblocking source-GOP epoch fence to RAW A500S
 YUV→ARGB copies, temporal pairs and in-flight ONNX inference. Delayed
