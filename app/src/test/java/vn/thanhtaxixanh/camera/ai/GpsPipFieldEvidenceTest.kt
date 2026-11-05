@@ -140,4 +140,36 @@ class GpsPipFieldEvidenceTest {
         e.stop(19)
         assertTrue(e.report()!!.contains("STOP_CLOCK_REVERSED"))
     }
+    @Test fun pipSampleWithoutPlatformCallbackIsFlagged() {
+        val e=GpsPipFieldEvidence()
+        e.start(0)
+        e.event(1,GpsPipFieldEvidence.Event.PIP_REQUEST_RETURNED_TRUE)
+        e.sample(snapshot(2,pip=true))
+        e.stop(3)
+        assertTrue(e.report()!!.contains("PIP_SAMPLE_CALLBACK_MISMATCH"))
+        assertTrue(e.report()!!.contains("criterion_19=NOT_VERIFIED"))
+    }
+
+    @Test fun duplicateAndOrphanPipCallbacksAreFlagged() {
+        val e=GpsPipFieldEvidence()
+        e.start(0)
+        e.event(1,GpsPipFieldEvidence.Event.PIP_EXITED_CALLBACK)
+        e.event(2,GpsPipFieldEvidence.Event.PIP_ENTERED_CALLBACK)
+        e.event(3,GpsPipFieldEvidence.Event.PIP_ENTERED_CALLBACK)
+        e.stop(4)
+        assertTrue(e.report()!!.contains("PIP_EXIT_WITHOUT_ENTRY"))
+        assertTrue(e.report()!!.contains("DUPLICATE_PIP_ENTRY"))
+    }
+
+    @Test fun contradictoryFreshGpsAndInvalidPipSurfaceAreFlagged() {
+        val e=GpsPipFieldEvidence()
+        e.start(0)
+        e.event(1,GpsPipFieldEvidence.Event.PIP_ENTERED_CALLBACK)
+        e.sample(snapshot(2,pip=true,permission=false).copy(videoSurfaceValid=false))
+        e.stop(3)
+        assertTrue(e.report()!!.contains("GPS_FRESHNESS_CONTRADICTION"))
+        assertTrue(e.report()!!.contains("PIP_SURFACE_INVALID"))
+        assertTrue(e.report()!!.contains("fresh_gps_presence_samples=0"))
+    }
+
 }
