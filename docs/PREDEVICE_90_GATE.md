@@ -298,3 +298,15 @@ alone cannot prove a Surface is optically visible; independent screen review
 and real phone artifacts are REQUIRED before criterion #8 can change to PASS.
 This version does not provide any A500S camera, model or calibrated ADAS
 physical evidence. Gate A **7/20=35%**, Gate B **0/5**; no new PASS.
+
+
+V1.3.33: Physical Android Camera2 lens selection now surveys all camera
+IDs for advertised YUV_420_888 640x480 instead of assuming the first
+rear lens is usable. A compatible rear lens is preferred, then front/other;
+within each category, SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME is preferred.
+Missing support fails closed without fabricating dimensions. UNKNOWN source
+clocks remain blocked from RAW ONNX but may be used for preview/YUV evidence.
+Ten synthetic selection JVM tests do not prove device compatibility or
+preview/YUV on any physical handset. Request owner to test V1.3.33 and
+submit TTXPHONE01, TTXYUV01 and visual preview evidence for criterion #8.
+Gate A **7/20 (35%)**, Gate B **0/5**; no new PASS.
