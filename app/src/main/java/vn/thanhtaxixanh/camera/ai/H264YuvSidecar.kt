@@ -41,7 +41,9 @@ class H264YuvSidecar(
         val resets: Long,
         val errors: Long,
         val queueDepth: Int,
-        val lastFailure: String
+        val lastFailure: String,
+        val staleAccessUnits: Long,
+        val expiredBacklogResets: Long
     )
 
     private data class UnitSample(
@@ -53,7 +55,7 @@ class H264YuvSidecar(
     private val alive = AtomicBoolean(true)
     private val active = AtomicBoolean(false)
     private val resetRequested = AtomicBoolean(false)
-    private val gate = H264SecondarySyncGate()
+    private val gate = OffscreenGopAgeGate()
     private val epoch = AtomicLong(0L)
     private val pending = ArrayBlockingQueue<UnitSample>(16)
     private val received = AtomicLong()
@@ -63,6 +65,8 @@ class H264YuvSidecar(
     private val delivered = AtomicLong()
     private val resets = AtomicLong()
     private val errors = AtomicLong()
+    private val staleAccessUnits = AtomicLong()
+    private val expiredBacklogResets = AtomicLong()
     private val lastFailure = AtomicReference("")
     private val worker = Thread({ runDecoder() }, "TTX-A500S-YUV-Offscreen").apply {
         isDaemon = true
@@ -71,15 +75,35 @@ class H264YuvSidecar(
 
     fun metrics() = Metrics(received.get(), skipped.get(), overflows.get(),
         decoded.get(), delivered.get(), resets.get(), errors.get(),
-        pending.size, lastFailure.get())
+        pending.size, lastFailure.get(),
+        staleAccessUnits.get(), expiredBacklogResets.get())
 
     /** Never blocks RTP, the H264 assembler, UI, or the preview feeder. */
     @Synchronized fun offer(annexB: ByteArray, capturedElapsedMs: Long): Boolean {
         if (!alive.get() || annexB.isEmpty() || capturedElapsedMs < 0L) return false
         active.set(true)
-        if (!gate.accept(annexB)) {
-            skipped.incrementAndGet()
-            return false
+        val now=SystemClock.elapsedRealtime()
+        // An expired queue head means reference frames are unusable.
+        // Never selectively discard compressed P frames to catch up.
+        pending.peek()?.let { head ->
+            if (gate.age(head.capturedElapsedMs, now) !=
+                OffscreenGopAgeGate.Age.CURRENT) {
+                expiredBacklogResets.incrementAndGet()
+                invalidatePredictionChain()
+            }
+        }
+        when (gate.admit(annexB, capturedElapsedMs, now)) {
+            OffscreenGopAgeGate.Admission.ACCEPT -> Unit
+            OffscreenGopAgeGate.Admission.AWAIT_IDR -> {
+                skipped.incrementAndGet()
+                return false
+            }
+            OffscreenGopAgeGate.Admission.STALE,
+            OffscreenGopAgeGate.Admission.INVALID_CLOCK -> {
+                staleAccessUnits.incrementAndGet()
+                invalidatePredictionChain()
+                return false
+            }
         }
         if (!pending.offer(UnitSample(annexB, capturedElapsedMs, epoch.get()))) {
             // One missing reference picture poisons the whole GOP. The main
@@ -190,6 +214,15 @@ class H264YuvSidecar(
                 }
                 if (!active.get() || resetRequested.get() ||
                     item.epoch != epoch.get()) continue
+                // Queue residence can make an AU stale after admission.
+                // Stop the entire offscreen GOP rather than decoding it.
+                if (gate.age(item.capturedElapsedMs,
+                        SystemClock.elapsedRealtime()) !=
+                    OffscreenGopAgeGate.Age.CURRENT) {
+                    staleAccessUnits.incrementAndGet()
+                    dropPredictionChain()
+                    continue
+                }
                 if (!decoderSynced) {
                     if (!H264AnnexB.hasIdr(item.annexB)) continue
                     try {
@@ -231,6 +264,15 @@ class H264YuvSidecar(
                         "Offscreen H264 access unit too large"
                     }
                     dst.put(item.annexB)
+                    // A codec input wait can cross the deadline. Recheck
+                    // before sending any bytes to native MediaCodec.
+                    if (gate.age(item.capturedElapsedMs,
+                            SystemClock.elapsedRealtime()) !=
+                        OffscreenGopAgeGate.Age.CURRENT) {
+                        staleAccessUnits.incrementAndGet()
+                        dropPredictionChain()
+                        continue
+                    }
                     // Offscreen PTS is a local monotonic correlation key; the
                     // preview RTP timestamp and pacing remain unchanged.
                     val ptsUs = clock.next(item.capturedElapsedMs)
