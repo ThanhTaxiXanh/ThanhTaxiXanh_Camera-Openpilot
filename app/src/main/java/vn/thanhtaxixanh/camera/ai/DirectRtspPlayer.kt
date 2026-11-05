@@ -70,7 +70,9 @@ class DirectRtspPlayer(
         val surfaceTimeline: SurfaceFrameTimeline.Snapshot,
         val streamCadence: StreamCadenceAudit.Snapshot,
         val streamHealth: DirectStreamHealth.Snapshot,
-        val gopFence: PreviewGopEpochFence.Snapshot
+        val gopFence: PreviewGopEpochFence.Snapshot,
+        val foreignPayloadPackets: Long,
+        val malformedRtpPackets: Long
     )
     private data class Sample(
         val data: ByteArray, val timestampUs: Long, val receivedAtMs: Long
@@ -103,6 +105,7 @@ class DirectRtspPlayer(
     private val keepAliveUnsupported = AtomicLong()
     private val udpPackets = AtomicLong()
     private val rtpDiagnostics = RtpReceiverDiagnostics()
+    @Volatile private var selectedRtpPayload: RtpSelectedPayloadGate? = null
     private val discardedAccessUnits = AtomicLong()
     private val rtcpSent = AtomicLong()
     private val rtcpReporterSsrc = SecureRandom().nextInt()
@@ -152,7 +155,9 @@ class DirectRtspPlayer(
         surfaceTimeline.snapshot(),
         streamCadence.snapshot(SystemClock.elapsedRealtime()),
         streamHealth.snapshot(SystemClock.elapsedRealtime()),
-        gopFence.snapshot()
+        gopFence.snapshot(),
+        selectedRtpPayload?.metrics()?.foreignPayload ?: 0L,
+        selectedRtpPayload?.metrics()?.malformed ?: 0L
     )
     /**
      * Called ONLY by the detached RTSP recovery worker. Never block
@@ -506,6 +511,15 @@ class DirectRtspPlayer(
             require(describe.code==200 && describe.sdp.contains("m=video")) {
                 "DESCRIBE "+describe.code
             }
+            // V1.3.27 SDP chose the codec CSD's video PT; V1.3.28
+            // applies the SAME PT to the actual RTP data before UDP reorder
+            // or H264 assembly. Foreign PT must not revoke a valid GOP.
+            val payloadGate = RtpSelectedPayloadGate(
+                H264SdpParameterSets.fromSdp(describe.sdp).payloadType)
+            selectedRtpPayload = payloadGate
+            status("RTP video payload PT=" +
+                (payloadGate.expectedPayloadType?.toString() ?: "unknown") +
+                " · reject foreign PT before MediaCodec")
             val base=describe.header("content-base").ifBlank { url }
             val videosection=describe.sdp.substringAfter("m=video").substringBefore("\nm=")
             val control=videosection.lines().firstOrNull {
@@ -595,9 +609,12 @@ class DirectRtspPlayer(
                 onLostSequence = { dropped.incrementAndGet() },
                 onDiscarded = { discardedAccessUnits.incrementAndGet() }
             )
-            if (!useUdp) earlyMedia.forEach {
-                streamHealth.onRtp(SystemClock.elapsedRealtime())
-                assemble.accept(it)
+            if (!useUdp) earlyMedia.forEach { rtp ->
+                if (payloadGate.classify(rtp) !=
+                    RtpSelectedPayloadGate.Verdict.FOREIGN_PAYLOAD) {
+                    streamHealth.onRtp(SystemClock.elapsedRealtime())
+                    assemble.accept(rtp)
+                }
             }
 
             val lastRtpAt = AtomicLong(SystemClock.elapsedRealtime())
@@ -616,14 +633,16 @@ class DirectRtspPlayer(
                                 // Bind to the selected Wi-Fi Network and accept
                                 // video packets from the camera host only.
                                 if (packet.address.hostAddress == host && packet.length >= 12) {
-                                    val packetAt=SystemClock.elapsedRealtime()
-                                    lastRtpAt.set(packetAt)
-                                    streamHealth.onRtp(packetAt)
-                                    udpPackets.incrementAndGet()
-                                    reorder.accept(
-                                        packet.data.copyOfRange(packet.offset,
-                                            packet.offset + packet.length),
-                                        SystemClock.elapsedRealtime(), deliver)
+                                    val data = packet.data.copyOfRange(packet.offset,
+                                        packet.offset + packet.length)
+                                    if (payloadGate.classify(data) !=
+                                        RtpSelectedPayloadGate.Verdict.FOREIGN_PAYLOAD) {
+                                        val packetAt=SystemClock.elapsedRealtime()
+                                        lastRtpAt.set(packetAt)
+                                        streamHealth.onRtp(packetAt)
+                                        udpPackets.incrementAndGet()
+                                        reorder.accept(data,packetAt,deliver)
+                                    }
                                 } else if (packet.length >= 12) {
                                     if (loggedUnexpectedSender.compareAndSet(false, true))
                                         status("UDP gói từ địa chỉ ngoài camera: " +
@@ -727,7 +746,9 @@ class DirectRtspPlayer(
                 catch (_:java.net.SocketTimeoutException) { continue }
                 when (packet) {
                     is RtspWireReader.Event.Interleaved -> {
-                        if (packet.channel == rtpChannel) {
+                        if (packet.channel == rtpChannel &&
+                            payloadGate.classify(packet.payload) !=
+                                RtpSelectedPayloadGate.Verdict.FOREIGN_PAYLOAD) {
                             val packetAt=SystemClock.elapsedRealtime()
                             lastRtpAt.set(packetAt)
                             streamHealth.onRtp(packetAt)

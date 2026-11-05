@@ -242,3 +242,13 @@ prevents mismatched codec CSD from another SDP track, but **does not**
 prove native A500S decoding, uninterrupted YUV, licensed model output,
 calibrated lead geometry or optical latency. #3/#14/#20 remain CODED;
 Gate A **7/20 (35%)**, Gate B **0/5**.
+
+
+V1.3.28: Direct TCP, early interleaved and UDP video ingress now filter
+foreign RTP payload types using the SDP-selected H264 PT BEFORE jitter
+reordering or H264 assembly. Malformed same-stream RTP is still sent
+through the loss quarantine and two new diagnostic counters are shown.
+Seven synthetic JVM tests include mixed-payload UDP replay. No real A500S
+optical, live YUV→model, ground-truth metric or independent hardware
+measurement is added: **Gate A 7/20 (35%)**, **Gate B 0/5**; #3/#14/#20
+NOT promoted and all mandatory criteria still NOT PASS.

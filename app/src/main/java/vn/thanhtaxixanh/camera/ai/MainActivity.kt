@@ -1096,6 +1096,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         s.maxAccessUnitQueue,
                         s.udpReordered, s.udpRecovered, s.udpSkipped,
                         s.keepAliveOk, s.keepAliveSent, retryCount)
+                    detailView.append("\nRTP video PT đã lọc: gói ngoài luồng " +
+                        s.foreignPayloadPackets +
+                        " · RTP sai định dạng " + s.malformedRtpPackets)
                     val decode = s.decodeTimeline
                     detailView.append("\nDirect: " + activeDirectLatencyPolicy.name +
                         " · AU đợi cũ nhất " + (s.oldestQueueAgeMs?.toString() ?: "—") +
