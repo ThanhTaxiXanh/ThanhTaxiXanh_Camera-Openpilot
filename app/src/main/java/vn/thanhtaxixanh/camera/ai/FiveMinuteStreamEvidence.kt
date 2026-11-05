@@ -115,7 +115,7 @@ class FiveMinuteStreamEvidence(
                     lastReleased = count
                 }
                 else -> {
-                    moving = lastReleased?.let { count > it } ?: count > 0L
+                    moving = lastReleased?.let { count > it } ?: (count > 0L)
                     lastReleased = count
                     value = count.toString()
                 }
