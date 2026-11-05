@@ -285,3 +285,15 @@ three new counters distinguish stale, revoked-epoch and unsupported images.
 Eight JVM tests exercise deterministic epoch change during copy, expiration,
 reset, cadence and 10k virtual outputs. No camera or model was run: Gate A
 **7/20 (35%)**, Gate B **0/5**. #14 and #20 still NOT PASS.
+
+
+V1.3.32 adds an immediately owner-testable Camera2/phone-camera path for
+criterion #8. Home screen exposes a direct Phone Camera button; the
+activity can collect a 30-second TTXPHONE01 evidence report without A500S
+or ONNX, counting real Camera2 capture completion callbacks, ImageReader
+YUV frame timestamps, sampled YUV_420_888 pixel checksums and proof failures.
+The owner exports a metadata-only text file via Android SAF and supplies a
+screen recording showing the simultaneous preview. Ten JVM tests are
+synthetic; the field artifact is NOT produced by CI. #8 remains CODED
+pending independently reviewed phone hardware trace + screen recording;
+**Gate A 7/20=35%, Gate B 0/5**, and mandatory #14–17/#20 NOT PASS.
