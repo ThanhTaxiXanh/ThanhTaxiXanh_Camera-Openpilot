@@ -194,7 +194,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "V1.3.19 synthetic original ONNX graph: real CPU execution and independent arithmetic oracle with TTXREF01 available on CI; still requires production-appropriate authorized model, external ground truth and actual Android engine parity to promote #11."
+        "next_required": "V1.3.25 can export YUV-derived tensors and actual Android ONNX output as model-SHA-linked TTXREF01 and independently compare CPU ORT. Synthetic original fixture plus tampered hash/output CI negative tests; needs authorized trained graph and independently reviewed semantic reference plus real Android execution."
       },
       "field": {
         "status": "NOT_REQUIRED",
@@ -238,7 +238,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "V1.3.24 closes source-age leak after A500S YUV→ARGB copy, re-seeds temporal pair when previous image expires, and rejects stale pairs in OpenpilotInferencePipeline.offer before queueing. Nine controlled-clock host tests; still need independent 70mai A500S H264→MediaCodec YUV→authorized ONNX uninterrupted integration trace and camera/device proof before #14 Gate A and Gate B PASS."
+        "next_required": "V1.3.25 adds phone YUV->dual warp->actual ONNX->TTXREF01 export plus independent CPU ORT replay for future A500S frames. Need independent real A500S uninterrupted hardware YUV/AI trace and physical timing before Gate A or B PASS."
       },
       "field": {
         "status": "NOT_VERIFIED",
@@ -264,7 +264,7 @@
       "engineering": {
         "status": "NOT_READY",
         "evidence": [],
-        "next_required": "Secure model use rights, cryptographic hash and independently reviewed ground-truth vectors"
+        "next_required": "V1.3.25 gives Android-output/CPU parity but phone-generated outputs are NOT independent ground truth or proof of model-use rights. Obtain a legally authorized trained driving model and independent measured ground-truth reference first."
       },
       "field": {
         "status": "NOT_VERIFIED",
