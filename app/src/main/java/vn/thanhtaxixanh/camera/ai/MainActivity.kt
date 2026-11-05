@@ -190,6 +190,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             setOnClickListener { toggleGps() }
         }, LinearLayout.LayoutParams(0, -2, 0.6f))
         root.addView(navigation)
+        // One tap into independent Camera2 evidence, no 70mai Wi-Fi needed.
+        root.addView(nav("CAMERA ĐIỆN THOẠI · THỬ NGHIỆM 60 GIÂY",
+            PhoneCameraActivity::class.java))
 
         latencyButton = Button(this).apply {
             text = ijkProfile.buttonTitle
