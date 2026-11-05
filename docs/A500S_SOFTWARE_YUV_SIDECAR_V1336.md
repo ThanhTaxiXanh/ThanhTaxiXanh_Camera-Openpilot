@@ -24,7 +24,7 @@ and physically confirmed in V1.3.35.
 - The primary MediaCodec Surface decoder, RTP reader, IJK fallback and
   UI preview remain unchanged. Codec enumeration/configuration happen
   ONLY on the sidecar worker, never on the RTP/network or UI thread.
-- A temporary `dequeueInputBuffer(-1)` (meaning no buffer available)
+- A temporary -1 return from `dequeueInputBuffer(10_000L)` (meaning no buffer available after a 10ms wait)
   is not immediately treated as fatal. The sidecar drains available
   output buffers, retries input a bounded number of times and resyncs
   the whole GOP at the next IDR if it still cannot progress. A
