@@ -200,3 +200,6 @@ V1.3.14: per-Direct player callback leases filter late YUV/ONNX/status/SAF callb
 
 
 V1.3.15: Android YUV420 image cropping now retains odd X/Y chroma phases and the native ByteBuffer valid limit. Long-safe plane-copy bounds check rejects malformed strides. Nine host tests are synthetic only, no physical A500S/ONNX or #14–17/#20 PASS. Engineering gate **7/20=35%**.
+
+
+V1.3.16: compressed offscreen YUV AUs now have a 550ms local-receipt age guard at both producer admission and decoder submission. Any stale queue head causes a whole-GOP reset and fresh-IDR wait, protecting ONNX temporal continuity. Nine synthetic JVM tests cannot establish real A500S decode throughput, model accuracy or glass-to-glass latency. **7/20=35%**, mandatory #14–17/#20 NOT PASS.
