@@ -274,3 +274,14 @@ worker races with synthetic pixels. These prevent known cross-GOP temporal
 pairing races but do not validate a real camera YUV decoder, trained model,
 calibration, metric lead or optical latency. Gate A **7/20 (35%)**; Gate B
 **0/5**, mandatory #14–17/#20 remain NOT PASS.
+
+
+V1.3.31: The independent A500S offscreen MediaCodec YUV delivery path
+now rechecks active decoder/GOP epoch, 550ms receipt-age and 300ms output
+cadence both before and AFTER potentially slow native Image plane copying.
+Only successfully delivered YUV callbacks advance the local cadence clock.
+Unsupported YUV output formats report faults and reset the sidecar chain;
+three new counters distinguish stale, revoked-epoch and unsupported images.
+Eight JVM tests exercise deterministic epoch change during copy, expiration,
+reset, cadence and 10k virtual outputs. No camera or model was run: Gate A
+**7/20 (35%)**, Gate B **0/5**. #14 and #20 still NOT PASS.
