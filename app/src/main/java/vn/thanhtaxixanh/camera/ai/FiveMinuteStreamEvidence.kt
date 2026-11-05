@@ -133,7 +133,7 @@ class FiveMinuteStreamEvidence(
         if (moving) {
             progressCount++
             lastProgressMs = input.atElapsedMs
-        } else if (input.atElapsedMs - lastProgressMs > maxNoProgressMs) {
+        } else if (input.atElapsedMs - lastProgressMs >= maxNoProgressMs) {
             problem("VIDEO_PROGRESS_STALLED")
         }
 
