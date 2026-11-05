@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.24-yuv-onnx-freshness (Lite / AI flavors)  
+**Version**: 1.3.25-device-cpu-parity (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
@@ -740,3 +740,20 @@ clock faults, previous-frame expiry and sink backpressure.
 See [YUV/ONNX freshness audit](docs/YUV_ONNX_INGRESS_FRESHNESS_V1324.md).
 This is not A500S hardware or licensed ONNX model parity proof;
 **Gate A 7/20 (35%), Gate B 0/5** remain unchanged.
+
+
+## V1.3.25 — Export Android YUV→ONNX reference and independently replay on CPU
+
+The offline YUV audit screen now includes the owner-driven TTXREF01 export.
+It replays captured TTXYUV01 through the actual dual virtual warp and
+12-channel tensor packer, executes the installed authorized model with
+Android ONNX Runtime, then serializes the exact input tensors, 1,576
+output elements and model SHA256 into a canonical 3,152,072-byte TTXREF01.
+The new tools/verify_device_onnx_reference.py recomputes that output
+using independent CPU ONNX Runtime. CI rejects deliberately corrupted
+model hashes and mismatched output references. Device-generated tensors
+may expose private scene information and must not be uploaded publicly.
+
+See docs/ANDROID_YUV_ONNX_CPU_PARITY_V1325.md. Runtime parity is not
+independent ADAS ground truth or camera calibration.
+Gate A **7/20 (35%)**, Gate B **0/5**.
