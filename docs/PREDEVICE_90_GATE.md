@@ -1,8 +1,8 @@
-# TTX Camera AI — acceptance criteria before the next phone test
+# TTX Camera AI — twenty-item historical acceptance register
 
-Updated: 2026-11-04. V1.3.6. Goal from owner: build until >=90% functionality before a new on-device A500S trial. Compilation and synthetic unit tests do not equal xADAS functional equivalence.
+Updated: 2026-11-05. V1.3.17 introduces **two independent acceptance gates** defined by docs/TWO_GATE_ACCEPTANCE.md and accounted by docs/acceptance/two_gate_ledger.json. The history below retains the original 20-item statuses and previous implementation notes. Gate A is engineering-readiness 7/20 (35%); Gate B is mandatory real-device/independent verification 0/5. **Final 90% requires BOTH Gate A >=18/20 and Gate B 5/5.** Neither a new version nor GitHub Actions green promotes real-world criteria.
 
-## 90% engineering gate
+## Historical twenty-item engineering register
 
 Twenty criteria must be independently implemented and demonstrated with unit or offline integration tests. At least 18 must pass; mandatory live-video-to-AI, model-coordinate validation, calibrated lead results and functional overlays cannot be waived. Hardware performance validation is an additional later gate.
 
@@ -29,7 +29,7 @@ Twenty criteria must be independently implemented and demonstrated with unit or 
 | 19 | GPS, PiP and settings | CODED; device unverified |
 | 20 | >5 minute uninterrupted stream and near-1s glass-to-glass latency | Experimental Direct AU freshness guard, codec-output age, P95 diagnostics and clean reconnect; NO real exposure-to-glass measurement. NOT PASS |
 
-Progress: **7/20 = 35% PASS CI**. **Target >=18/20 = 90%**, with items #14–17 and #20 still mandatory and not satisfied. This is an acceptance-evidence ratio, NOT an estimated percentage of xADAS source/features cloned. Verdict: BELOW 90%. Do not ask the owner for a new on-device test yet. Only PASS CI items have offline evidence, CODED items need deeper validation, NOT READY items are incomplete.
+Legacy register baseline: **7/20 = 35% Gate A engineering evidence**. Gate A target >=18/20; separate Gate B real A500S/ground-truth validation is **0/5** for mandatory #14–17/#20. A green build alone does not advance either gate. The old single-pass terminology in earlier version notes is historical, not a claim of physical completion. Official final verdict: **BOTH GATES BELOW TARGET**.
 
 ## Priority development remaining
 
@@ -203,3 +203,6 @@ V1.3.15: Android YUV420 image cropping now retains odd X/Y chroma phases and the
 
 
 V1.3.16: compressed offscreen YUV AUs now have a 550ms local-receipt age guard at both producer admission and decoder submission. Any stale queue head causes a whole-GOP reset and fresh-IDR wait, protecting ONNX temporal continuity. Nine synthetic JVM tests cannot establish real A500S decode throughput, model accuracy or glass-to-glass latency. **7/20=35%**, mandatory #14–17/#20 NOT PASS.
+
+
+V1.3.17 migration: two-gate policy and a fail-closed machine ledger separate engineering readiness (A: 7/20) from mandatory physical/independent validation (B: 0/5). CI verifies ledger format and threshold immutability; no acceptance criteria are promoted. Final 90% requires A>=18/20 AND B=5/5.

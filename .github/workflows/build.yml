@@ -24,6 +24,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
+      - name: Validate two-gate acceptance ledger
+        run: |
+          python3 tools/verify_two_gate.py
+          python3 -m unittest discover -s tools -p 'test_two_gate.py' -v
       - name: Guard against black SurfaceView
         run: |
           python3 - <<'PY'
