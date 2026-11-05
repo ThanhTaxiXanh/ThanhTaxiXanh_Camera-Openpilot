@@ -62,6 +62,35 @@ object ReferenceTensorFixture {
         return Vector(hash, img, big, expected)
     }
 
+    /**
+     * Canonical binary TTXREF01 writer for owner-authorized, local-only
+     * Android ONNX outputs. Big-endian IEEE754 Float32, matching read().
+     * Validates all fields BEFORE writing; caller retains stream ownership.
+     *
+     * A self-generated ONNX reference is NOT an independent oracle and
+     * cannot certify model rights, ground truth or ADAS safety.
+     */
+    fun write(vector: Vector, output: java.io.OutputStream) {
+        require(vector.modelHash.size == MODEL_HASH_BYTES) {
+            "Exactly 32 SHA-256 model bytes required"
+        }
+        VisionInputContract.requireRawStudioByteTensors(
+            vector.img, vector.bigImg)
+        require(vector.expectedOutput.size ==
+            SupercomboV027Contract.TENSOR_ELEMENTS &&
+            vector.expectedOutput.all { it.isFinite() }) {
+            "Exactly 1576 finite output floats required"
+        }
+        val stream = java.io.DataOutputStream(
+            java.io.BufferedOutputStream(output, 65536))
+        stream.write(MAGIC)
+        stream.write(vector.modelHash)
+        for (value in vector.img) stream.writeFloat(value)
+        for (value in vector.bigImg) stream.writeFloat(value)
+        for (value in vector.expectedOutput) stream.writeFloat(value)
+        stream.flush()
+    }
+
     /** Tolerance is for numerical runtime differences, not model accuracy. */
     fun compare(
         expected: FloatArray,

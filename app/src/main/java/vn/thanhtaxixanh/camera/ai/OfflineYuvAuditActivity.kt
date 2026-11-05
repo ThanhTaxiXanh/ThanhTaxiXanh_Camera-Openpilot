@@ -9,6 +9,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Locale
 
@@ -21,11 +22,13 @@ class OfflineYuvAuditActivity:Activity() {
     private val pickCode=731
     private val referenceCode=732
     private val manifestCode=733
+    private val exportOnnxReferenceCode=734
     private lateinit var resultView:TextView
     private var requestNumber=0
     private var selectedYuv:Uri?=null
     private var selectedReference:Uri?=null
     private lateinit var referenceButton:Button
+    private lateinit var exportOnnxReferenceButton:Button
     private lateinit var evidenceButton:Button
 
     override fun onCreate(savedInstanceState:Bundle?) {
@@ -64,6 +67,34 @@ class OfflineYuvAuditActivity:Activity() {
             setOnClickListener { pick(referenceCode) }
         }
         body.addView(referenceButton)
+        exportOnnxReferenceButton=Button(this).apply {
+            text="4. XUẤT TTXREF01 TỪ YUV + ONNX TRÊN ĐIỆN THOẠI"
+            isEnabled=false
+            setOnClickListener {
+                if(selectedYuv==null) {
+                    resultView.text="Cần chọn và kiểm tra TTXYUV01 trước."
+                } else {
+                    try {
+                        startActivityForResult(
+                            Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type="application/octet-stream"
+                                putExtra(Intent.EXTRA_TITLE,
+                                    "TTX-Android-YUV-ONNX-output.ttxref")
+                            },exportOnnxReferenceCode)
+                    } catch(e:Exception) {
+                        resultView.text="Không mở được nơi xuất TTXREF01: " +
+                            e.javaClass.simpleName
+                    }
+                }
+            }
+        }
+        body.addView(exportOnnxReferenceButton)
+        body.addView(textLine(
+            "TTXREF01 tạo trên Android có chứa tensor từ cảnh camera. " +
+            "Chỉ lưu và đối chiếu cục bộ; không công khai khi chưa có quyền. " +
+            "Đầu ra Android KHÔNG phải ground truth độc lập."
+        ))
         evidenceButton=Button(this).apply {
             text="3. KIỂM TRA HỒ SƠ SHA NGUỒN DỮ LIỆU TTXEVD01"
             isEnabled=false
@@ -117,14 +148,66 @@ class OfflineYuvAuditActivity:Activity() {
     override fun onActivityResult(code:Int,result:Int,data:Intent?) {
         super.onActivityResult(code,result,data)
         if(result!=RESULT_OK ||
-            code !in listOf(pickCode,referenceCode,manifestCode)) return
+            code !in listOf(pickCode,referenceCode,manifestCode,
+                exportOnnxReferenceCode)) return
         val uri=data?.data ?: return
         val current=++requestNumber
+        if(code==exportOnnxReferenceCode) {
+            val yuvUri=selectedYuv
+            if(yuvUri==null) {
+                resultView.text="Cần chọn TTXYUV01 hợp lệ trước khi xuất."
+                return
+            }
+            exportOnnxReferenceButton.isEnabled=false
+            resultView.text="Đang tạo tensor YUV và chạy ONNX trên AI... " +
+                "Không phát cảnh báo hoặc dùng đầu ra cho điều khiển xe."
+            Thread({
+                val status=try {
+                    val sequence=contentResolver.openInputStream(yuvUri)?.use {
+                        OfflineYuvFixture.read(it)
+                    } ?: error("Không thể đọc TTXYUV01")
+                    val model=File(filesDir,"models/vision.onnx")
+                    val generated=OfflineYuvOnnxEvidence.generate(
+                        sequence,model,
+                        openEngine={ VisionModelBackend.openEngine(it) })
+                    val bytes=ByteArrayOutputStream(
+                        ReferenceTensorFixture.EXPECTED_BYTES.toInt())
+                    ReferenceTensorFixture.write(generated.vector,bytes)
+                    check(bytes.size().toLong()==
+                        ReferenceTensorFixture.EXPECTED_BYTES)
+                    val stream=contentResolver.openOutputStream(uri,"w")
+                        ?: error("Không ghi được tài liệu")
+                    stream.use { it.write(bytes.toByteArray()) }
+                    "Đã xuất TTXREF01 từ " + generated.frames +
+                        " khung YUV (" + generated.pairs + " cặp). " +
+                        "SHA img: " + generated.inputMainSha256 +
+                        "\nSHA big_img: " + generated.inputWideSha256 +
+                        "\nBằng chứng chỉ chứng minh đầu ra Android tự tạo. " +
+                        "Đối chiếu tệp với cùng model trên CPU độc lập; " +
+                        "KHÔNG xác minh mô hình ADAS, quyền dùng hay camera thật."
+                } catch(e:Exception) {
+                    "Không xuất được TTXREF01: " +
+                        (e.message ?: e.javaClass.simpleName).take(210) +
+                        "\nTệp đã chọn có thể bị rỗng/không hoàn chỉnh. " +
+                        "Không công nhận bằng chứng nếu chưa xác minh hash."
+                }
+                runOnUiThread {
+                    if(current==requestNumber && !isDestroyed && !isFinishing) {
+                        resultView.text=status
+                        exportOnnxReferenceButton.isEnabled=selectedYuv!=null
+                    }
+                }
+            },"TTX-Android-YUV-ONNX-Export").apply {
+                isDaemon=true;start()
+            }
+            return
+        }
         if(code==pickCode) {
             selectedYuv=uri
             selectedReference=null
             evidenceButton.isEnabled=false
-            referenceButton.isEnabled=true
+            referenceButton.isEnabled=false
+            exportOnnxReferenceButton.isEnabled=false
             resultView.text="Đang kiểm tra tệp YUV và hai tensor..."
             Thread({
                 val message=try {
@@ -147,6 +230,7 @@ class OfflineYuvAuditActivity:Activity() {
                     if(current==requestNumber && !isDestroyed && !isFinishing) {
                         resultView.text=message
                         referenceButton.isEnabled=selectedYuv!=null
+                        exportOnnxReferenceButton.isEnabled=selectedYuv!=null
                     }
                 }
             },"TTX-Offline-YUV").apply { isDaemon=true; start() }
