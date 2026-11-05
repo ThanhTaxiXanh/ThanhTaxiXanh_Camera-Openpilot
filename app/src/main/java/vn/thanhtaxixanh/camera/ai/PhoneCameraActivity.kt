@@ -2,6 +2,7 @@ package vn.thanhtaxixanh.camera.ai
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
 import android.graphics.PixelFormat
@@ -11,9 +12,12 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.TotalCaptureResult
 import android.media.ImageReader
 import android.os.Bundle
 import android.os.Handler
+import android.os.Looper
+import android.os.Build
 import android.os.HandlerThread
 import android.os.SystemClock
 import java.io.File
@@ -57,6 +61,40 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
     @Volatile private var realtimeSensorClock = false
     @Volatile private var inForeground = false
     private var activeCameraToken = 0L
+    private val ui = Handler(Looper.getMainLooper())
+    private lateinit var fieldButton: Button
+    private lateinit var yuvEvidenceButton: Button
+    @Volatile private var activeFieldEvidence: PhoneCameraFieldEvidence? = null
+    private var pendingFieldReport: String? = null
+    private val phoneYuvCapture = LiveYuvEvidenceCapture(4)
+    private var pendingPhoneYuv: OfflineYuvFixture.Sequence? = null
+    private val savePhoneReportRequest = 741
+    private val savePhoneYuvRequest = 742
+    private var repeatingStarted = false
+    private var lastEvidenceCopyAtMs = -1L
+    private var selectedLens = PhoneCameraFieldEvidence.Lens.OTHER
+    private val evidenceTicker = object : Runnable {
+        override fun run() {
+            val trace = activeFieldEvidence ?: return
+            val now = SystemClock.elapsedRealtime()
+            val done = trace.sample(now,
+                inForeground && ::preview.isInitialized &&
+                preview.holder.surface.isValid &&
+                camera != null && session != null && repeatingStarted)
+            if (done) {
+                activeFieldEvidence = null
+                pendingFieldReport = trace.report()
+                fieldButton.text = "LƯU BÁO CÁO CAMERA2 · TTXPHONE01"
+                status.text = "Đã đo xong 60 giây. Nhấn lưu báo cáo, " +
+                    "rồi lưu 4 khung YUV và chụp màn hình preview để nghiệm thu."
+            } else {
+                val seconds = trace.metrics(now).elapsedMs / 1000L
+                fieldButton.text = "ĐANG ĐO CAMERA2 " + seconds +
+                    "/60 GIÂY · BẤM ĐỂ DỪNG"
+                ui.postDelayed(this, 1_000L)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -86,6 +124,23 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
             setOnClickListener { toggleVisionDiagnostics() }
         }
         body.addView(aiButton)
+        body.addView(TextView(this).apply {
+            text = "NGHIỆM THU CAMERA ĐIỆN THOẠI: Không cần Wi-Fi 70mai " +
+                "hay model ONNX. Ghi 60 giây Camera2 + lưu 4 khung YUV " +
+                "(có hình ảnh thật). Báo cáo không lưu vị trí hoặc video."
+            textSize = 12f
+            setPadding(10,8,10,8)
+        })
+        fieldButton = Button(this).apply {
+            text = "BẮT ĐẦU ĐO CAMERA2 · 60 GIÂY"
+            setOnClickListener { toggleFieldEvidence() }
+        }
+        body.addView(fieldButton)
+        yuvEvidenceButton = Button(this).apply {
+            text = "LẤY 4 KHUNG YUV THẬT · TTXYUV01"
+            setOnClickListener { togglePhoneYuvCapture() }
+        }
+        body.addView(yuvEvidenceButton)
         body.addView(Button(this).apply {
             text="ĐÓNG CAMERA"
             setOnClickListener { finish() }
@@ -219,10 +274,165 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
         },"TTX-Openpilot-Load").start()
     }
 
-    /** Copy at most one real 640x480 YUV image every ~350ms. */
+    private fun requestSafSave(requestCode: Int, suggestedName: String, mime: String) {
+        try {
+            startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = mime
+                putExtra(Intent.EXTRA_TITLE, suggestedName)
+            }, requestCode)
+        } catch (error: Exception) {
+            status.text = "Không mở được chọn nơi lưu: " +
+                error.javaClass.simpleName
+        }
+    }
+
+    private fun toggleFieldEvidence() {
+        val current = activeFieldEvidence
+        if (current != null) {
+            finishFieldEvidence("OWNER_STOP")
+            return
+        }
+        if (pendingFieldReport != null) {
+            requestSafSave(savePhoneReportRequest,
+                "TTX-Phone-Camera2-60s.ttxphone.txt", "text/plain")
+            return
+        }
+        if (!inForeground || !started || camera == null || session == null ||
+            !repeatingStarted || !preview.holder.surface.isValid) {
+            status.text = "Cần thấy Camera2 preview đang chạy trước khi đo 60 giây."
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        val trace = PhoneCameraFieldEvidence()
+        trace.start(now, selectedLens,
+            if (realtimeSensorClock) PhoneCameraFieldEvidence.Clock.REALTIME
+            else PhoneCameraFieldEvidence.Clock.UNKNOWN,
+            Build.VERSION.SDK_INT)
+        trace.configured(now)
+        activeFieldEvidence = trace
+        lastEvidenceCopyAtMs = -1L
+        fieldButton.text = "ĐANG ĐO CAMERA2 0/60 GIÂY · BẤM ĐỂ DỪNG"
+        status.text = "Đang ghi bằng chứng local Camera2, không cần ONNX. " +
+            "Giữ nguyên màn hình camera trong 60 giây."
+        ui.removeCallbacks(evidenceTicker)
+        ui.postDelayed(evidenceTicker, 1_000L)
+    }
+
+    private fun finishFieldEvidence(reason: String) {
+        val trace = activeFieldEvidence ?: return
+        activeFieldEvidence = null
+        ui.removeCallbacks(evidenceTicker)
+        trace.stop(SystemClock.elapsedRealtime(), reason)
+        pendingFieldReport = trace.report()
+        if (::fieldButton.isInitialized)
+            fieldButton.text = "LƯU BÁO CÁO CAMERA2 · TTXPHONE01"
+    }
+
+    private fun togglePhoneYuvCapture() {
+        if (pendingPhoneYuv != null) {
+            requestSafSave(savePhoneYuvRequest,
+                "TTX-Phone-Camera2-4frames.ttxyuv",
+                "application/octet-stream")
+            return
+        }
+        if (phoneYuvCapture.isArmed()) {
+            phoneYuvCapture.cancel()
+            yuvEvidenceButton.text = "LẤY 4 KHUNG YUV THẬT · TTXYUV01"
+            status.text = "Đã hủy thu mẫu YUV điện thoại."
+            return
+        }
+        if (!inForeground || !repeatingStarted || camera == null ||
+            !preview.holder.surface.isValid) {
+            status.text = "Phải mở Camera2 preview trước khi thu 4 khung YUV."
+            return
+        }
+        phoneYuvCapture.arm()
+        yuvEvidenceButton.text = "ĐANG LẤY 4 KHUNG YUV · BẤM ĐỂ HỦY"
+        status.text = "Thu 4 khung Camera2 YUV thật trong bộ nhớ; " +
+            "không gửi dữ liệu ra mạng."
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != savePhoneReportRequest &&
+            requestCode != savePhoneYuvRequest) return
+        if (resultCode != RESULT_OK || data?.data == null) return
+        try {
+            val uri = data.data ?: return
+            val stream = contentResolver.openOutputStream(uri)
+                ?: error("Không mở được tệp đích")
+            stream.use { dst ->
+                if (requestCode == savePhoneReportRequest) {
+                    val report = pendingFieldReport ?: error("Báo cáo đã hết hạn")
+                    dst.write(report.toByteArray(Charsets.UTF_8))
+                } else {
+                    val sample = pendingPhoneYuv ?: error("Mẫu YUV đã hết hạn")
+                    OfflineYuvFixture.write(sample, dst)
+                }
+            }
+            if (requestCode == savePhoneReportRequest) {
+                pendingFieldReport = null
+                fieldButton.text = "BẮT ĐẦU ĐO CAMERA2 · 60 GIÂY"
+                status.text = "Đã lưu TTXPHONE01. Hãy gửi báo cáo để kiểm tra."
+            } else {
+                pendingPhoneYuv = null
+                yuvEvidenceButton.text = "LẤY 4 KHUNG YUV THẬT · TTXYUV01"
+                status.text = "Đã lưu TTXYUV01 từ Camera2. " +
+                    "Hãy gửi tệp và ảnh/video preview để kiểm chứng độc lập."
+            }
+        } catch (error: Exception) {
+            status.text = "Lưu bằng chứng thất bại: " +
+                error.javaClass.simpleName + " (có thể thử lại)."
+        }
+    }
+
+    /** Receives actual Camera2 Images independently of ONNX model availability. */
+    private fun observePhoneCameraEvidence(image: android.media.Image, lease: Long) {
+        if (!cameraLease.owns(lease)) return
+        val atMs = SystemClock.elapsedRealtime()
+        val trace = activeFieldEvidence
+        trace?.image(atMs, image.timestamp, SystemClock.elapsedRealtimeNanos())
+        val takeYuv = phoneYuvCapture.isArmed()
+        val copyForTrace = trace?.isActive() == true &&
+            (lastEvidenceCopyAtMs < 0L || atMs - lastEvidenceCopyAtMs >= 900L)
+        if (!takeYuv && !copyForTrace) return
+        if (copyForTrace) lastEvidenceCopyAtMs = atMs
+        try {
+            val frame = AndroidYuvImageBridge.snapshot(image)
+            if (copyForTrace) trace?.copy(SystemClock.elapsedRealtime(),
+                frame.width,frame.height,true)
+            if (takeYuv) {
+                val complete = phoneYuvCapture.accept(frame, atMs)
+                if (complete != null) runOnUiThread {
+                    if (cameraLease.owns(lease) && pendingPhoneYuv == null) {
+                        pendingPhoneYuv = complete
+                        yuvEvidenceButton.text = "LƯU 4 KHUNG YUV · TTXYUV01"
+                        status.text = "Đã thu đủ 4 khung hình Camera2 YUV thật. " +
+                            "Nhấn LƯU để xuất qua trình chọn tệp."
+                    }
+                }
+            }
+        } catch (error: Exception) {
+            if (copyForTrace) trace?.copy(SystemClock.elapsedRealtime(),0,0,false)
+            if (takeYuv) {
+                phoneYuvCapture.cancel()
+                runOnUiThread {
+                    if (cameraLease.owns(lease)) {
+                        yuvEvidenceButton.text = "LẤY 4 KHUNG YUV THẬT · TTXYUV01"
+                        status.text = "Không sao chép được YUV: " +
+                            error.javaClass.simpleName + ". Hãy thử lại."
+                    }
+                }
+            }
+        }
+    }
+
+    /** Copy at most one real 640x480 YUV image every ~350ms for RAW ONNX. */
     private fun acceptYuv(image: android.media.Image, lease: Long) {
         if (!cameraLease.owns(lease)) return
         framesReceived.incrementAndGet()
+        observePhoneCameraEvidence(image, lease)
         // Close/reset takes the same short lock, so a previous Camera2
         // callback cannot restore an old pair AFTER a Surface transition.
         synchronized(yuvLock) {
@@ -255,6 +465,18 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
                     "Camera2 cropped YUV must match 640x480 model contract"
                 }
                 val argb=Yuv420FrameConverter.argb(snapshot)
+                // Camera2 sensor age must still be valid AFTER CPU copying
+                // native YUV planes and converting the 640x480 ARGB image.
+                // A once-fresh ImageReader callback can expire mid-copy.
+                val afterCopyNs=SystemClock.elapsedRealtimeNanos()
+                if (afterCopyNs < image.timestamp ||
+                    afterCopyNs-image.timestamp >
+                        VisionSafetyGate.MAX_FRAME_AGE_MS * 1_000_000L) {
+                    previousVisionFrame=null
+                    previousVisionCaptureMs=0L
+                    current.invalidate()
+                    return
+                }
                 if (!cameraLease.owns(lease) || vision !== current) return
                 val prev=previousVisionFrame
                 val previousAt=previousVisionCaptureMs
@@ -320,9 +542,15 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
                     "không mở stream AI với kích thước tự đoán."
                 return
             }
-            realtimeSensorClock=manager.getCameraCharacteristics(id).get(
-                CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE)==
+            val characteristics = manager.getCameraCharacteristics(id)
+            realtimeSensorClock = characteristics.get(
+                CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
                 CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
+            selectedLens = when(characteristics.get(CameraCharacteristics.LENS_FACING)) {
+                CameraCharacteristics.LENS_FACING_BACK -> PhoneCameraFieldEvidence.Lens.BACK
+                CameraCharacteristics.LENS_FACING_FRONT -> PhoneCameraFieldEvidence.Lens.FRONT
+                else -> PhoneCameraFieldEvidence.Lens.OTHER
+            }
 
             started=true
             val lease=cameraLease.begin()
@@ -401,7 +629,19 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
                                         set(CaptureRequest.CONTROL_AF_MODE,
                                             CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
                                     }
-                                    value.setRepeatingRequest(request.build(),null,handler)
+                                    value.setRepeatingRequest(request.build(),
+                                        object : CameraCaptureSession.CaptureCallback() {
+                                            override fun onCaptureCompleted(
+                                                session: CameraCaptureSession,
+                                                request: CaptureRequest,
+                                                result: TotalCaptureResult
+                                            ) {
+                                                if (cameraLease.owns(lease))
+                                                    activeFieldEvidence?.capture(
+                                                        SystemClock.elapsedRealtime())
+                                            }
+                                        },handler)
+                                    repeatingStarted = true
                                     status.text="Camera2 preview + YUV420 đang hoạt động. " +
                                         (if (realtimeSensorClock)
                                             "Timestamp cảm biến REALTIME; " +
@@ -432,6 +672,10 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun closeCamera() {
+        finishFieldEvidence("CAMERA_CLOSED")
+        phoneYuvCapture.cancel()
+        repeatingStarted = false
+        lastEvidenceCopyAtMs = -1L
         cameraLease.revoke()
         activeCameraToken=0L
         started=false
@@ -478,6 +722,7 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onPause() {
         inForeground=false
+        finishFieldEvidence("ACTIVITY_PAUSED")
         closeCamera()
         if (::worker.isInitialized) worker.quitSafely()
         // Never join a native Camera2 callback thread on Android UI.

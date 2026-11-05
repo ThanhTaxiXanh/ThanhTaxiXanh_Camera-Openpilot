@@ -99,6 +99,13 @@ class CameraSourceSettingsActivity : Activity() {
             }
         })
         body.addView(Button(this).apply {
+            text = "MỞ CAMERA ĐIỆN THOẠI · PREVIEW + YUV + ĐO 60 GIÂY"
+            setOnClickListener {
+                startActivity(Intent(this@CameraSourceSettingsActivity,
+                    PhoneCameraActivity::class.java))
+            }
+        })
+        body.addView(Button(this).apply {
             text = "CHẨN ĐOÁN VIDEO YUV OFFLINE (TTXYUV01)"
             setOnClickListener {
                 startActivity(Intent(this@CameraSourceSettingsActivity,
