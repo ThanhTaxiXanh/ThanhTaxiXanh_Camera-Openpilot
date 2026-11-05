@@ -1,10 +1,19 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.31-offscreen-yuv-lease (Lite / AI flavors)  
+**Version**: 1.3.32-phone-camera-evidence (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
+
+V1.3.32 adds a direct phone Camera2 launch and an owner-triggered **30-second
+Camera2 hardware evidence export**, available in Lite without A500S or an
+ONNX model. It logs actual `CameraCaptureSession` completions and reads
+sampled pixels from real YUV420 ImageReader images at most once per second,
+with sensor timestamp provenance and no saved photos. See
+`docs/PHONE_CAMERA2_FIELD_EVIDENCE_V1332.md` for test steps. Field criterion
+#8 is not PASS until owner-supplied trace and independent screen review.
+
 
 V1.3.31 fences the offscreen MediaCodec YUV output by source epoch and
 receipt freshness BOTH before and after native Image plane copying.
