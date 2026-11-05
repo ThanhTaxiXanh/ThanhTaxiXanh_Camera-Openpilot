@@ -230,3 +230,6 @@ V1.3.24: Corrected post-ARGB-copy freshness in the A500S RAW temporal bridge: re
 
 
 V1.3.25: Offline YUV activity now exports canonical 3,152,072-byte TTXREF01 from owner-selected TTXYUV01 + actual Android AI ONNX inference, model SHA-bound and exact to current dual warp/temporal packer. Independent CPU ONNX verifier checks graph contract, hashes and output parity; CI rejects tampered reference hash/output. Device-generated outputs are not independent ADAS ground truth; real A500S continuity, legal model, geometry and latency remain unproven. #11/#14/#16 still NOT PASS. Gate A **7/20 (35%)**, Gate B **0/5**.
+
+
+V1.3.26: The Direct Surface and YUV sidecar MediaCodec decoders previously initialized at hardcoded 1280x720 despite observed A500S 640x480. Both now use bounded SDP H264 SPS-derived dimensions including valid AVC cropping, with logged 640x480 fallback. Eleven JVM tests cover baseline/high, interlace, crop and invalid SPS. The actual phone's decoder allocation and physical camera-to-glass timing have NOT been checked; #3/#14/#20 remain CODED. Gate A **7/20 (35%)**, Gate B **0/5**.
