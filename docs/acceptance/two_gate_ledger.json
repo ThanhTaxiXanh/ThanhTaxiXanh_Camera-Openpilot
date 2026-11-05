@@ -131,8 +131,13 @@
       "name": "Phone Camera2 preview and YUV420",
       "engineering": {
         "status": "CODED",
-        "evidence": [],
-        "next_required": "Prove Camera2 output/stride lifecycle with controlled frames; test on phone separately"
+        "evidence": [
+          {
+            "kind": "CI_UNIT",
+            "ref": "app/src/test/java/vn/thanhtaxixanh/camera/ai/PhoneCameraSessionLeaseTest.kt"
+          }
+        ],
+        "next_required": "Verify concurrent Camera2 Surface+YUV lifecycle with an authorized physical Android handset; validate preview and YUV crops using a measured live capture, without fabricating an ONNX result"
       },
       "field": {
         "status": "NOT_REQUIRED",

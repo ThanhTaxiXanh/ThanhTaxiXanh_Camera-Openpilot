@@ -48,6 +48,11 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
     @Volatile private var previousVisionCaptureMs = 0L
     private lateinit var aiButton: Button
     private var loadingAi = false
+    private val cameraLease = PhoneCameraSessionLease()
+    private val modelLease = PhoneCameraSessionLease()
+    private val yuvLock = Any()
+    @Volatile private var inForeground = false
+    private var activeCameraToken = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -91,14 +96,34 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
      * never lanes/distance/warnings. The Lite variant has no runtime.
      */
     private fun toggleVisionDiagnostics() {
-        if (loadingAi) return
+        // A model load runs on a background thread. Cancellation must be
+        // accepted immediately, rather than waiting for the ONNX open call.
+        if (loadingAi) {
+            modelLease.revoke()
+            loadingAi=false
+            aiButton.isEnabled=true
+            aiButton.text="AI: TẮT · CHẨN ĐOÁN TENSOR"
+            status.text="Đã hủy mở ONNX; model đến muộn sẽ được đóng."
+            return
+        }
         if (vision != null) {
-            vision?.close()
+            modelLease.revoke()
+            val previous=vision
             vision=null
-            previousVisionFrame=null
-            previousVisionCaptureMs=0L
+            previous?.close()
+            synchronized(yuvLock) {
+                previousVisionFrame=null
+                previousVisionCaptureMs=0L
+                lastVisionCaptureMs=0L
+            }
             aiButton.text="AI: TẮT · CHẨN ĐOÁN TENSOR"
             status.text="Đã tắt suy luận AI thử nghiệm."
+            return
+        }
+        val cameraToken=activeCameraToken
+        if (!inForeground || !started || camera==null || session==null ||
+            !cameraLease.owns(cameraToken)) {
+            status.text="Cần mở Camera2 preview hợp lệ trước khi bật RAW ONNX."
             return
         }
         val model=File(filesDir,"models/vision.onnx")
@@ -106,104 +131,144 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
             status.text="Hãy nhập model ONNX được phép sử dụng từ màn hình Openpilot."
             return
         }
+
+        val modelToken=modelLease.begin()
         loadingAi=true
-        aiButton.isEnabled=false
-        status.text="Đang mở ONNX và xác minh model (không hiệu chuẩn)..."
+        aiButton.isEnabled=true
+        aiButton.text="AI: ĐANG NẠP · BẤM ĐỂ HỦY"
+        status.text="Đang mở ONNX (không hiệu chuẩn)..."
         Thread({
             var candidate: OpenpilotInferencePipeline?=null
             var failure: String?=null
             try {
-                val runner=VisionModelBackend.openEngine(model)
-                    ?: error("Bản Lite không có runtime; cần bản TTX AI")
-                // Synthetic center cropping for structural pipeline testing
-                // only; the physical camera intrinsics/warp are NOT verified.
-                val mainWarp=VirtualCameraWarp.Matrix(doubleArrayOf(
-                    1.0,0.0,64.0,0.0,1.0,112.0,0.0,0.0,1.0))
-                val wideWarp=VirtualCameraWarp.Matrix(doubleArrayOf(
-                    1.2,0.0,13.0,0.0,1.2,86.0,0.0,0.0,1.0))
-                candidate=OpenpilotInferencePipeline(
-                    runner,mainWarp,wideWarp,
-                    calibration=null,sourceWidth=640,sourceHeight=480,
-                    nowMs={ SystemClock.elapsedRealtime() }) { result ->
-                    runOnUiThread {
-                        if (vision != null && !isFinishing)
-                            status.text="Openpilot RAW: " + result.status +
-                                " · xử lý " + result.runtimeMs + "ms" +
-                                (result.timing?.sourceToResultMs?.let {
-                                    " · từ nhận Camera2 " + it + "ms"
-                                } ?: "") +
-                                " · KHÔNG phải trễ cảnh thực · chưa hiệu chuẩn"
+                if (modelLease.owns(modelToken) &&
+                    cameraLease.owns(cameraToken)) {
+                    val runner=VisionModelBackend.openEngine(model)
+                        ?: error("Bản Lite không có runtime; cần bản TTX AI")
+                    try {
+                        // These are diagnostic-only, UNCALIBRATED transforms.
+                        val mainWarp=VirtualCameraWarp.Matrix(doubleArrayOf(
+                            1.0,0.0,64.0,0.0,1.0,112.0,0.0,0.0,1.0))
+                        val wideWarp=VirtualCameraWarp.Matrix(doubleArrayOf(
+                            1.2,0.0,13.0,0.0,1.2,86.0,0.0,0.0,1.0))
+                        candidate=OpenpilotInferencePipeline(
+                            runner,mainWarp,wideWarp,
+                            calibration=null,sourceWidth=640,sourceHeight=480,
+                            nowMs={ SystemClock.elapsedRealtime() }) { result ->
+                            runOnUiThread {
+                                if (modelLease.owns(modelToken) &&
+                                    cameraLease.owns(cameraToken) &&
+                                    vision != null && inForeground &&
+                                    !isFinishing && !isDestroyed) {
+                                    status.text="Openpilot RAW: " + result.status +
+                                        " · xử lý " + result.runtimeMs + "ms" +
+                                        (result.timing?.sourceToResultMs?.let {
+                                            " · từ nhận Camera2 " + it + "ms"
+                                        } ?: "") +
+                                        " · KHÔNG phải trễ cảnh thực · chưa hiệu chuẩn"
+                                }
+                            }
+                        }
+                    } catch (error: Throwable) {
+                        runner.close()
+                        throw error
                     }
                 }
-            } catch (e:Exception) {
-                failure=e.message ?: e.javaClass.simpleName
+            } catch (error: Exception) {
+                failure=error.message ?: error.javaClass.simpleName
             }
-            val newPipeline=candidate
+            val loaded=candidate
             runOnUiThread {
+                // onPause, rapid reentry, Surface teardown and explicit
+                // cancellation all revoke ownership before this runs.
+                if (!modelLease.owns(modelToken) ||
+                    !cameraLease.owns(cameraToken) ||
+                    !inForeground || isFinishing || isDestroyed) {
+                    loaded?.close()
+                    return@runOnUiThread
+                }
                 loadingAi=false
                 aiButton.isEnabled=true
-                if (isFinishing || isDestroyed) {
-                    newPipeline?.close()
-                } else if (failure!=null) {
-                    status.text="Không mở được AI: " + failure
-                    newPipeline?.close()
+                if (failure!=null || loaded==null) {
+                    modelLease.revoke()
+                    status.text="Không mở được AI: " + (failure ?: "mất model")
+                    loaded?.close()
+                    aiButton.text="AI: TẮT · CHẨN ĐOÁN TENSOR"
                 } else {
-                    vision=newPipeline
-                    previousVisionFrame=null
-                    previousVisionCaptureMs=0L
+                    vision=loaded
+                    synchronized(yuvLock) {
+                        previousVisionFrame=null
+                        previousVisionCaptureMs=0L
+                        lastVisionCaptureMs=0L
+                    }
                     aiButton.text="AI: RAW ONNX ĐANG CHẠY · BẤM ĐỂ TẮT"
-                    status.text="AI ONNX thử nghiệm trên YUV điện thoại; " +
+                    status.text="ONNX RAW thử nghiệm trên YUV điện thoại; " +
                         "không dùng kết quả để cảnh báo."
                 }
             }
         },"TTX-Openpilot-Load").start()
     }
 
-    /** Camera callback performs at most one YUV copy every ~350ms. */
-    private fun acceptYuv(image: android.media.Image) {
+    /** Copy at most one real 640x480 YUV image every ~350ms. */
+    private fun acceptYuv(image: android.media.Image, lease: Long) {
+        if (!cameraLease.owns(lease)) return
         framesReceived.incrementAndGet()
-        val current=vision ?: return
-        val now=SystemClock.elapsedRealtime()
-        if (now-lastVisionCaptureMs<350L) return
-        lastVisionCaptureMs=now
-        try {
-            val argb=Yuv420FrameConverter.argb(AndroidYuvImageBridge.snapshot(image))
-            val prev=previousVisionFrame
-            val previousAt=previousVisionCaptureMs
-            previousVisionFrame=argb
-            previousVisionCaptureMs=now
-            if (prev!=null) {
-                if (previousAt > 0L &&
-                    now - previousAt in 1L..A500sRawVisionBridge.MAX_GAP_MS) {
-                    current.offer(OpenpilotInferencePipeline.PairSample(prev,argb,now))
-                } else {
-                    // Camera2 pause/stream jump: old ONNX result must not
-                    // masquerade as the next continuous video frame.
-                    current.invalidate()
+        // Close/reset takes the same short lock, so a previous Camera2
+        // callback cannot restore an old pair AFTER a Surface transition.
+        synchronized(yuvLock) {
+            if (!cameraLease.owns(lease)) return
+            val current=vision ?: return
+            val now=SystemClock.elapsedRealtime()
+            if (now-lastVisionCaptureMs<350L) return
+            lastVisionCaptureMs=now
+            try {
+                val snapshot=AndroidYuvImageBridge.snapshot(image)
+                require(snapshot.width==640 && snapshot.height==480) {
+                    "Camera2 cropped YUV must match 640x480 model contract"
                 }
-            }
-        } catch (e:Exception) {
-            previousVisionFrame=null
-            previousVisionCaptureMs=0L
-            current.invalidate()
-            runOnUiThread {
-                status.text="Khung YUV không hợp lệ: "+e.javaClass.simpleName
+                val argb=Yuv420FrameConverter.argb(snapshot)
+                if (!cameraLease.owns(lease) || vision !== current) return
+                val prev=previousVisionFrame
+                val previousAt=previousVisionCaptureMs
+                previousVisionFrame=argb
+                previousVisionCaptureMs=now
+                if (prev!=null) {
+                    if (previousAt>0L &&
+                        now-previousAt in 1L..A500sRawVisionBridge.MAX_GAP_MS) {
+                        if (cameraLease.owns(lease) && vision === current)
+                            current.offer(OpenpilotInferencePipeline.PairSample(prev,argb,now))
+                    } else {
+                        current.invalidate()
+                    }
+                }
+            } catch (error: Exception) {
+                previousVisionFrame=null
+                previousVisionCaptureMs=0L
+                current.invalidate()
+                runOnUiThread {
+                    if (cameraLease.owns(lease) && vision === current &&
+                        inForeground)
+                        status.text="Khung YUV không hợp lệ: "+
+                            error.javaClass.simpleName
+                }
             }
         }
     }
 
     override fun onResume() {
         super.onResume()
+        inForeground=true
         worker=HandlerThread("TTX-PhoneCamera").apply { start() }
         handler=Handler(worker.looper)
         if (preview.holder.surface.isValid) openCamera()
     }
 
     private fun openCamera() {
-        if (started || !preview.holder.surface.isValid ||
-            !::handler.isInitialized) return
-        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.CAMERA), 440)
+        if (started || !inForeground || isFinishing || isDestroyed ||
+            !preview.holder.surface.isValid || !::handler.isInitialized) return
+        if (checkSelfPermission(Manifest.permission.CAMERA) !=
+            PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.CAMERA),440)
             return
         }
         val manager=getSystemService(CAMERA_SERVICE) as CameraManager
@@ -212,97 +277,154 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
                 manager.getCameraCharacteristics(it).get(
                     CameraCharacteristics.LENS_FACING)==CameraCharacteristics.LENS_FACING_BACK
             } ?: manager.cameraIdList.firstOrNull()
-            if(id==null) {
+            if (id==null) {
                 status.text="Không tìm thấy camera trên thiết bị."
                 return
             }
+            // Only promise YUV420 at 640x480 if Camera2 advertises it.
+            val map=manager.getCameraCharacteristics(id).get(
+                CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            val supported=map?.getOutputSizes(ImageFormat.YUV_420_888)
+                ?.any { it.width==640 && it.height==480 } == true
+            if (!supported) {
+                status.text="Camera2 không công bố YUV420 640×480; " +
+                    "không mở stream AI với kích thước tự đoán."
+                return
+            }
+
             started=true
+            val lease=cameraLease.begin()
+            activeCameraToken=lease
             manager.openCamera(id,object : CameraDevice.StateCallback() {
                 override fun onOpened(device: CameraDevice) {
-                    camera=device
-                    configureCapture(device)
+                    runOnUiThread {
+                        if (!inForeground || !cameraLease.owns(lease) ||
+                            !preview.holder.surface.isValid ||
+                            isFinishing || isDestroyed) {
+                            device.close()
+                        } else {
+                            camera=device
+                            configureCapture(device,lease)
+                        }
+                    }
                 }
                 override fun onDisconnected(device: CameraDevice) {
                     device.close()
-                    camera=null
-                    started=false
-                    runOnUiThread { status.text="Camera đã ngắt kết nối" }
+                    runOnUiThread {
+                        if (cameraLease.owns(lease)) {
+                            closeCamera()
+                            status.text="Camera đã ngắt kết nối."
+                        }
+                    }
                 }
                 override fun onError(device: CameraDevice,error:Int) {
                     device.close()
-                    camera=null
-                    started=false
-                    runOnUiThread { status.text="Camera2 lỗi $error" }
+                    runOnUiThread {
+                        if (cameraLease.owns(lease)) {
+                            closeCamera()
+                            status.text="Camera2 lỗi "+error
+                        }
+                    }
                 }
             },handler)
-        }catch(e: Exception){
-            started=false
-            status.text="Không thể mở camera: "+e.javaClass.simpleName
+        } catch (error:Exception) {
+            closeCamera()
+            status.text="Không thể mở camera: "+error.javaClass.simpleName
         }
     }
 
-    private fun configureCapture(device: CameraDevice) {
+    private fun configureCapture(device: CameraDevice,lease: Long) {
+        if (!cameraLease.owns(lease)) {
+            device.close()
+            return
+        }
         try {
-            // Full-rate preview must not wait on YUV processing.
             val yuv=ImageReader.newInstance(640,480,ImageFormat.YUV_420_888,3)
             reader=yuv
             yuv.setOnImageAvailableListener({ source ->
-                source.acquireLatestImage()?.use { acceptYuv(it) }
+                try {
+                    source.acquireLatestImage()?.use { image ->
+                        if (cameraLease.owns(lease)) acceptYuv(image,lease)
+                    }
+                } catch (_:IllegalStateException) {
+                    // ImageReader may have been closed during Surface teardown.
+                }
             },handler)
             val surfaces=listOf(preview.holder.surface,yuv.surface)
             device.createCaptureSession(surfaces,
                 object : CameraCaptureSession.StateCallback() {
                     override fun onConfigured(value: CameraCaptureSession) {
-                        if (camera !== device) {
-                            value.close()
-                            return
-                        }
-                        session=value
-                        try {
-                            val request=device.createCaptureRequest(
-                                CameraDevice.TEMPLATE_PREVIEW).apply {
-                                addTarget(preview.holder.surface)
-                                addTarget(yuv.surface)
-                                set(CaptureRequest.CONTROL_AF_MODE,
-                                    CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
+                        runOnUiThread {
+                            if (!cameraLease.owns(lease) ||
+                                camera !== device || !inForeground ||
+                                !preview.holder.surface.isValid) {
+                                value.close()
+                            } else {
+                                session=value
+                                try {
+                                    val request=device.createCaptureRequest(
+                                        CameraDevice.TEMPLATE_PREVIEW).apply {
+                                        addTarget(preview.holder.surface)
+                                        addTarget(yuv.surface)
+                                        set(CaptureRequest.CONTROL_AF_MODE,
+                                            CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
+                                    }
+                                    value.setRepeatingRequest(request.build(),null,handler)
+                                    status.text="Camera2 preview + YUV420 đang hoạt động. " +
+                                        "AI cần model hợp lệ và kiểm chứng thực tế."
+                                } catch (error:Exception) {
+                                    closeCamera()
+                                    status.text="Camera2: "+error.javaClass.simpleName
+                                }
                             }
-                            value.setRepeatingRequest(request.build(),null,handler)
-                            runOnUiThread {
-                                status.text="Camera2 đang xem trực tiếp. " +
-                                    "Luồng YUV hỗ trợ phân tích, AI chưa kích hoạt."
-                            }
-                        }catch(e:Exception) {
-                            runOnUiThread { status.text="Camera2: "+e.message }
                         }
                     }
                     override fun onConfigureFailed(value: CameraCaptureSession) {
-                        // On restricted devices, keep failure visible instead
-                        // of incorrectly claiming image/YUV is available.
+                        value.close()
                         runOnUiThread {
-                            status.text="Camera không hỗ trợ đồng thời Preview/YUV 640×480."
+                            if (cameraLease.owns(lease)) {
+                                closeCamera()
+                                status.text="Camera không hỗ trợ đồng thời Preview/YUV."
+                            }
                         }
                     }
                 },handler)
-        }catch(e:Exception){
-            runOnUiThread { status.text="Camera2 stream: "+e.javaClass.simpleName }
+        } catch (error:Exception) {
+            closeCamera()
+            status.text="Camera2 stream: "+error.javaClass.simpleName
         }
     }
 
     private fun closeCamera() {
+        cameraLease.revoke()
+        activeCameraToken=0L
         started=false
-        previousVisionFrame=null
-        previousVisionCaptureMs=0L
-        vision?.invalidate()
-        try { session?.close() }catch(_:Exception){}
+
+        modelLease.revoke()
+        loadingAi=false
+        val prior=vision
+        vision=null
+        prior?.close()
+        if (::aiButton.isInitialized) {
+            aiButton.isEnabled=true
+            aiButton.text="AI: TẮT · CHẨN ĐOÁN TENSOR"
+        }
+        synchronized(yuvLock) {
+            previousVisionFrame=null
+            previousVisionCaptureMs=0L
+            lastVisionCaptureMs=0L
+        }
+
+        try { session?.close() } catch (_:Exception) {}
         session=null
-        try { camera?.close() }catch(_:Exception){}
+        try { camera?.close() } catch (_:Exception) {}
         camera=null
-        try { reader?.close() }catch(_:Exception){}
+        try { reader?.close() } catch (_:Exception) {}
         reader=null
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        if (hasWindowFocus()) openCamera()
+        if (inForeground) openCamera()
     }
     override fun surfaceChanged(holder: SurfaceHolder, format:Int,width:Int,height:Int){}
     override fun surfaceDestroyed(holder: SurfaceHolder) { closeCamera() }
@@ -316,17 +438,10 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun onPause() {
-        vision?.close()
-        vision=null
-        previousVisionFrame=null
-        previousVisionCaptureMs=0L
-        if (::aiButton.isInitialized)
-            aiButton.text="AI: TẮT · CHẨN ĐOÁN TENSOR"
+        inForeground=false
         closeCamera()
-        if (::worker.isInitialized) {
-            worker.quitSafely()
-            try { worker.join(1000L) } catch (_:InterruptedException){}
-        }
+        if (::worker.isInitialized) worker.quitSafely()
+        // Never join a native Camera2 callback thread on Android UI.
         super.onPause()
     }
 }
