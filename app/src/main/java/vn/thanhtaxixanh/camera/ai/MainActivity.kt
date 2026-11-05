@@ -190,6 +190,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             setOnClickListener { toggleGps() }
         }, LinearLayout.LayoutParams(0, -2, 0.6f))
         root.addView(navigation)
+        // Dedicated one-tap Camera2 path: phone camera works without
+        // connecting to A500S Wi-Fi or importing a driving model.
+        root.addView(nav("CAMERA ĐIỆN THOẠI · KIỂM CHỨNG 30 GIÂY",
+            PhoneCameraActivity::class.java))
 
         latencyButton = Button(this).apply {
             text = ijkProfile.buttonTitle
