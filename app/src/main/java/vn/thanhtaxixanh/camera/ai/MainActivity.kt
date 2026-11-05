@@ -22,6 +22,7 @@ import android.view.SurfaceView
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import tv.danmaku.ijk.media.player.IjkMediaPlayer
 import java.util.Locale
@@ -48,6 +49,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private val ui = Handler(Looper.getMainLooper())
     private lateinit var surfaceView: SurfaceView
+    private lateinit var cameraVideoContainer: FrameLayout
+    private lateinit var cameraControlsScroll: ScrollView
+    private var normalPreviewHeightPx = 0
     private lateinit var adasHud: AdasHudView
     private lateinit var gpsMonitor: GpsSpeedMonitor
     private var gpsEnabled = false
@@ -126,14 +130,22 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         super.onCreate(savedInstanceState)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         gpsMonitor = GpsSpeedMonitor(this)
-        val root = LinearLayout(this).apply {
+        // Outer screen has a permanently visible playback region; the
+        // increasingly long diagnostic controls scroll in a DIFFERENT pane.
+        // Previously the video had height 0 + weight 1 in the SAME vertical
+        // LinearLayout as 20+ unbounded controls; on phone screens those
+        // controls consumed all height and live decoded video disappeared.
+        val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.rgb(12, 16, 22))
             setPadding(12, 10, 12, 10)
         }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
         val header = label("TTX CAMERA AI · xADAS REBUILD", 17f, Color.WHITE)
         header.gravity = Gravity.CENTER
-        root.addView(header)
+        outer.addView(header)
 
         surfaceView = SurfaceView(this).apply {
             // SurfaceView normally punches a transparent hole through the Activity
@@ -147,14 +159,19 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             holder.addCallback(this@MainActivity)
             keepScreenOn = true
         }
-        val videoContainer = FrameLayout(this).apply {
+        cameraVideoContainer = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             addView(surfaceView, FrameLayout.LayoutParams(-1, -1))
         }
         adasHud = AdasHudView(this)
-        videoContainer.addView(adasHud, FrameLayout.LayoutParams(-1, -1))
-        root.addView(videoContainer, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        cameraVideoContainer.addView(adasHud, FrameLayout.LayoutParams(-1, -1))
+        val dp = resources.displayMetrics.density
+        val contentWidth = (resources.displayMetrics.widthPixels -
+            (24f * dp).toInt()).coerceAtLeast(1)
+        normalPreviewHeightPx = PreviewViewportPolicy.heightPx(
+            contentWidth, resources.displayMetrics.heightPixels, dp)
+        outer.addView(cameraVideoContainer, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, normalPreviewHeightPx))
 
         val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         ijkButton = Button(this).apply {
@@ -445,7 +462,17 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             "RTSP/IJK + MediaCodec; các bộ phân tích AI cần model được phép dùng " +
                 "và hiệu chuẩn, không hiển thị khoảng cách suy đoán.", 10f,
             Color.rgb(149, 155, 161)))
-        setContentView(root)
+        cameraControlsScroll = ScrollView(this).apply {
+            isFillViewport = false
+            isVerticalScrollBarEnabled = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            addView(root, ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT))
+        }
+        outer.addView(cameraControlsScroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        setContentView(outer)
         ui.post(statusTicker)
     }
 
@@ -1476,9 +1503,15 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             val child = root.getChildAt(i)
             // Keep the preview/video surface only while in PiP.
             child.visibility =
-                if (isInPictureInPictureMode && child !is FrameLayout) View.GONE
-                else View.VISIBLE
+                if (isInPictureInPictureMode && child !== cameraVideoContainer)
+                    View.GONE else View.VISIBLE
         }
+        // When other panes hide, video must occupy the PiP window rather
+        // than retain a phone-sized fixed height and become cropped.
+        cameraVideoContainer.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            if (isInPictureInPictureMode) 0 else normalPreviewHeightPx,
+            if (isInPictureInPictureMode) 1f else 0f)
         if (backend == Backend.IJK && surfaceView.holder.surface.isValid) {
             try { ijk?.setDisplay(surfaceView.holder) } catch (_: Throwable) {}
         }
