@@ -62,6 +62,36 @@ jobs:
             --output-dir .ci-evidence/onnx-contract
           test -s .ci-evidence/onnx-contract/TTX-original-contract.onnx
           test -s .ci-evidence/onnx-contract/TTX-original-contract.ttxref
+          # Independent replay of a TTXREF01 produced from actual input/
+          # output bytes. This sample is an original synthetic contract only.
+          python tools/verify_device_onnx_reference.py \
+            --model .ci-evidence/onnx-contract/TTX-original-contract.onnx \
+            --reference .ci-evidence/onnx-contract/TTX-original-contract.ttxref \
+            --report .ci-evidence/onnx-contract/independent_cpu_parity.json
+          python - <<'PY'
+          import subprocess,struct,sys,tempfile
+          from pathlib import Path
+          ref=Path(".ci-evidence/onnx-contract/TTX-original-contract.ttxref")
+          model=Path(".ci-evidence/onnx-contract/TTX-original-contract.onnx")
+          with tempfile.TemporaryDirectory() as folder:
+              target=Path(folder)/"tampered.ttxref"
+              data=bytearray(ref.read_bytes())
+              # Device-generated reference with a modified output MUST NOT
+              # get a false parity PASS from the same independent CPU model.
+              data[-4:]=struct.pack(">f",999999.0)
+              target.write_bytes(data)
+              command=[sys.executable,"tools/verify_device_onnx_reference.py",
+                       "--model",str(model),"--reference",str(target)]
+              bad=subprocess.run(command,capture_output=True,text=True)
+              assert bad.returncode==2, (bad.returncode,bad.stdout,bad.stderr)
+              # A bad model SHA must be rejected BEFORE any inference.
+              data=bytearray(ref.read_bytes())
+              data[8]^=1
+              target.write_bytes(data)
+              bad=subprocess.run(command,capture_output=True,text=True)
+              assert bad.returncode==1, (bad.returncode,bad.stdout,bad.stderr)
+          print("Independent CPU parity negative controls: PASS")
+          PY
       - name: Upload original ONNX contract fixture for Android AI audit
         uses: actions/upload-artifact@v4
         with:
