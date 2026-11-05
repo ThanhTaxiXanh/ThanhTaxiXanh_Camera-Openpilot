@@ -31,8 +31,9 @@ class CameraSourceSettingsActivity : Activity() {
         }
         body.addView(txt("Nguồn camera · xADAS-style", 22f))
         body.addView(txt(
-            "Đã nhận diện danh mục camera từ XAPK xADAS. Chỉ 70mai A500S " +
-                "và RTSP tùy chỉnh hiện có đường phát đã triển khai.", 13f))
+            "Các nguồn đang có adapter: 70mai A500S, RTSP tùy chỉnh " +
+                "và Camera2 điện thoại. Camera2 có nút mở riêng, " +
+                "không cần kết nối Wi-Fi camera.", 13f))
         val selector = Spinner(this).apply {
             adapter = ArrayAdapter(this@CameraSourceSettingsActivity,
                 android.R.layout.simple_spinner_dropdown_item, profiles.map { it.label })
