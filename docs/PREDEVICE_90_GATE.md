@@ -356,3 +356,21 @@ are CI-checked, not hardware acceptance. The real A500S must be retested
 with YUV off first to isolate video visibility from the independent
 YUV offscreen MediaCodec input-queue issue seen in the same recording.
 Gate A **8/20 (40%)**, Gate B **0/5**, #3/#14/#20 remain unverified.
+
+
+2026-11-05 owner's V1.3.35 physical follow-up video (25.03s, 512x1136,
+30fps) independently shows moving A500S direct MediaCodec Surface video
+filling its fixed top viewport during control-panel scrolling; RTSP
+heartbeat 1/1 OK, no reconnect in observed interval, YUV off. Visual
+screen/RTSP telemetry consistency supports the repaired live preview
+but not alternate IJK fallback, optical latency or long-term stability.
+See docs/acceptance/A500S_DIRECT_SURFACE_REVIEW_20261105.md.
+Criterion #3 remains CODED (missing independent fallback verification).
+V1.3.36 modifies only OPTIONAL secondary A500S YUV decoding: prefers a
+platform-advertised SOFTWARE AVC codec to avoid competing for the primary
+Surface hardware decoder; if software cannot be configured falls back
+to system default. A bounded output-drain/input-buffer retry policy
+replaces immediate hard reset for one transient -1 input buffer index.
+These are code mitigations, NOT proven to fix the owner's previous native
+YUV input starvation until an actual A500S YUV trial is reviewed.
+Gate A **8/20=40%**, Gate B **0/5**, no PASS promotion.

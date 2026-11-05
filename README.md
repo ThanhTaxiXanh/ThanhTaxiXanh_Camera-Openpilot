@@ -1,10 +1,26 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.35-persistent-direct-preview (Lite / AI flavors)  
+**Version**: 1.3.36-software-yuv-sidecar (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
+
+V1.3.35 owner's actual 25-second phone trial verified the repaired,
+persistent xADAS Direct Surface preview remains visible with YUV OFF,
+including while scrolling diagnostics. This is scoped A500S preview
+hardware evidence only: no alternate IJK fallback or 5-minute optical
+latency was tested, so #3/#20 are not promoted. See
+`docs/acceptance/A500S_DIRECT_SURFACE_REVIEW_20261105.md`.
+
+V1.3.36 addresses the previously observed OFFSCREEN decoder's native
+input starvation without changing the Direct Surface player. The optional
+A500S YUV sidecar now prefers software-only AVC when Android advertises
+one, falling back to the platform default if absent or configuration
+fails, and drains native outputs on bounded input-buffer waits before
+resyncing to an IDR. Decoder identity and starvation counters are shown
+in diagnostics. See `docs/A500S_SOFTWARE_YUV_SIDECAR_V1336.md`.
+
 
 V1.3.35 fixes a video visibility defect shown in the owner's actual
 A500S phone recording: the Direct Surface received video frame callbacks

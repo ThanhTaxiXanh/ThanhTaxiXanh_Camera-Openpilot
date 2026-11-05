@@ -3,6 +3,8 @@ package vn.thanhtaxixanh.camera.ai
 import android.graphics.ImageFormat
 import android.media.MediaCodec
 import android.media.MediaFormat
+import android.media.MediaCodecList
+import android.os.Build
 import android.os.SystemClock
 import java.nio.ByteBuffer
 import java.util.LinkedHashMap
@@ -46,7 +48,13 @@ class H264YuvSidecar(
         val expiredBacklogResets: Long,
         val staleYuvOutputs: Long,
         val revokedYuvOutputs: Long,
-        val unsupportedYuvOutputs: Long
+        val unsupportedYuvOutputs: Long,
+        val decoderName: String,
+        val softwareDecoder: Boolean,
+        val softwareCodecAttempts: Long,
+        val transientInputWaits: Long,
+        val exhaustedInputWaits: Long,
+        val nullOutputImages: Long
     )
 
     private data class UnitSample(
@@ -75,6 +83,12 @@ class H264YuvSidecar(
     private val staleYuvOutputs = AtomicLong()
     private val revokedYuvOutputs = AtomicLong()
     private val unsupportedYuvOutputs = AtomicLong()
+    private val chosenDecoderName = AtomicReference("NOT_STARTED")
+    private val softwareDecoder = AtomicBoolean(false)
+    private val softwareCodecAttempts = AtomicLong()
+    private val transientInputWaits = AtomicLong()
+    private val exhaustedInputWaits = AtomicLong()
+    private val nullOutputImages = AtomicLong()
     private val worker = Thread({ runDecoder() }, "TTX-A500S-YUV-Offscreen").apply {
         isDaemon = true
         start()
@@ -85,7 +99,10 @@ class H264YuvSidecar(
         pending.size, lastFailure.get(),
         staleAccessUnits.get(), expiredBacklogResets.get(),
         staleYuvOutputs.get(), revokedYuvOutputs.get(),
-        unsupportedYuvOutputs.get())
+        unsupportedYuvOutputs.get(), chosenDecoderName.get(),
+        softwareDecoder.get(), softwareCodecAttempts.get(),
+        transientInputWaits.get(), exhaustedInputWaits.get(),
+        nullOutputImages.get())
 
     /** Never blocks RTP, the H264 assembler, UI, or the preview feeder. */
     @Synchronized fun offer(annexB: ByteArray, capturedElapsedMs: Long): Boolean {
@@ -158,17 +175,54 @@ class H264YuvSidecar(
             format.setByteBuffer("csd-1",
                 ByteBuffer.wrap(byteArrayOf(0, 0, 0, 1) + pps))
         }
-        val instance = MediaCodec.createDecoderByType("video/avc")
-        try {
-            // Null Surface is intentional: getOutputImage() is not reliable
-            // when MediaCodec has been configured to render to a Surface.
-            instance.configure(format, null, null, 0)
-            instance.start()
-        } catch (error: Exception) {
-            instance.release()
-            throw error
+        fun initialize(name: String?): MediaCodec {
+            val codec = if (name == null)
+                MediaCodec.createDecoderByType("video/avc")
+            else MediaCodec.createByCodecName(name)
+            try {
+                // Only the secondary decoder uses null output Surface,
+                // allowing getOutputImage/YUV plane snapshots. The real
+                // primary preview Surface is NEVER changed by this method.
+                codec.configure(format, null, null, 0)
+                codec.start()
+                chosenDecoderName.set(codec.name)
+                softwareDecoder.set(name != null)
+                return codec
+            } catch (error: Exception) {
+                try { codec.release() } catch (_: Exception) {}
+                throw error
+            }
         }
-        return instance
+        // The real preview already occupies an AVC hardware decoder.
+        // Prefer OS-listed software AVC for the OPTIONAL YUV diagnostics,
+        // avoiding the observed second-hardware-decoder input starvation
+        // when such software codec is present. If unavailable or unable
+        // to configure, restore the previous default codec selection.
+        val softwareNames = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+            try {
+                OffscreenCodecSelection.softwareAvcCandidates(
+                    MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+                        .map { info ->
+                            OffscreenCodecSelection.Candidate(
+                                info.name,
+                                !info.isEncoder && info.supportedTypes.any {
+                                    it.equals("video/avc", ignoreCase = true)
+                                },
+                                info.isSoftwareOnly
+                            )
+                        }
+                )
+            } catch (_: Exception) { emptyList() }
+        else emptyList()
+        for (name in softwareNames) {
+            softwareCodecAttempts.incrementAndGet()
+            try { return initialize(name) }
+            catch (_: Exception) {
+                // Candidate codec name or vendor configuration may fail.
+                // This is not a proof that software decoding is supported.
+            }
+        }
+        return initialize(null)
     }
 
     private fun report(error: Throwable) {
@@ -256,14 +310,29 @@ class H264YuvSidecar(
                 if (resetRequested.get() || item.epoch != epoch.get()) continue
                 try {
                     var index = running.dequeueInputBuffer(10_000L)
-                    if (index < 0) {
+                    var attempts = 0
+                    while (index < 0) {
+                        attempts++
+                        transientInputWaits.incrementAndGet()
+                        // A decoder may hold inputs until output is released.
+                        // Drain on THIS sidecar worker, without touching the
+                        // Direct preview, and reattempt a BOUNDED 10ms wait.
+                        // Never drop a dependent P-frame individually.
+                        val action = OffscreenCodecSelection.inputBufferUnavailable(
+                            attempts)
+                        if (action ==
+                            OffscreenCodecSelection.InputWaitVerdict.RESYNC_IDR) {
+                            exhaustedInputWaits.incrementAndGet()
+                            error("Offscreen input unavailable after 3 drain/wait " +
+                                "attempts; await next IDR")
+                        }
                         drain(running, bufferInfo, timeline, ::acceptDecodedImage)
+                        if (resetRequested.get() || item.epoch != epoch.get())
+                            break
                         index = running.dequeueInputBuffer(10_000L)
                     }
-                    if (index < 0) {
-                        // Never silently skip a dependent P-frame.
-                        error("Offscreen input queue full; await next IDR")
-                    }
+                    if (resetRequested.get() || item.epoch != epoch.get())
+                        continue
                     val dst = running.getInputBuffer(index)
                         ?: error("Null offscreen input buffer")
                     dst.clear()
@@ -385,7 +454,8 @@ class H264YuvSidecar(
                     val captured = capturedTimes.remove(info.presentationTimeUs)
                     if (captured != null) {
                         val image = codec.getOutputImage(index)
-                        image?.use { frame(captured, it) }
+                        if (image == null) nullOutputImages.incrementAndGet()
+                        else image.use { frame(captured, it) }
                     }
                 }
             } finally {
