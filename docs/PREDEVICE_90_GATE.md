@@ -263,3 +263,14 @@ JVM cases test source epochs, loss recovery, duplicates, interval fraction,
 failed-send retry and wire limits. No new independent A500S stream/ONNX
 or optical measurement: **Gate A 7/20 (35%)**, **Gate B 0/5**; all mandatory
 #14–17/#20 remain NOT PASS.
+
+
+V1.3.30: A500S RAW-YUV source epoch invalidation is now atomic and does
+not wait for in-progress YUV→ARGB conversion. The temporal bridge checks
+GOP epoch before and after copies/submission, and the ONNX worker checks
+source lease both before and after inference and again at result delivery.
+Five deterministic JVM tests reproduce callback/conversion and in-flight
+worker races with synthetic pixels. These prevent known cross-GOP temporal
+pairing races but do not validate a real camera YUV decoder, trained model,
+calibration, metric lead or optical latency. Gate A **7/20 (35%)**; Gate B
+**0/5**, mandatory #14–17/#20 remain NOT PASS.
