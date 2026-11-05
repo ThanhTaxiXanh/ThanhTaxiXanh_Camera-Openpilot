@@ -218,3 +218,6 @@ V1.3.20: Phone Camera2 RAW ONNX uses genuine Image.timestamp only when SENSOR_IN
 
 
 V1.3.21: owner can explicitly start and SAF-export bounded TTXLIVE01 five-minute local preview progress traces for Direct/IJK. Sampling records counter/FPS, time gaps, freezes, reconnects and interruptions; reports ALWAYS mark exposure-to-glass latency NOT_MEASURED and field #20 NOT_VERIFIED until an independent optical camera+screen recording exists. Eleven pure JVM tests are synthetic only. Gate A **7/20 (35%)**; Gate B **0/5**.
+
+
+V1.3.22: GPS HUD now respects persisted km/h/m vs mph/ft display units on resume. SHOW_LOGO hides only the TTX brand, never all GPS or verified lead data; 5m round-distance setting applies only to separately verified metres. Fourteen pure JVM formatting tests do not independently verify Android GNSS/PiP lifecycle. #19 remains CODED. Gate A **7/20=35%**, Gate B **0/5**.
