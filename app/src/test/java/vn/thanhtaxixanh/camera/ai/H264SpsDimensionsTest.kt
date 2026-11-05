@@ -154,4 +154,78 @@ class H264SpsDimensionsTest {
         // A truncated suffix cannot be assumed to be a valid picture.
         assertNull(H264SpsDimensions.parse(bytes.copyOfRange(0,4)))
     }
+
+    private fun spropFmtp(pt: Int = 96): String {
+        val encoder = java.util.Base64.getEncoder()
+        val rawSps = encoder.encodeToString(sps(40, 30))
+        val pps = encoder.encodeToString(byteArrayOf(0x68, 0xce.toByte(), 0x3c, 0x80.toByte()))
+        return "a=fmtp:$pt packetization-mode=1;sprop-parameter-sets=$rawSps,$pps"
+    }
+
+    @Test fun videoTrackIgnoresUnrelatedMediaSprop() {
+        val input = listOf(
+            "v=0",
+            "m=audio 0 RTP/AVP 97",
+            "a=fmtp:97 sprop-parameter-sets=INVALID,INVALID",
+            "m=video 0 RTP/AVP 96",
+            "a=rtpmap:96 H264/90000",
+            spropFmtp(),
+            "a=control:track1"
+        ).joinToString("\r\n")
+        val found = H264SdpParameterSets.fromSdp(input)
+        assertEquals(96, found.payloadType)
+        assertEquals(H264SpsDimensions.Size(640, 480),
+            H264SpsDimensions.parse(found.sps))
+        assertEquals(8, (found.pps!![0].toInt() and 0x1f))
+    }
+
+    @Test fun mismatchedVideoPayloadFmtpNeverBecomesH264CodecData() {
+        val input = listOf(
+            "m=video 0 RTP/AVP 96 98",
+            "a=rtpmap:96 H264/90000",
+            "a=rtpmap:98 H265/90000",
+            spropFmtp(98)
+        ).joinToString("\n")
+        val found = H264SdpParameterSets.fromSdp(input)
+        assertEquals(96, found.payloadType)
+        assertNull(found.sps)
+        assertNull(found.pps)
+    }
+
+    @Test fun noRtpmapStillPermitsValidatedA500sFmtpFallback() {
+        val input = "m=video 0 RTP/AVP 96\n" + spropFmtp()
+        val found = H264SdpParameterSets.fromSdp(input)
+        assertEquals(96, found.payloadType)
+        assertEquals(640, H264SpsDimensions.parse(found.sps)?.width)
+    }
+
+    @Test fun explicitlyNonH264RtpmapIsNeverTreatedAsAvc() {
+        val input = "m=video 0 RTP/AVP 98\n" +
+            "a=rtpmap:98 H265/90000\n" + spropFmtp(98)
+        val found = H264SdpParameterSets.fromSdp(input)
+        assertNull(found.payloadType)
+        assertNull(found.sps)
+    }
+
+    @Test fun malformedOrWrongNalParameterSetsAreNotGivenToCodec() {
+        val valid = spropFmtp()
+        val tampered = listOf(
+            valid.replaceAfter("sprop-parameter-sets=", "!invalid,!invalid"),
+            valid.replaceAfter("sprop-parameter-sets=", "aGVsbG8=,aGVsbG8="),
+            valid.replace("a=fmtp:96", "a=fmtp:97"),
+            valid.replace("sprop-parameter-sets=", "other-parameter-sets=")
+        )
+        for (line in tampered) {
+            val found = H264SdpParameterSets.fromSdp(
+                "m=video 0 RTP/AVP 96\na=rtpmap:96 H264/90000\n" + line)
+            assertNull(found.sps)
+            assertNull(found.pps)
+        }
+    }
+
+    @Test fun emptyOrOversizedSdpRejectsCsd() {
+        assertNull(H264SdpParameterSets.fromSdp("").sps)
+        assertNull(H264SdpParameterSets.fromSdp("x".repeat(65_537)).sps)
+        assertNull(H264SdpParameterSets.fromSdp("m=audio 0 RTP/AVP 8").sps)
+    }
 }
