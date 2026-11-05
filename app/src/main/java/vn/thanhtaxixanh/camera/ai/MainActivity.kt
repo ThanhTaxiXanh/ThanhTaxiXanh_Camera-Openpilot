@@ -1022,6 +1022,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                             " · giải mã ${yuv.decoded}" +
                             " · đợi IDR ${yuv.skippedToIdr}" +
                             " · reset ${yuv.resets} · tràn ${yuv.overflows}" +
+                            " · AU quá hạn ${yuv.staleAccessUnits}" +
+                            " · đệm quá hạn ${yuv.expiredBacklogResets}" +
                             " · lỗi ${yuv.errors}")
                         if (yuv.lastFailure.isNotBlank())
                             detailView.append("\n" + yuv.lastFailure)
