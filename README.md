@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.20-camera2-sensor-clock (Lite / AI flavors)  
+**Version**: 1.3.21-five-minute-evidence (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
@@ -679,3 +679,18 @@ Ten host regression tests cover clock domains and delayed callbacks.
 See [Camera2 timestamp policy](docs/CAMERA2_SENSOR_TIMESTAMP_V1320.md).
 Criterion #8 still requires independent on-device Camera2 verification.
 Gate A **7/20 (35%)**, Gate B **0/5**.
+
+
+## V1.3.21 — Export 5-minute stream continuity evidence from Android
+
+The new **THU BIÊN BẢN VIDEO 5 PHÚT** button samples Direct Surface-release
+counts or native IJK output/playing state every second. A gap over 2.5s,
+local frame stall, reconnect, counter regression or early stop invalidates
+continuity. All test runs (including failed ones) can be exported as
+bounded UTF-8 `TTXLIVE01` traces via Storage Access Framework.
+
+Local progress is **not optical camera-to-glass latency**. A real A500S +
+external simultaneous scene/display recording and independent review remain
+mandatory for #20. See
+[5-minute/optical protocol](docs/FIVE_MINUTE_OPTICAL_ACCEPTANCE_V1321.md).
+Formal progress: **Gate A 7/20 (35%), Gate B 0/5**.
