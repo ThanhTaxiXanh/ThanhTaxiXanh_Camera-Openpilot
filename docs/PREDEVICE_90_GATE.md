@@ -285,3 +285,16 @@ three new counters distinguish stale, revoked-epoch and unsupported images.
 Eight JVM tests exercise deterministic epoch change during copy, expiration,
 reset, cadence and 10k virtual outputs. No camera or model was run: Gate A
 **7/20 (35%)**, Gate B **0/5**. #14 and #20 still NOT PASS.
+
+
+V1.3.32: Independent phone Camera2 is now directly launchable without 70mai
+Wi-Fi. Explicit 60-second TTXPHONE01 session evidence measures repeating
+CaptureRequest callbacks, ImageReader YUV callbacks, successfully copied
+640x480 images, stalls and (when REALTIME) sensor-to-callback receipt age.
+Owner-armed four-frame TTXYUV01 exports actual image pixels through Android
+Storage Access Framework, separate from the RAW ONNX model. Ten JVM tests
+validate recorder bounds, timebase, failures and trace output. The recorder
+alone cannot prove a Surface is optically visible; independent screen review
+and real phone artifacts are REQUIRED before criterion #8 can change to PASS.
+This version does not provide any A500S camera, model or calibrated ADAS
+physical evidence. Gate A **7/20=35%**, Gate B **0/5**; no new PASS.
