@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.23-gps-pip-evidence (Lite / AI flavors)  
+**Version**: 1.3.24-yuv-onnx-freshness (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
@@ -721,3 +721,22 @@ are stored. A request returning true never counts as confirmed PiP entry.
 See [on-device GPS/PiP acceptance](docs/GPS_PIP_ONDEVICE_EVIDENCE_V1323.md).
 The trace itself is not independent Android verification; #19 remains CODED,
 **Gate A 7/20 (35%), Gate B 0/5** pending a phone test and review.
+
+
+## V1.3.24 — Close YUV→ARGB→ONNX stale admission gap
+
+The A500S RAW temporal bridge now rechecks image receipt age **after**
+the 640×480 YUV→ARGB CPU copy, refuses a pair if that copy makes its
+current image expire, and starts a new pair if only the previous
+image expires mid-conversion. Rejected ONNX sink submissions also
+reset the temporal input rather than reusing discarded frames.
+
+The ONNX worker's single-slot producer now rejects already expired
+H264 receipt timestamps **before** queue admission and counter
+increments, in addition to its existing in-worker checks. Nine
+new JVM regressions cover stalled copies, exact 550ms boundary,
+clock faults, previous-frame expiry and sink backpressure.
+
+See [YUV/ONNX freshness audit](docs/YUV_ONNX_INGRESS_FRESHNESS_V1324.md).
+This is not A500S hardware or licensed ONNX model parity proof;
+**Gate A 7/20 (35%), Gate B 0/5** remain unchanged.

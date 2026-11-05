@@ -12,7 +12,11 @@ package vn.thanhtaxixanh.camera.ai
  */
 class A500sRawVisionBridge(
     private val nowMs: () -> Long,
-    private val submit: (OpenpilotInferencePipeline.PairSample) -> Boolean
+    private val submit: (OpenpilotInferencePipeline.PairSample) -> Boolean,
+    // Injectable only to make slow YUV->ARGB conversion deterministic in
+    // host regression tests. Production always copies actual YUV pixels.
+    private val toArgb: (Yuv420FrameConverter.Frame) -> IntArray =
+        { Yuv420FrameConverter.argb(it) }
 ) {
     enum class Verdict {
         WAITING_PAIR, SUBMITTED, SINK_REJECTED, INVALID_DIMENSIONS,
@@ -77,28 +81,44 @@ class A500sRawVisionBridge(
             now - capturedAtMs > VisionSafetyGate.MAX_FRAME_AGE_MS)
             return reject(Verdict.STALE)
         val old = previous
-        if (old != null &&
+        val wasAlreadyDiscontinuous = old != null &&
             (capturedAtMs <= old.atMs ||
                 capturedAtMs - old.atMs > MAX_GAP_MS ||
-                now - old.atMs > VisionSafetyGate.MAX_FRAME_AGE_MS)) {
-            discontinuities++
-            // Keep the new valid image as the start of a fresh pair; do not
-            // bridge across a reconnect, a GOP reset or a timestamp jump.
-            previous = Previous(Yuv420FrameConverter.argb(frame), capturedAtMs)
-            frames++
-            lastVerdict = Verdict.DISCONTINUITY
-            return Verdict.DISCONTINUITY
-        }
-        val argb = Yuv420FrameConverter.argb(frame)
+                now - old.atMs > VisionSafetyGate.MAX_FRAME_AGE_MS)
+
+        // Copying a 640x480 frame can take nontrivial CPU time. Validate
+        // again AFTER the copy before enqueuing either member of the pair.
+        val argb = toArgb(frame)
+        val afterCopyMs = nowMs()
+        if (afterCopyMs < now || afterCopyMs < capturedAtMs ||
+            afterCopyMs - capturedAtMs >
+                VisionSafetyGate.MAX_FRAME_AGE_MS)
+            return reject(Verdict.STALE)
+
+        val previousExpiredDuringCopy = old != null &&
+            afterCopyMs - old.atMs >
+                VisionSafetyGate.MAX_FRAME_AGE_MS
         previous = Previous(argb, capturedAtMs)
         frames++
+        if (wasAlreadyDiscontinuous || previousExpiredDuringCopy) {
+            discontinuities++
+            // Keep only the new, still-fresh frame as pair start. A copied
+            // frame must not be paired with an expired previous frame.
+            lastVerdict = Verdict.DISCONTINUITY
+            return lastVerdict
+        }
         if (old == null) {
             lastVerdict = Verdict.WAITING_PAIR
             return lastVerdict
         }
         val accepted = submit(OpenpilotInferencePipeline.PairSample(
             old.pixels, argb, capturedAtMs))
-        if (accepted) pairs++ else rejected++
+        if (accepted) pairs++ else {
+            rejected++
+            // If the sink rejects this pair, retaining its current frame
+            // would allow a future ONNX pair to cross a failed admission.
+            previous = null
+        }
         lastVerdict = if (accepted) Verdict.SUBMITTED else Verdict.SINK_REJECTED
         return lastVerdict
     }

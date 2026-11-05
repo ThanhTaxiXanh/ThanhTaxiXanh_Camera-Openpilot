@@ -52,9 +52,11 @@ class OpenpilotInferencePipelineTest {
         try {
             assertFalse(p.offer(OpenpilotInferencePipeline.PairSample(
                 IntArray(10),IntArray(10),9000L)))
-            assertTrue(p.offer(OpenpilotInferencePipeline.PairSample(
+            // Expired input is rejected immediately at producer admission,
+            // not counted as an accepted queue item for a worker to drop.
+            assertFalse(p.offer(OpenpilotInferencePipeline.PairSample(
                 IntArray(512*256),IntArray(512*256),1000L)))
-            Thread.sleep(100)
+            assertEquals(0L,p.metrics().received)
             assertEquals(0,engine.calls)
             assertTrue(p.metrics().stale>=1)
         } finally { p.close() }

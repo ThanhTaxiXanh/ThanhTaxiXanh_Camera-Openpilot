@@ -224,3 +224,6 @@ V1.3.22: GPS HUD now respects persisted km/h/m vs mph/ft display units on resume
 
 
 V1.3.23: owner-controlled Android GPS/PiP/settings TTXGPIP01 trace now records permission/provider/current fix presence, PiP request/result vs real onPictureInPictureModeChanged entry/exit callback, Surface validity and persisted HUD options. Bounded privacy-safe text export through SAF; synthetic JVM tests cannot prove live GPS/PiP hardware. #19 still CODED pending independent review, Gate A **7/20 (35%)**, Gate B **0/5**.
+
+
+V1.3.24: Corrected post-ARGB-copy freshness in the A500S RAW temporal bridge: reject now-expired frames, break the pair if only its previous image expired, clear rejected sink state. ONNX producer also rejects stale/future timestamps before queue admission instead of incrementing accepted counts and relying on worker drop. Nine host tests use controlled clocks and synthetic conversion delays; no actual A500S live/approved model evidence. #14 stays CODED. Gate A **7/20 (35%)**, Gate B **0/5**.

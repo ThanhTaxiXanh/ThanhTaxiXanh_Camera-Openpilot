@@ -106,8 +106,16 @@ class OpenpilotInferencePipeline(
         if (frame.previousArgb.size.toLong() != expected ||
             frame.currentArgb.size.toLong() != expected) return false
         val offeredAt = nowMs()
-        if (frame.capturedAtMs < 0L || frame.capturedAtMs > offeredAt)
+        // Fail at the producer boundary, rather than counting an already
+        // expired pair as received and waking a model worker only to drop it.
+        // Both timestamps are local monotonic H264 receipt/worker clocks,
+        // NOT camera exposure timestamps or physical optical latency.
+        if (frame.capturedAtMs < 0L || offeredAt < frame.capturedAtMs ||
+            offeredAt - frame.capturedAtMs >
+                VisionSafetyGate.MAX_FRAME_AGE_MS) {
+            stale.incrementAndGet()
             return false
+        }
         val stamp = QueuedPair(frame, epoch.get(), offeredAt)
         received.incrementAndGet()
         if (latest.getAndSet(stamp) != null) overwritten.incrementAndGet()
