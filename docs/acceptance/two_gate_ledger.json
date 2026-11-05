@@ -10,7 +10,7 @@
     20
   ],
   "source_gate": "docs/PREDEVICE_90_GATE.md",
-  "note": "Engineering PASS is offline readiness, not A500S validation. The field gate has no successes recorded. Any later proof needs independent review.",
+  "note": "Original synthetic ONNX CPU contract test (V1.3.19) is a real execution smoke test, NOT a licensed driving model, external ADAS ground truth or field proof. Gate A and Gate B remain independent.",
   "criteria": [
     {
       "id": 1,
@@ -194,7 +194,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "Import a legally usable actual ONNX graph and demonstrate reproducible output parity"
+        "next_required": "V1.3.19 synthetic original ONNX graph: real CPU execution and independent arithmetic oracle with TTXREF01 available on CI; still requires production-appropriate authorized model, external ground truth and actual Android engine parity to promote #11."
       },
       "field": {
         "status": "NOT_REQUIRED",
