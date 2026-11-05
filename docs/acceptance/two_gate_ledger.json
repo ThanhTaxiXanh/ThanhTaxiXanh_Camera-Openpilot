@@ -238,7 +238,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "Prove full YUV-to-real-ONNX offline pipeline and reset behavior with authorized frames"
+        "next_required": "V1.3.24 closes source-age leak after A500S YUV→ARGB copy, re-seeds temporal pair when previous image expires, and rejects stale pairs in OpenpilotInferencePipeline.offer before queueing. Nine controlled-clock host tests; still need independent 70mai A500S H264→MediaCodec YUV→authorized ONNX uninterrupted integration trace and camera/device proof before #14 Gate A and Gate B PASS."
       },
       "field": {
         "status": "NOT_VERIFIED",
