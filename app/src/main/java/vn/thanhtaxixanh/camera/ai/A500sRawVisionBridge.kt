@@ -1,5 +1,7 @@
 package vn.thanhtaxixanh.camera.ai
 
+import java.util.concurrent.atomic.AtomicLong
+
 /**
  * Non-Android temporal bridge: offscreen A500S YUV frames -> ordered ARGB
  * pairs -> existing single-slot ONNX pipeline. It is a RAW diagnostic path,
@@ -30,7 +32,16 @@ class A500sRawVisionBridge(
         val lastVerdict: Verdict
     )
 
-    private data class Previous(val pixels: IntArray, val atMs: Long)
+    private data class Previous(
+        val pixels: IntArray, val atMs: Long, val sourceEpoch: Long
+    )
+
+    // The RTP/decoder thread can invalidate a GOP while the YUV worker is
+    // copying 640x480 pixels under accept()'s monitor. Never wait for that
+    // conversion on the network/preview thread.
+    private val sourceEpoch = AtomicLong()
+
+    fun signalDiscontinuity(): Long = sourceEpoch.incrementAndGet()
 
     private var previous: Previous? = null
     private var frames = 0L
@@ -54,9 +65,13 @@ class A500sRawVisionBridge(
     @Synchronized fun metrics(): Metrics =
         Metrics(frames, pairs, rejected, discontinuities, lastVerdict)
 
-    @Synchronized fun reset() {
-        previous = null
-        lastVerdict = Verdict.WAITING_PAIR
+    fun reset() {
+        // Invalidate in-flight copies BEFORE waiting for accept()'s lock.
+        signalDiscontinuity()
+        synchronized(this) {
+            previous = null
+            lastVerdict = Verdict.WAITING_PAIR
+        }
     }
 
     /**
@@ -67,6 +82,7 @@ class A500sRawVisionBridge(
         frame: Yuv420FrameConverter.Frame,
         capturedAtMs: Long
     ): Verdict {
+        val attemptEpoch = sourceEpoch.get()
         fun reject(reason: Verdict): Verdict {
             rejected++
             previous = null
@@ -82,13 +98,21 @@ class A500sRawVisionBridge(
             return reject(Verdict.STALE)
         val old = previous
         val wasAlreadyDiscontinuous = old != null &&
-            (capturedAtMs <= old.atMs ||
+            (old.sourceEpoch != attemptEpoch ||
+                capturedAtMs <= old.atMs ||
                 capturedAtMs - old.atMs > MAX_GAP_MS ||
                 now - old.atMs > VisionSafetyGate.MAX_FRAME_AGE_MS)
 
         // Copying a 640x480 frame can take nontrivial CPU time. Validate
         // again AFTER the copy before enqueuing either member of the pair.
         val argb = toArgb(frame)
+        // RTP GOP damage is signalled asynchronously, even while toArgb()
+        // holds this bridge's monitor. Never seed an ONNX pair with a frame
+        // that was being copied across an epoch transition.
+        if (sourceEpoch.get() != attemptEpoch) {
+            discontinuities++
+            return reject(Verdict.DISCONTINUITY)
+        }
         val afterCopyMs = nowMs()
         if (afterCopyMs < now || afterCopyMs < capturedAtMs ||
             afterCopyMs - capturedAtMs >
@@ -98,7 +122,7 @@ class A500sRawVisionBridge(
         val previousExpiredDuringCopy = old != null &&
             afterCopyMs - old.atMs >
                 VisionSafetyGate.MAX_FRAME_AGE_MS
-        previous = Previous(argb, capturedAtMs)
+        previous = Previous(argb, capturedAtMs, attemptEpoch)
         frames++
         if (wasAlreadyDiscontinuous || previousExpiredDuringCopy) {
             discontinuities++
@@ -112,7 +136,15 @@ class A500sRawVisionBridge(
             return lastVerdict
         }
         val accepted = submit(OpenpilotInferencePipeline.PairSample(
-            old.pixels, argb, capturedAtMs))
+            old.pixels, argb, capturedAtMs,
+            isSourceCurrent = { sourceEpoch.get() == attemptEpoch }))
+        // An epoch switch after our pre-submit check must not be reported
+        // as a successfully fed temporal pair. The ONNX worker independently
+        // checks isSourceCurrent before and after inference/publication.
+        if (sourceEpoch.get() != attemptEpoch) {
+            discontinuities++
+            return reject(Verdict.DISCONTINUITY)
+        }
         if (accepted) pairs++ else {
             rejected++
             // If the sink rejects this pair, retaining its current frame

@@ -30,7 +30,10 @@ class OpenpilotInferencePipeline(
     data class PairSample(
         val previousArgb: IntArray,
         val currentArgb: IntArray,
-        val capturedAtMs: Long
+        val capturedAtMs: Long,
+        // Default for Camera2/offline callers. The A500S sidecar attaches
+        // a source-GOP lease, preventing cross-epoch publication.
+        val isSourceCurrent: () -> Boolean = { true }
     )
     data class Outcome(
         val capturedAtMs: Long,
@@ -101,7 +104,7 @@ class OpenpilotInferencePipeline(
      * was already completed by the YUV bridge before this method is called.
      */
     fun offer(frame: PairSample): Boolean {
-        if (closed.get()) return false
+        if (closed.get() || !frame.isSourceCurrent()) return false
         val expected = sourceWidth.toLong() * sourceHeight
         if (frame.previousArgb.size.toLong() != expected ||
             frame.currentArgb.size.toLong() != expected) return false
@@ -119,7 +122,7 @@ class OpenpilotInferencePipeline(
         val stamp = QueuedPair(frame, epoch.get(), offeredAt)
         received.incrementAndGet()
         if (latest.getAndSet(stamp) != null) overwritten.incrementAndGet()
-        if (closed.get() || stamp.epoch != epoch.get()) {
+        if (!validPair(stamp.epoch, stamp.pair)) {
             latest.compareAndSet(stamp, null)
             return false
         }
@@ -130,8 +133,11 @@ class OpenpilotInferencePipeline(
     private fun validEpoch(value: Long): Boolean =
         !closed.get() && epoch.get() == value
 
-    private fun notifyOutcome(outcome: Outcome, stamp: Long) {
-        if (!validEpoch(stamp)) {
+    private fun validPair(epochStamp: Long, pair: PairSample): Boolean =
+        validEpoch(epochStamp) && pair.isSourceCurrent()
+
+    private fun notifyOutcome(outcome: Outcome, stamp: Long, pair: PairSample) {
+        if (!validPair(stamp, pair)) {
             droppedByEpoch.incrementAndGet()
             return
         }
@@ -149,7 +155,7 @@ class OpenpilotInferencePipeline(
                 try {
                     while (!closed.get()) {
                         val entry = latest.getAndSet(null) ?: break
-                        if (!validEpoch(entry.epoch)) {
+                        if (!validPair(entry.epoch, entry.pair)) {
                             droppedByEpoch.incrementAndGet()
                             continue
                         }
@@ -170,7 +176,7 @@ class OpenpilotInferencePipeline(
                                 pair.previousArgb, pair.currentArgb,
                                 sourceWidth, sourceHeight, wideViewWarp)
                             VisionInputContract.requireRawStudioByteTensors(main, wide)
-                            if (!validEpoch(entry.epoch)) {
+                            if (!validPair(entry.epoch, entry.pair)) {
                                 droppedByEpoch.incrementAndGet()
                                 continue
                             }
@@ -183,7 +189,7 @@ class OpenpilotInferencePipeline(
                             }
                             val output = engine.run(main, wide)
                             val modelEnd = nowMs()
-                            if (!validEpoch(entry.epoch)) {
+                            if (!validPair(entry.epoch, entry.pair)) {
                                 droppedByEpoch.incrementAndGet()
                                 continue
                             }
@@ -199,7 +205,7 @@ class OpenpilotInferencePipeline(
                                 modelCompletedMs = modelEnd,
                                 publishedAtMs = completed
                             )
-                            if (!validEpoch(entry.epoch)) {
+                            if (!validPair(entry.epoch, entry.pair)) {
                                 droppedByEpoch.incrementAndGet()
                                 continue
                             }
@@ -220,10 +226,10 @@ class OpenpilotInferencePipeline(
                                 else
                                     "RAW_ONLY: camera calibration and model axes unverified",
                                 timing = timing
-                            ), entry.epoch)
+                            ), entry.epoch, entry.pair)
                         } catch (failure: Exception) {
                             errors.incrementAndGet()
-                            if (!validEpoch(entry.epoch)) {
+                            if (!validPair(entry.epoch, entry.pair)) {
                                 droppedByEpoch.incrementAndGet()
                                 continue
                             }
@@ -239,7 +245,7 @@ class OpenpilotInferencePipeline(
                                 failureAt - start, null, emptyList(),
                                 "Inference error: " + failure.javaClass.simpleName +
                                     ": " + (failure.message ?: "").take(120)
-                            ), entry.epoch)
+                            ), entry.epoch, entry.pair)
                         }
                     }
                 } finally {

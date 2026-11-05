@@ -971,6 +971,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 // the previous temporal frame, even if the gap is <850 ms.
                 if (directCallbackEpoch.isCurrent(callbackLease) &&
                     token == generation) {
+                    // Nonblocking atomic fence: invalidate a YUV→ARGB copy
+                    // already running on the offscreen worker, not merely the
+                    // next frame after this callback returns.
+                    rawBridge?.signalDiscontinuity()
                     rawPairResetPending.set(true)
                     liveYuvCapture.cancel()
                     // Nonblocking: an in-flight ONNX result from the damaged
