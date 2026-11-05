@@ -194,3 +194,6 @@ V1.3.12: a canonical TTXONNX-AUDIT-01 text-only receipt binds installed model SH
 
 
 V1.3.13: monotonic GPS fix-age gate replaces callback-receipt age, rejects cached/invalid/low-accuracy fixes and invalidates speed when provider or newest fix is unreliable. PiP entering false now clears transition state. Eleven pure-JVM tests do not prove Android GNSS/PiP runtime or meet criterion #19. Mandatory #14-17/#20 lack real A500S and model/geometry evidence. **7/20 = 35% PASS CI**.
+
+
+V1.3.14: per-Direct player callback leases filter late YUV/ONNX/status/SAF callbacks across internal reconnects. Seven synthetic JVM tests. No hardware evidence, #14–17/#20 not PASS. **7/20=35%**.

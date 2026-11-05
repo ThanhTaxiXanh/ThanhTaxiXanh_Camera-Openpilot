@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.13-gps-freshness-pip (Lite / AI flavors)  
+**Version**: 1.3.14-direct-epoch-fence (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -590,3 +590,13 @@ describes PiP as an experiment rather than an unimplemented feature.
 11 pure JVM regression tests validate the GPS gate. Device GPS, Android
 PiP lifecycle and actual 70mai video remain unverified. Criterion #19 is
 not promoted solely from synthetic tests. Engineering gate 7/20=35%.
+
+
+## V1.3.14 – Direct RTSP callback epoch isolation
+
+Every Direct player now has a separate atomic callback lease. Automatic
+reconnect revokes old leases before native decoder teardown, and the owner
+checks the lease for YUV/ONNX, status, discontinuity and delayed SAF callbacks.
+Activity generation previously remained unchanged across internal reconnects.
+Seven JVM tests include 20,000 session changes; hardware/model parity is
+not claimed and the engineering gate remains **7/20=35%**.
