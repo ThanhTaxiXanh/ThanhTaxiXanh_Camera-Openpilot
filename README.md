@@ -1,10 +1,16 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.29-rtcp-epoch-report (Lite / AI flavors)  
+**Version**: 1.3.30-raw-gop-epoch-fence (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
+
+V1.3.30 applies a nonblocking source-GOP epoch fence to RAW A500S
+YUV→ARGB copies, temporal pairs and in-flight ONNX inference. Delayed
+results from a revoked GOP are suppressed. Synthetic JVM concurrency tests
+only; see docs/RAW_GOP_ONNX_EPOCH_FENCE_V1330.md.
+
 
 V1.3.29 corrects RTP source-epoch accounting and RFC 3550 RTCP Receiver
 Report intervals (including signed cumulative loss, late packets and SSRC 0).
