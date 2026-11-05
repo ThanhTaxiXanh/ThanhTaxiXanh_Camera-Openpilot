@@ -213,8 +213,14 @@ class DirectRtspPlayer(
         } catch (_: Exception) { null to null }
     }
     private fun createDecoder(sdp: String) {
-        val fmt = MediaFormat.createVideoFormat("video/avc",1280,720)
         val pair = spsPps(sdp)
+        val dimensions = H264SpsDimensions.configuredSize(pair.first)
+        val fmt = MediaFormat.createVideoFormat(
+            "video/avc", dimensions.width, dimensions.height)
+        status("MediaCodec A500S SPS size=" + dimensions.width +
+            "x" + dimensions.height +
+            if (H264SpsDimensions.parse(pair.first) == null)
+                " (640x480 fallback; SPS missing or invalid)" else " (from SPS)")
         // Secondary decoder is lazy: native resources are allocated only
         // after an explicit user opt-in AND the next H264 IDR frame.
         yuvSidecar = onDecodedYuv?.let { frameConsumer ->
