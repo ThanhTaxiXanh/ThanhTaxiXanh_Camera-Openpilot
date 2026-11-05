@@ -109,6 +109,7 @@ class DirectRtspPlayer(
     private val discardedAccessUnits = AtomicLong()
     private val rtcpSent = AtomicLong()
     private val rtcpReporterSsrc = SecureRandom().nextInt()
+    private val rtcpTracker = RtcpReceiverReport.Tracker()
     @Volatile private var activeTransportName = "RTSP TCP"
     @Volatile private var lastNetworkFailure = ""
     private val explicitlyClosed = AtomicBoolean(false)
@@ -702,14 +703,17 @@ class DirectRtspPlayer(
                 // guarantee that the camera will increase its frame rate.
                 if (now >= nextRtcpAt) {
                     nextRtcpAt = now + 5000L
-                    val feedback = RtcpReceiverReport.compound(
+                    val report = rtcpTracker.prepare(
                         rtcpReporterSsrc, rtpDiagnostics.snapshot())
-                    if (feedback.isNotEmpty()) {
+                    if (report != null && report.bytes.isNotEmpty()) {
                         try {
+                            val feedback = report.bytes
                             if (useUdp && serverRtcpPort != null) {
-                                udpPorts?.rtcp?.send(DatagramPacket(
-                                    feedback, feedback.size,
+                                val rtcp = udpPorts?.rtcp
+                                    ?: error("RTCP UDP port unavailable")
+                                rtcp.send(DatagramPacket(feedback, feedback.size,
                                     InetAddress.getByName(host), serverRtcpPort))
+                                rtcpTracker.markSent(report)
                                 rtcpSent.incrementAndGet()
                             } else if (!useUdp && rtcpChannel in 0..255) {
                                 val header = byteArrayOf(0x24, rtcpChannel.toByte(),
@@ -717,6 +721,7 @@ class DirectRtspPlayer(
                                 dst.write(header)
                                 dst.write(feedback)
                                 dst.flush()
+                                rtcpTracker.markSent(report)
                                 rtcpSent.incrementAndGet()
                             }
                         } catch (e: Exception) {
