@@ -64,6 +64,8 @@ class FiveMinuteStreamEvidence(
     private var yuvFinalCount: Long? = null
     private var maxSidecarResets = 0L
     private var maxSidecarErrors = 0L
+    private var baselineSidecarResets: Long? = null
+    private var baselineSidecarErrors: Long? = null
     private var lastRawPairs: Long? = null
     private var lastOnnxResults: Long? = null
     private var reconnectCount = 0
@@ -200,9 +202,18 @@ class FiveMinuteStreamEvidence(
             } else if (input.sidecarResets < 0L || input.sidecarErrors < 0L) {
                 problem("INVALID_YUV_SIDECAR_METRICS")
             } else {
-                maxSidecarResets = maxOf(maxSidecarResets, input.sidecarResets)
-                maxSidecarErrors = maxOf(maxSidecarErrors, input.sidecarErrors)
-                if (input.sidecarErrors > 0L) problem("YUV_DECODER_ERRORS")
+                if (baselineSidecarResets == null)
+                    baselineSidecarResets = input.sidecarResets
+                if (baselineSidecarErrors == null)
+                    baselineSidecarErrors = input.sidecarErrors
+                if (input.sidecarResets > maxSidecarResets)
+                    maxSidecarResets = input.sidecarResets
+                if (input.sidecarErrors > maxSidecarErrors)
+                    maxSidecarErrors = input.sidecarErrors
+                if (input.sidecarResets > baselineSidecarResets!!)
+                    problem("YUV_DECODER_RESET_OBSERVED")
+                if (input.sidecarErrors > baselineSidecarErrors!!)
+                    problem("YUV_DECODER_ERRORS")
             }
             // Optional diagnostic inference counts cannot prove that a
             // genuine licensed/ground-truth ONNX graph ran successfully.
@@ -267,12 +278,14 @@ class FiveMinuteStreamEvidence(
                 if (requireRawYuv && yuvStartCount != null && yuvFinalCount != null)
                     (yuvFinalCount!!-yuvStartCount!!).coerceAtLeast(0L).toString()
                 else "NOT_MEASURED").append('\n')
-            append("sidecar_resets_observed=").append(
-                if (requireRawYuv) maxSidecarResets.toString() else "NOT_MEASURED")
-                .append('\n')
-            append("sidecar_errors_observed=").append(
-                if (requireRawYuv) maxSidecarErrors.toString() else "NOT_MEASURED")
-                .append('\n')
+            append("sidecar_reset_delta=").append(
+                if (requireRawYuv && baselineSidecarResets != null)
+                    (maxSidecarResets-baselineSidecarResets!!).coerceAtLeast(0L).toString()
+                else "NOT_MEASURED").append('\n')
+            append("sidecar_error_delta=").append(
+                if (requireRawYuv && baselineSidecarErrors != null)
+                    (maxSidecarErrors-baselineSidecarErrors!!).coerceAtLeast(0L).toString()
+                else "NOT_MEASURED").append('\n')
             append("last_raw_pairs=").append(
                 if (requireRawYuv) lastRawPairs?.toString() ?: "NA" else "NOT_MEASURED")
                 .append('\n')
