@@ -465,6 +465,18 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
                     "Camera2 cropped YUV must match 640x480 model contract"
                 }
                 val argb=Yuv420FrameConverter.argb(snapshot)
+                // Camera2 sensor age must still be valid AFTER CPU copying
+                // native YUV planes and converting the 640x480 ARGB image.
+                // A once-fresh ImageReader callback can expire mid-copy.
+                val afterCopyNs=SystemClock.elapsedRealtimeNanos()
+                if (afterCopyNs < image.timestamp ||
+                    afterCopyNs-image.timestamp >
+                        VisionSafetyGate.MAX_FRAME_AGE_MS * 1_000_000L) {
+                    previousVisionFrame=null
+                    previousVisionCaptureMs=0L
+                    current.invalidate()
+                    return
+                }
                 if (!cameraLease.owns(lease) || vision !== current) return
                 val prev=previousVisionFrame
                 val previousAt=previousVisionCaptureMs
