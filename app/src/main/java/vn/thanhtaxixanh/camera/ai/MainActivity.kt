@@ -388,8 +388,15 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             if (prefs.getBoolean(AdasPrefs.HIDE_STATUS_BAR, false))
                 android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
             else 0
-        if (::adasHud.isInitialized)
-            adasHud.hudVisible = prefs.getBoolean(AdasPrefs.SHOW_LOGO, true)
+        if (::adasHud.isInitialized) {
+            // Logo preference is NOT a global HUD-off switch: users must
+            // retain GPS speed when they hide the TTX research label.
+            adasHud.showBrandLabel = prefs.getBoolean(AdasPrefs.SHOW_LOGO, true)
+            adasHud.speedUnit = HudDisplayFormat.UnitMode.fromPreference(
+                prefs.getString(AdasPrefs.SPEED_UNIT, "km/h · m"))
+            adasHud.roundLeadDistance = prefs.getBoolean(
+                AdasPrefs.ROUND_DISTANCE, false)
+        }
     }
 
     private fun toggleGps() {
