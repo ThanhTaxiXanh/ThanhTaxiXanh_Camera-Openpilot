@@ -1,10 +1,20 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.34-a500s-dual-yuv-trace (Lite / AI flavors)  
+**Version**: 1.3.35-persistent-direct-preview (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
+
+V1.3.35 fixes a video visibility defect shown in the owner's actual
+A500S phone recording: the Direct Surface received video frame callbacks
+but its FrameLayout had height=0/weight=1 alongside many fixed-height
+controls, leaving no visible preview. Both Direct MediaCodec and IJK video
+now occupy a persistent 4:3 top viewport; diagnostics and buttons scroll
+independently underneath. PiP enlarges the frame to the window and restores
+its normal size on exit. See docs/DIRECT_PREVIEW_LAYOUT_FIELD_DEFECT_V1335.md.
+No pixel-data or decoder fix is claimed, no new criterion PASS.
+
 
 V1.3.34: owner-triggered TTXLIVE01 5-minute trace now records independent
 Direct preview Surface-release and A500S offscreen MediaCodec YUV callback

@@ -28,12 +28,14 @@ jobs:
         run: |
           python3 tools/verify_two_gate.py
           python3 -m unittest discover -s tools -p 'test_two_gate.py' -v
+      - name: Guard persistent camera viewport on compact screens
+        run: python3 -m unittest discover -s tools -p 'test_preview_viewport.py' -v
       - name: Guard against black SurfaceView
         run: |
           python3 - <<'PY'
           from pathlib import Path
           src=Path("app/src/main/java/vn/thanhtaxixanh/camera/ai/MainActivity.kt").read_text()
-          view=src.split("surfaceView = SurfaceView(this).apply",1)[1].split("val videoContainer = FrameLayout",1)[0]
+          view=src.split("surfaceView = SurfaceView(this).apply",1)[1].split("cameraVideoContainer = FrameLayout(this)",1)[0]
           assert "setBackgroundColor(Color.BLACK)" not in view
           assert "background = null" in view
           assert "holder.setFormat(PixelFormat.OPAQUE)" in view

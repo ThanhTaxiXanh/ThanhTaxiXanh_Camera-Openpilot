@@ -342,3 +342,17 @@ A500S TTXLIVE01, 4-frame TTXYUV01 and preview footage. No optical clock
 or legally trained driving model is added; #14 and #20 remain NOT PASS.
 Gate A **8/20 (40%)** (includes independently reviewed phone Camera2 #8),
 Gate B **0/5**.
+
+
+V1.3.35 root-cause UI repair from owner 124.9s A500S screen recording:
+RTP/Surface frame counters around 29 FPS did not imply visible live video.
+MainActivity placed SurfaceView in height=0 weight=1 alongside many
+fixed-height diagnostic buttons; on a compact Android phone the viewport
+collapsed, with only a tiny strip of image visible when scrolling to top.
+The FrameLayout now has a nonzero 4:3 responsive height, pinned above a
+separate scrolling control/diagnostics panel. PiP retains/reclaims screen
+height. Seven host geometry tests and three static source-layout audits
+are CI-checked, not hardware acceptance. The real A500S must be retested
+with YUV off first to isolate video visibility from the independent
+YUV offscreen MediaCodec input-queue issue seen in the same recording.
+Gate A **8/20 (40%)**, Gate B **0/5**, #3/#14/#20 remain unverified.
