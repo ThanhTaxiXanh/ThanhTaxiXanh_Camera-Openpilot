@@ -227,3 +227,6 @@ V1.3.23: owner-controlled Android GPS/PiP/settings TTXGPIP01 trace now records p
 
 
 V1.3.24: Corrected post-ARGB-copy freshness in the A500S RAW temporal bridge: reject now-expired frames, break the pair if only its previous image expired, clear rejected sink state. ONNX producer also rejects stale/future timestamps before queue admission instead of incrementing accepted counts and relying on worker drop. Nine host tests use controlled clocks and synthetic conversion delays; no actual A500S live/approved model evidence. #14 stays CODED. Gate A **7/20 (35%)**, Gate B **0/5**.
+
+
+V1.3.25: Offline YUV activity now exports canonical 3,152,072-byte TTXREF01 from owner-selected TTXYUV01 + actual Android AI ONNX inference, model SHA-bound and exact to current dual warp/temporal packer. Independent CPU ONNX verifier checks graph contract, hashes and output parity; CI rejects tampered reference hash/output. Device-generated outputs are not independent ADAS ground truth; real A500S continuity, legal model, geometry and latency remain unproven. #11/#14/#16 still NOT PASS. Gate A **7/20 (35%)**, Gate B **0/5**.
