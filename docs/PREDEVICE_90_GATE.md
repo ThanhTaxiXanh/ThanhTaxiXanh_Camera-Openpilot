@@ -233,3 +233,12 @@ V1.3.25: Offline YUV activity now exports canonical 3,152,072-byte TTXREF01 from
 
 
 V1.3.26: The Direct Surface and YUV sidecar MediaCodec decoders previously initialized at hardcoded 1280x720 despite observed A500S 640x480. Both now use bounded SDP H264 SPS-derived dimensions including valid AVC cropping, with logged 640x480 fallback. Eleven JVM tests cover baseline/high, interlace, crop and invalid SPS. The actual phone's decoder allocation and physical camera-to-glass timing have NOT been checked; #3/#14/#20 remain CODED. Gate A **7/20 (35%)**, Gate B **0/5**.
+
+
+V1.3.27: RTSP SDP parsing now restricts H.264 SPS/PPS to the selected
+video section and matching H264 RTP payload type, with bounded base64,
+NAL and SPS dimension validation and six offline unit tests. This
+prevents mismatched codec CSD from another SDP track, but **does not**
+prove native A500S decoding, uninterrupted YUV, licensed model output,
+calibrated lead geometry or optical latency. #3/#14/#20 remain CODED;
+Gate A **7/20 (35%)**, Gate B **0/5**.
