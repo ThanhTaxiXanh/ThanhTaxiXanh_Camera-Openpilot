@@ -321,7 +321,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "Construct deterministic 5-minute stability harness, metric log and optical timing protocol"
+        "next_required": "V1.3.21 added owner-triggered 300s TTXLIVE01 local stream trace with bounded heartbeat, frame progress, reconnect/freeze and SAF export; still must obtain real A500S 5min recording and independently measured optical scene-to-screen delay near 1s before criterion #20 or field gate is PASS."
       },
       "field": {
         "status": "NOT_VERIFIED",

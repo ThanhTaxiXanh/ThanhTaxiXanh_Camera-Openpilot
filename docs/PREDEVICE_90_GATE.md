@@ -215,3 +215,6 @@ V1.3.19: CI generates an original synthetic, arithmetic-only ONNX graph with exa
 
 
 V1.3.20: Phone Camera2 RAW ONNX uses genuine Image.timestamp only when SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME shares elapsedRealtimeNanos. Unknown, stale (>550ms), duplicate and impossible sensor timestamps are excluded; invalid frames break inference pairing, while camera preview remains independent. Ten JVM regression tests do not prove Camera2 hardware. #8 stays CODED, Gate A **7/20 (35%)**, Gate B **0/5**.
+
+
+V1.3.21: owner can explicitly start and SAF-export bounded TTXLIVE01 five-minute local preview progress traces for Direct/IJK. Sampling records counter/FPS, time gaps, freezes, reconnects and interruptions; reports ALWAYS mark exposure-to-glass latency NOT_MEASURED and field #20 NOT_VERIFIED until an independent optical camera+screen recording exists. Eleven pure JVM tests are synthetic only. Gate A **7/20 (35%)**; Gate B **0/5**.

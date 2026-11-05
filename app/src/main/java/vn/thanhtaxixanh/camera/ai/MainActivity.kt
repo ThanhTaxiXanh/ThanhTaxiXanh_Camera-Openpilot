@@ -66,6 +66,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private val liveYuvCapture = LiveYuvEvidenceCapture(4)
     private var pendingYuvEvidence: OfflineYuvFixture.Sequence? = null
     private val saveYuvRequestCode = 734
+    private lateinit var liveTraceButton: Button
+    private var activeLiveTrace: FiveMinuteStreamEvidence? = null
+    private var pendingLiveTrace: String? = null
+    private val saveLiveTraceRequestCode = 735
     @Volatile private var rawVision: OpenpilotInferencePipeline? = null
     @Volatile private var rawBridge: A500sRawVisionBridge? = null
     @Volatile private var rawVisionRequested = false
@@ -274,6 +278,52 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             }
         }
         root.addView(yuvCaptureButton)
+
+        liveTraceButton = Button(this).apply {
+            text = "THU BIÊN BẢN VIDEO 5 PHÚT"
+            textSize = 11f
+            setOnClickListener {
+                val audit = activeLiveTrace
+                if (audit?.isActive() == true) {
+                    audit.stop(SystemClock.elapsedRealtime(), "OWNER_STOP")
+                    pendingLiveTrace = audit.report()
+                    activeLiveTrace = null
+                    text = "XUẤT BIÊN BẢN TTXLIVE01"
+                    showStatus("Đã dừng thu. Có thể xuất biên bản, nhưng chưa xác minh trễ cảnh thực.")
+                } else if (pendingLiveTrace != null) {
+                    try {
+                        startActivityForResult(
+                            Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TITLE, "TTX_A500S_5min_local_trace.txt")
+                            }, saveLiveTraceRequestCode
+                        )
+                    } catch (error: Exception) {
+                        showStatus("Không mở được chọn nơi lưu: " +
+                            error.javaClass.simpleName)
+                    }
+                } else {
+                    val selected = when (backend) {
+                        Backend.DIRECT -> FiveMinuteStreamEvidence.Backend.DIRECT
+                        Backend.IJK -> FiveMinuteStreamEvidence.Backend.IJK
+                        null -> null
+                    }
+                    if (selected == null || (backend == Backend.DIRECT && direct == null) ||
+                        (backend == Backend.IJK && ijk == null)) {
+                        showStatus("Hãy phát video Direct hoặc IJK trước khi thu 5 phút.")
+                    } else {
+                        val newAudit = FiveMinuteStreamEvidence()
+                        newAudit.start(selected, SystemClock.elapsedRealtime())
+                        activeLiveTrace = newAudit
+                        text = "ĐANG THU 5 PHÚT · BẤM ĐỂ DỪNG"
+                        showStatus("Đang ghi tiến độ video mỗi giây. " +
+                            "Chưa đo độ trễ cảnh thực; cần quay đồng thời cảnh và màn hình.")
+                    }
+                }
+            }
+        }
+        root.addView(liveTraceButton)
 
         root.addView(Button(this).apply {
             text = "PiP · CỬA SỔ VIDEO NHỎ"
@@ -607,6 +657,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private fun recoverIjk(token: Int, reason: String) {
         if (token != generation || backend != Backend.IJK || ijkRecoveryPending) return
         ijkRecoveryPending = true
+        activeLiveTrace?.reconnect(SystemClock.elapsedRealtime())
         ijkLastStopCause = reason.take(140)
         val now = SystemClock.elapsedRealtime()
         if (ijkFirstVideoAtMs > 0L && now - ijkFirstVideoAtMs >= 15_000L)
@@ -873,6 +924,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             return
         }
         directRecoveryPending = true
+        activeLiveTrace?.reconnect(SystemClock.elapsedRealtime())
         directCallbackEpoch.revoke()
         liveYuvCapture.cancel()
         if (::yuvCaptureButton.isInitialized)
@@ -1098,6 +1150,40 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     detailView.text = "Chỉ gồm hai bộ phát: IJKPlayer và Direct MediaCodec."
                 }
             }
+            val audit = activeLiveTrace
+            if (audit?.isActive() == true) {
+                val clock = SystemClock.elapsedRealtime()
+                val item = when (backend) {
+                    Backend.DIRECT -> direct?.counters()?.let { counters ->
+                        FiveMinuteStreamEvidence.Sample(
+                            clock, FiveMinuteStreamEvidence.Backend.DIRECT,
+                            releasedFrames = counters.rendered,
+                            reconnecting = directRecoveryPending)
+                    }
+                    Backend.IJK -> ijk?.let { player ->
+                        var fps: Float? = null
+                        var playing = false
+                        try {
+                            fps = player.videoOutputFramesPerSecond
+                            playing = player.isPlaying
+                        } catch (_: Throwable) {}
+                        FiveMinuteStreamEvidence.Sample(
+                            clock, FiveMinuteStreamEvidence.Backend.IJK,
+                            ijkOutputFps = fps, ijkPlaying = playing,
+                            reconnecting = ijkRecoveryPending)
+                    }
+                    null -> null
+                }
+                if (item == null) audit.stop(clock, "PLAYER_UNAVAILABLE")
+                else audit.sample(item)
+                if (!audit.isActive()) {
+                    pendingLiveTrace = audit.report()
+                    activeLiveTrace = null
+                    liveTraceButton.text = "XUẤT BIÊN BẢN TTXLIVE01"
+                    showStatus("Biên bản TTXLIVE01 đã sẵn sàng. " +
+                        "Hãy xuất tệp; không có phép đo độ trễ quang học.")
+                }
+            }
             ui.postDelayed(this, 1000L)
         }
     }
@@ -1105,6 +1191,37 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     @Deprecated("Android Storage Access Framework result callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == saveLiveTraceRequestCode) {
+            val report = pendingLiveTrace
+            if (resultCode != RESULT_OK || data?.data == null || report == null) {
+                showStatus("Chưa lưu TTXLIVE01; có thể bấm Xuất để chọn lại.")
+                return
+            }
+            val uri = data.data ?: return
+            Thread({
+                val failure = try {
+                    val stream = contentResolver.openOutputStream(uri, "w")
+                        ?: error("Không mở được tệp xuất")
+                    stream.use { it.write(report.toByteArray(Charsets.UTF_8)) }
+                    null
+                } catch (error: Exception) {
+                    error.message ?: error.javaClass.simpleName
+                }
+                runOnUiThread {
+                    if (!isDestroyed) {
+                        if (failure == null) {
+                            if (pendingLiveTrace === report) {
+                                pendingLiveTrace = null
+                                liveTraceButton.text = "THU BIÊN BẢN VIDEO 5 PHÚT"
+                            }
+                            showStatus("Đã lưu TTXLIVE01. Chỉ là dấu vết cục bộ; " +
+                                "vẫn cần phép đo cảnh thực→màn hình.")
+                        } else showStatus("Không lưu được TTXLIVE01: " + failure)
+                    }
+                }
+            }, "TTX-Live-Trace-Writer").start()
+            return
+        }
         if (requestCode != saveYuvRequestCode) return
         val sample = pendingYuvEvidence
         pendingYuvEvidence = null
@@ -1134,6 +1251,15 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun stopPlayback() {
+        activeLiveTrace?.let { trace ->
+            if (trace.isActive()) {
+                trace.stop(SystemClock.elapsedRealtime(), "PLAYBACK_STOPPED")
+                pendingLiveTrace = trace.report()
+                if (::liveTraceButton.isInitialized)
+                    liveTraceButton.text = "XUẤT BIÊN BẢN TTXLIVE01"
+            }
+            activeLiveTrace = null
+        }
         directCallbackEpoch.revoke()
         directRecoveryPending = false
         directReconnectBudget.reset()
