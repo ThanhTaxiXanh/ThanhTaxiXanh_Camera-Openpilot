@@ -466,9 +466,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             isFillViewport = false
             isVerticalScrollBarEnabled = true
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
-            addView(root, ScrollView.LayoutParams(
-                ScrollView.LayoutParams.MATCH_PARENT,
-                ScrollView.LayoutParams.WRAP_CONTENT))
+            addView(root, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT))
         }
         outer.addView(cameraControlsScroll, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
