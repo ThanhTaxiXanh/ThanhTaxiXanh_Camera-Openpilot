@@ -9,8 +9,8 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 73
-        versionName = "1.3.33-camera2-multilens-yuv"
+        versionCode = 74
+        versionName = "1.3.34-a500s-dual-yuv-trace"
         ndk {
             // Modern A500S Android test device: one CPU architecture only.
             abiFilters += "arm64-v8a"
