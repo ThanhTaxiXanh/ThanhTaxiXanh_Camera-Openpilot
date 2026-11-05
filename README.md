@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.25-device-cpu-parity (Lite / AI flavors)  
+**Version**: 1.3.26-sps-codec-size (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
@@ -757,3 +757,19 @@ may expose private scene information and must not be uploaded publicly.
 See docs/ANDROID_YUV_ONNX_CPU_PARITY_V1325.md. Runtime parity is not
 independent ADAS ground truth or camera calibration.
 Gate A **7/20 (35%)**, Gate B **0/5**.
+
+
+## V1.3.26 — Fix incorrect 1280×720 A500S decoder initialization
+
+The Direct Surface MediaCodec and optional offscreen YUV MediaCodec now
+read the H264 picture size from SPS in the camera's RTSP SDP. The previous
+hardcoded 1280×720 configuration mismatched the known 640×480 A500S
+stream. A bounded pure-Kotlin parser handles H264 baseline/high profile,
+chroma-dependent crop, interlaced size and invalid/truncated NALs.
+Both decoders use the same parsed dimensions, with explicit 640×480
+fallback when SDP SPS is unavailable or malformed. Eleven deterministic
+JVM regressions cover SPS parsing and failure cases.
+
+See docs/H264_SPS_CODEC_DIMENSIONS_V1326.md. A configuration correction
+is not measured A500S latency improvement or physical camera proof.
+Gate A 7/20 (35%), Gate B 0/5.
