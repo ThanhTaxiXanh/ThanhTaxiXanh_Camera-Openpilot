@@ -51,6 +51,10 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
     private val cameraLease = PhoneCameraSessionLease()
     private val modelLease = PhoneCameraSessionLease()
     private val yuvLock = Any()
+    private val sensorFrameGate = Camera2SensorFrameGate()
+    private val rejectedCameraTimestamps = AtomicLong(0L)
+    // Camera2 timestamp source REALTIME alone is compatible with boot clock.
+    @Volatile private var realtimeSensorClock = false
     @Volatile private var inForeground = false
     private var activeCameraToken = 0L
 
@@ -124,6 +128,12 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
         if (!inForeground || !started || camera==null || session==null ||
             !cameraLease.owns(cameraToken)) {
             status.text="Cần mở Camera2 preview hợp lệ trước khi bật RAW ONNX."
+            return
+        }
+        if (!realtimeSensorClock) {
+            status.text="Camera2 không có timestamp cảm biến REALTIME; " +
+                "không bật RAW ONNX vì không thể xác minh tuổi ảnh. " +
+                "Preview vẫn hoạt động."
             return
         }
         val model=File(filesDir,"models/vision.onnx")
@@ -218,7 +228,25 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
         synchronized(yuvLock) {
             if (!cameraLease.owns(lease)) return
             val current=vision ?: return
-            val now=SystemClock.elapsedRealtime()
+            val nowNs=SystemClock.elapsedRealtimeNanos()
+            val clock = sensorFrameGate.inspect(
+                image.timestamp, nowNs, realtimeSensorClock)
+            if (!clock.accepted) {
+                val count=rejectedCameraTimestamps.incrementAndGet()
+                if (previousVisionFrame!=null) current.invalidate()
+                previousVisionFrame=null
+                previousVisionCaptureMs=0L
+                lastVisionCaptureMs=0L
+                if (count==1L) runOnUiThread {
+                    if (cameraLease.owns(lease) && vision === current &&
+                        inForeground) status.text=
+                            "Đã loại YUV Camera2: "+clock.verdict+
+                            " · dùng thời điểm cảm biến, không dùng giờ callback."
+                }
+                return
+            }
+            val captureAtMs=clock.captureElapsedMs ?: return
+            val now=nowNs/1_000_000L
             if (now-lastVisionCaptureMs<350L) return
             lastVisionCaptureMs=now
             try {
@@ -231,12 +259,13 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
                 val prev=previousVisionFrame
                 val previousAt=previousVisionCaptureMs
                 previousVisionFrame=argb
-                previousVisionCaptureMs=now
+                previousVisionCaptureMs=captureAtMs
                 if (prev!=null) {
                     if (previousAt>0L &&
-                        now-previousAt in 1L..A500sRawVisionBridge.MAX_GAP_MS) {
+                        captureAtMs-previousAt in 1L..A500sRawVisionBridge.MAX_GAP_MS) {
                         if (cameraLease.owns(lease) && vision === current)
-                            current.offer(OpenpilotInferencePipeline.PairSample(prev,argb,now))
+                            current.offer(OpenpilotInferencePipeline.PairSample(
+                                prev,argb,captureAtMs))
                     } else {
                         current.invalidate()
                     }
@@ -291,6 +320,9 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
                     "không mở stream AI với kích thước tự đoán."
                 return
             }
+            realtimeSensorClock=manager.getCameraCharacteristics(id).get(
+                CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE)==
+                CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
 
             started=true
             val lease=cameraLease.begin()
@@ -371,7 +403,11 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
                                     }
                                     value.setRepeatingRequest(request.build(),null,handler)
                                     status.text="Camera2 preview + YUV420 đang hoạt động. " +
-                                        "AI cần model hợp lệ và kiểm chứng thực tế."
+                                        (if (realtimeSensorClock)
+                                            "Timestamp cảm biến REALTIME; " +
+                                                "RAW ONNX chỉ là chẩn đoán."
+                                        else "Timestamp cảm biến UNKNOWN; " +
+                                            "đã khóa RAW ONNX để tránh tuổi ảnh giả.")
                                 } catch (error:Exception) {
                                     closeCamera()
                                     status.text="Camera2: "+error.javaClass.simpleName
@@ -410,10 +446,13 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
             aiButton.text="AI: TẮT · CHẨN ĐOÁN TENSOR"
         }
         synchronized(yuvLock) {
+            sensorFrameGate.reset()
             previousVisionFrame=null
             previousVisionCaptureMs=0L
             lastVisionCaptureMs=0L
         }
+        realtimeSensorClock=false
+        rejectedCameraTimestamps.set(0L)
 
         try { session?.close() } catch (_:Exception) {}
         session=null
