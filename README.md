@@ -11,7 +11,8 @@ V1.3.33 selects the Camera2 phone lens by its advertised physical
 camera ID. Rear lenses remain preferred; a viable front/other camera
 can be used if no suitable rear exists. REALTIME clocks are preferred
 within the same lens category; UNKNOWN continues to fail closed for RAW
-ONNX. Ten pure JVM tests cover this policy; physical review is pending.
+ONNX. Ten pure JVM tests cover this policy; a real owner Android Camera2
+trial has now been independently reviewed for criterion #8.
 See docs/PHONE_CAMERA2_MULTILENS_V1333.md.
 
 
@@ -53,7 +54,10 @@ not forwarded to MediaCodec. See docs/RTSP_SDP_H264_CSD_V1327.md.
 This is protocol hardening, NOT camera/AI or optical-latency acceptance.
 
 
-- **Gate A engineering readiness:** 7/20 (35%); target >=18/20.
+- **Gate A engineering readiness:** 8/20 (40%); target >=18/20.
+  Criterion #8 is independently evidenced by the owner's Android Camera2
+  session/video and checksum-verified 640x480 YUV samples; see
+  docs/acceptance/PHONE_CAMERA2_REAL_DEVICE_REVIEW_20261105.md.
 - **Gate B real camera/model/metric validation:** 0/5 mandatory
   requirements (#14, #15, #16, #17, #20).
 - **Final acceptance 90% requires BOTH A>=18/20 AND B=5/5.**

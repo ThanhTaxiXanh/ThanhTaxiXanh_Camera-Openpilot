@@ -1,6 +1,6 @@
 # TTX Camera AI — twenty-item historical acceptance register
 
-Updated: 2026-11-05. V1.3.17 introduces **two independent acceptance gates** defined by docs/TWO_GATE_ACCEPTANCE.md and accounted by docs/acceptance/two_gate_ledger.json. The history below retains the original 20-item statuses and previous implementation notes. Gate A is engineering-readiness 7/20 (35%); Gate B is mandatory real-device/independent verification 0/5. **Final 90% requires BOTH Gate A >=18/20 and Gate B 5/5.** Neither a new version nor GitHub Actions green promotes real-world criteria.
+Updated: 2026-11-05. V1.3.17 introduces **two independent acceptance gates** defined by docs/TWO_GATE_ACCEPTANCE.md and accounted by docs/acceptance/two_gate_ledger.json. The history below retains the original 20-item statuses and previous implementation notes. Gate A is engineering-readiness 8/20 (40%) after independent review of real phone Camera2 evidence for #8; Gate B is mandatory A500S/ADAS field verification 0/5. **Final 90% requires BOTH Gate A >=18/20 and Gate B 5/5.** Neither a new version nor GitHub Actions green promotes real-world criteria.
 
 ## Historical twenty-item engineering register
 
@@ -15,7 +15,7 @@ Twenty criteria must be independently implemented and demonstrated with unit or 
 | 5 | RTP/RTCP, loss and jitter diagnostics | PASS CI |
 | 6 | Real 70mai/Vietmap/AZCAM vendor adapter parity | NOT READY |
 | 7 | USB/UVC live video adapter | NOT READY |
-| 8 | Phone Camera2 preview plus YUV420 source | CODED; hardware unverified |
+| 8 | Phone Camera2 preview plus YUV420 source | **PASS**; reviewed owner Android 60.12s Camera2 trace, four SHA-256-valid YUV 640x480 frames and changing screen preview; see docs/acceptance/PHONE_CAMERA2_REAL_DEVICE_REVIEW_20261105.md |
 | 9 | Stride-aware YUV420 frame converter | PASS CI |
 | 10 | Temporal 12-channel YUV preprocessing and virtual warp | PASS CI; camera warp unverified |
 | 11 | ONNX Runtime graph loading and worker | CODED; float32 shape/type gate and optional external reference comparison, but no authorized genuine reference yet |
@@ -29,7 +29,7 @@ Twenty criteria must be independently implemented and demonstrated with unit or 
 | 19 | GPS, PiP and settings | CODED; device unverified |
 | 20 | >5 minute uninterrupted stream and near-1s glass-to-glass latency | Experimental Direct AU freshness guard, codec-output age, P95 diagnostics and clean reconnect; NO real exposure-to-glass measurement. NOT PASS |
 
-Legacy register baseline: **7/20 = 35% Gate A engineering evidence**. Gate A target >=18/20; separate Gate B real A500S/ground-truth validation is **0/5** for mandatory #14–17/#20. A green build alone does not advance either gate. The old single-pass terminology in earlier version notes is historical, not a claim of physical completion. Official final verdict: **BOTH GATES BELOW TARGET**.
+Historical pre-device register baseline: **7/20 = 35% Gate A engineering evidence**, superseded for #8 by verified owner Camera2 evidence on 2026-11-05. Current **8/20 = 40%**. Gate A target >=18/20; separate Gate B real A500S/ground-truth validation is **0/5** for mandatory #14–17/#20. A green build alone does not advance either gate. The old single-pass terminology in earlier version notes is historical, not a claim of physical completion. Official final verdict: **BOTH GATES BELOW TARGET**.
 
 ## Priority development remaining
 
@@ -310,3 +310,20 @@ Ten synthetic selection JVM tests do not prove device compatibility or
 preview/YUV on any physical handset. Request owner to test V1.3.33 and
 submit TTXPHONE01, TTXYUV01 and visual preview evidence for criterion #8.
 Gate A **7/20 (35%)**, Gate B **0/5**; no new PASS.
+
+
+2026-11-05 independent owner device review: criterion #8 Phone Camera2
+preview plus native YUV420 source moved CODED -> **Gate A PASS**. The
+submitted TTXPHONE01 covered 60,120ms, 1,791 Camera2 capture completions,
+1,792 ImageReader YUV callbacks, 66 valid 640x480 snapshots, no clock faults,
+no invalid/stale sensor frames and all sampled Surfaces valid. Original
+TTXYUV01 contains four distinct, SHA-256-valid, nonblank 640x480 YUV420p
+frames with 181/18/30ms receipt gaps. Owner screen video (19.79 seconds,
+not the whole minute) visibly shows changing rear Camera2 preview; both
+sources display a consistent scene after allowing for sensor orientation.
+Reviewed SHA fingerprints, privacy boundaries and limitations are in
+`docs/acceptance/PHONE_CAMERA2_REAL_DEVICE_REVIEW_20261105.md`.
+This ONLY proves criterion #8 on the tested Android handset: **Gate A
+8/20 (40%)**, target >=18/20; **Gate B remains 0/5**, because none of
+#14/#15/#16/#17/#20 A500S/ADAS evidence was provided. Neither Camera2's
+80ms max sensor-to-callback age nor the video proves optical latency.

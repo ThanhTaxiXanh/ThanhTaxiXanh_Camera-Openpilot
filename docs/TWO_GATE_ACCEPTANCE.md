@@ -22,8 +22,13 @@ build/package evidence; other criteria need directly relevant unit or
 integration evidence. Provenance that requires a legally authorized model
 or independent reference must not be replaced with a fabricated fixture.
 
-Current Gate A: **7/20 (35%)**, IDs 1,2,5,9,10,13,18, as previously
-accepted. No additional criterion is promoted by the two-gate migration.
+Current Gate A: **8/20 (40%)**, IDs 1,2,5,8,9,10,13,18.
+Criterion **#8 Phone Camera2 preview and YUV420** was promoted only after
+independent inspection of the owner's physical 60.12-second TTXPHONE01
+trace, four valid YUV frames and a 19.79-second moving-preview recording
+on 2026-11-05. This is subsequent physical evidence, not a promotion by
+the two-gate migration or CI alone. See
+`docs/acceptance/PHONE_CAMERA2_REAL_DEVICE_REVIEW_20261105.md`.
 
 ## Gate B — Mandatory physical and independent validation
 

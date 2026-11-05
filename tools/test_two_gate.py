@@ -14,15 +14,34 @@ class TwoGateAcceptanceTests(unittest.TestCase):
     def setUp(self):
         self.data = json.loads(LEDGER.read_text(encoding="utf-8"))
 
-    def test_real_baseline_is_seven_engineering_and_no_field_proof(self):
+    def test_phone_real_device_review_is_eighth_engineering_pass_not_field(self):
         result = validate(self.data)
-        self.assertEqual(7, result["engineering_pass"])
+        self.assertEqual(8, result["engineering_pass"])
         self.assertEqual(0, result["field_pass"])
         self.assertFalse(result["final_90_verified"])
+        self.assertEqual("PASS", self.data["criteria"][7]["engineering"]["status"])
+        self.assertEqual("NOT_REQUIRED", self.data["criteria"][7]["field"]["status"])
 
-    def test_code_only_does_not_advance_engineering_counter(self):
-        self.data["criteria"][13]["engineering"]["status"] = "CODED"
+    def test_code_only_camera_without_independent_review_is_not_pass(self):
+        self.data["criteria"][7]["engineering"]["status"] = "CODED"
+        self.data["criteria"][7]["engineering"]["evidence"] = []
         self.assertEqual(7, validate(self.data)["engineering_pass"])
+
+    def test_phone_review_without_relevant_ci_tests_is_insufficient(self):
+        item = self.data["criteria"][7]
+        item["engineering"]["evidence"] = [{
+            "kind": "REVIEWED_PROTOCOL",
+            "ref": "docs/acceptance/PHONE_CAMERA2_REAL_DEVICE_REVIEW_20261105.md",
+        }]
+        with self.assertRaises(GateError):
+            validate(self.data)
+
+    def test_phone_pass_without_review_file_is_invalid(self):
+        item = self.data["criteria"][7]
+        item["engineering"]["evidence"][-2]["ref"] = (
+            "docs/acceptance/nonexistent-phone-review.md")
+        with self.assertRaises(GateError):
+            validate(self.data)
 
     def test_green_build_alone_cannot_promote_non_build_requirement(self):
         item = self.data["criteria"][13]

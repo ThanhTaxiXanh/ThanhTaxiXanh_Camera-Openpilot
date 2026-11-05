@@ -10,7 +10,7 @@
     20
   ],
   "source_gate": "docs/PREDEVICE_90_GATE.md",
-  "note": "Original synthetic ONNX CPU contract test (V1.3.19) is a real execution smoke test, NOT a licensed driving model, external ADAS ground truth or field proof. Gate A and Gate B remain independent.",
+  "note": "Gate A #8 real Android phone Camera2 preview/YUV420 verified from independently inspected owner video, TTXPHONE01 and TTXYUV01 on 2026-11-05; Gate A 8/20. Gate B 0/5 for A500S/ground-truth mandatory criteria. Original synthetic ONNX CPU contract remains only a smoke test, NOT licensed ADAS ground truth.",
   "criteria": [
     {
       "id": 1,
@@ -130,14 +130,30 @@
       "id": 8,
       "name": "Phone Camera2 preview and YUV420",
       "engineering": {
-        "status": "CODED",
+        "status": "PASS",
         "evidence": [
           {
             "kind": "CI_UNIT",
             "ref": "app/src/test/java/vn/thanhtaxixanh/camera/ai/PhoneCameraSessionLeaseTest.kt"
+          },
+          {
+            "kind": "CI_UNIT",
+            "ref": "app/src/test/java/vn/thanhtaxixanh/camera/ai/PhoneCameraFieldEvidenceTest.kt"
+          },
+          {
+            "kind": "CI_UNIT",
+            "ref": "app/src/test/java/vn/thanhtaxixanh/camera/ai/PhoneCameraCandidateSelectorTest.kt"
+          },
+          {
+            "kind": "REVIEWED_PROTOCOL",
+            "ref": "docs/acceptance/PHONE_CAMERA2_REAL_DEVICE_REVIEW_20261105.md"
+          },
+          {
+            "kind": "CI_BUILD",
+            "ref": "https://github.com/ThanhTaxiXanh/ThanhTaxiXanh_Camera-Openpilot/actions/runs/42038833024"
           }
         ],
-        "next_required": "V1.3.32: owner-armed 60s TTXPHONE01 Android Camera2 trace + four genuine 640x480 TTXYUV01 ImageReader frames are exportable via SAF. These are coded but no physical phone traces have been independently inspected. Must verify actual preview visually and compare authentic phone trace/YUV data before #8 Gate A PASS. UNKNOWN sensor timebase must not be treated as REALTIME inference proof."
+        "next_required": "PASS on reviewed owner Android phone: 60.12s TTXPHONE01 (1,791 capture callbacks, 1,792 YUV callbacks, 66 valid 640x480 copies, no faults), four SHA256-valid nonblank real YUV frames, and ~19.8s screen video showing changing Camera2 rear preview. Independent inspection: docs/acceptance/PHONE_CAMERA2_REAL_DEVICE_REVIEW_20261105.md. Preserve lifecycle and multi-lens JVM tests and revalidate on new handset/major Camera2 changes. This does not verify A500S or optical latency."
       },
       "field": {
         "status": "NOT_REQUIRED",
