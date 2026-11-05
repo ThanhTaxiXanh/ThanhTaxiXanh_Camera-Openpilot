@@ -10,7 +10,6 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Process
 import android.os.SystemClock
-import android.util.Base64
 import android.view.Surface
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
@@ -202,18 +201,13 @@ class DirectRtspPlayer(
         status("RTSP " + verb + " → " + answer.code)
         return Reply(answer.code, answer.headers, answer.text)
     }
-    private fun spsPps(sdp: String): Pair<ByteArray?,ByteArray?> {
-        val fmtp = sdp.lineSequence().firstOrNull { it.contains("sprop-parameter-sets=") }
-            ?: return null to null
-        val raw = fmtp.substringAfter("sprop-parameter-sets=").substringBefore(';').split(',')
-        if (raw.size < 2) return null to null
-        return try {
-            Base64.decode(raw[0].trim(),Base64.DEFAULT) to
-                Base64.decode(raw[1].trim(),Base64.DEFAULT)
-        } catch (_: Exception) { null to null }
-    }
     private fun createDecoder(sdp: String) {
-        val pair = spsPps(sdp)
+        val csd = H264SdpParameterSets.fromSdp(sdp)
+        val pair = csd.sps to csd.pps
+        status("H264 SDP video PT=" + (csd.payloadType?.toString() ?: "unknown") +
+            if (csd.sps == null || csd.pps == null)
+                " · no validated SPS/PPS; codec receives in-band headers only"
+            else " · validated SPS/PPS")
         val dimensions = H264SpsDimensions.configuredSize(pair.first)
         val fmt = MediaFormat.createVideoFormat(
             "video/avc", dimensions.width, dimensions.height)
