@@ -252,3 +252,14 @@ Seven synthetic JVM tests include mixed-payload UDP replay. No real A500S
 optical, live YUV→model, ground-truth metric or independent hardware
 measurement is added: **Gate A 7/20 (35%)**, **Gate B 0/5**; #3/#14/#20
 NOT promoted and all mandatory criteria still NOT PASS.
+
+
+V1.3.29: RTP reception resets per-SSRC expected/received counters before
+accounting for the first new-source packet (SSRC zero is valid), and
+RTCP Receiver Reports now encode the RFC 3550 signed 24-bit cumulative
+loss plus 8-bit interval fraction. Report baselines advance only after
+successful UDP/TCP RTCP send, not merely preparing a packet. Nine synthetic
+JVM cases test source epochs, loss recovery, duplicates, interval fraction,
+failed-send retry and wire limits. No new independent A500S stream/ONNX
+or optical measurement: **Gate A 7/20 (35%)**, **Gate B 0/5**; all mandatory
+#14–17/#20 remain NOT PASS.
