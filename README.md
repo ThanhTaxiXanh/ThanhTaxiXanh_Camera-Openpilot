@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.15-yuv-crop-phase (Lite / AI flavors)  
+**Version**: 1.3.16-yuv-gop-age (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Playback and ADAS development modules
@@ -605,3 +605,18 @@ not claimed and the engineering gate remains **7/20=35%**.
 ## V1.3.15 — Correct MediaCodec YUV420 odd-crop chroma phase
 
 An odd YUV crop origin must shift chroma lookup: pixel col uses (col + left%2)/2, not col/2. The Android Image reader also used ByteBuffer.clear() which expanded the native plane limit to capacity. Both are corrected using explicit chroma phase and a limit-preserving, Long-safe plane snapshot helper. Nine JVM tests validate odd/even crop phase, padded interleaved UV and malformed/truncated buffers. No A500S or physical AI verification; acceptance 7/20=35%.
+
+
+## V1.3.16 — Offscreen H264 decoder freshness and IDR reacquisition
+
+The optional A500S YUV decoder used to feed already expired compressed
+access units to MediaCodec, despite discarding their eventual YUV output
+when more than 550ms old. Now the offscreen producer checks the queued
+head age and rejects stale/invalid AUs, and the worker rechecks immediately
+before native input submission. Any expired dependent P-frame resets the
+WHOLE secondary GOP and reacquires a fresh IDR, without affecting the
+primary Surface preview. Two counters identify stale compressed AUs and
+expired backlog resets; nine pure JVM tests cover recovery and freshness.
+
+No hardware/optical latency or licensed ONNX parity is asserted.
+Formal predevice gate remains **7/20=35%**.
