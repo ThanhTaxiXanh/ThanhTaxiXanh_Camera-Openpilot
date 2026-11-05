@@ -320,10 +320,33 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
         // callback cannot restore an old pair AFTER a Surface transition.
         synchronized(yuvLock) {
             if (!cameraLease.owns(lease)) return
-            val current=vision ?: return
             val nowNs=SystemClock.elapsedRealtimeNanos()
             val clock = sensorFrameGate.inspect(
                 image.timestamp, nowNs, realtimeSensorClock)
+            val evidence=activePhoneEvidence
+            if (evidence!=null) {
+                val nowMs=nowNs/1_000_000L
+                evidence.onImage(nowMs,clock)
+                if (evidence.shouldProbe(nowMs)) {
+                    try {
+                        require(image.format==ImageFormat.YUV_420_888)
+                        val frame=AndroidYuvImageBridge.snapshot(image)
+                        evidence.onYuvProbe(PhoneCameraYuvProbe.verify(frame))
+                    } catch (error:Exception) {
+                        evidence.onProbeFailed(image.format!=ImageFormat.YUV_420_888)
+                    }
+                }
+                if (nowMs-lastEvidenceUiUpdateMs>=1000L) {
+                    lastEvidenceUiUpdateMs=nowMs
+                    val progress=evidence.summary(nowMs)
+                    runOnUiThread {
+                        if (activePhoneEvidence===evidence &&
+                            cameraLease.owns(lease) && inForeground)
+                            evidenceStatus.text=progress
+                    }
+                }
+            }
+            val current=vision ?: return
             if (!clock.accepted) {
                 val count=rejectedCameraTimestamps.incrementAndGet()
                 if (previousVisionFrame!=null) current.invalidate()
@@ -348,6 +371,17 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
                     "Camera2 cropped YUV must match 640x480 model contract"
                 }
                 val argb=Yuv420FrameConverter.argb(snapshot)
+                // Conversion on the Camera2 handler may outlive sensor frame
+                // freshness. Reject after pixels are copied, not only before.
+                val afterCopyNs=SystemClock.elapsedRealtimeNanos()
+                if (afterCopyNs < image.timestamp ||
+                    afterCopyNs-image.timestamp >
+                        VisionSafetyGate.MAX_FRAME_AGE_MS * 1_000_000L) {
+                    previousVisionFrame=null
+                    previousVisionCaptureMs=0L
+                    current.invalidate()
+                    return
+                }
                 if (!cameraLease.owns(lease) || vision !== current) return
                 val prev=previousVisionFrame
                 val previousAt=previousVisionCaptureMs
@@ -413,6 +447,10 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
                     "không mở stream AI với kích thước tự đoán."
                 return
             }
+            selectedCameraId=id
+            selectedRearCamera=manager.getCameraCharacteristics(id).get(
+                CameraCharacteristics.LENS_FACING)==
+                CameraCharacteristics.LENS_FACING_BACK
             realtimeSensorClock=manager.getCameraCharacteristics(id).get(
                 CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE)==
                 CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
@@ -494,7 +532,18 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
                                         set(CaptureRequest.CONTROL_AF_MODE,
                                             CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
                                     }
-                                    value.setRepeatingRequest(request.build(),null,handler)
+                                    value.setRepeatingRequest(request.build(),
+                                        object:CameraCaptureSession.CaptureCallback() {
+                                            override fun onCaptureCompleted(
+                                                session:CameraCaptureSession,
+                                                request:CaptureRequest,
+                                                result:android.hardware.camera2.TotalCaptureResult
+                                            ) {
+                                                if (cameraLease.owns(lease))
+                                                    activePhoneEvidence?.onCaptureCompleted(
+                                                        result.get(CaptureResult.SENSOR_TIMESTAMP))
+                                            }
+                                        },handler)
                                     status.text="Camera2 preview + YUV420 đang hoạt động. " +
                                         (if (realtimeSensorClock)
                                             "Timestamp cảm biến REALTIME; " +
@@ -547,6 +596,17 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
         realtimeSensorClock=false
         rejectedCameraTimestamps.set(0L)
 
+        val recording=activePhoneEvidence
+        if (recording!=null) {
+            activePhoneEvidence=null
+            // Preserve explicitly armed partial metadata on lifecycle end;
+            // never fabricate a complete 30s capture after backgrounding.
+            pendingPhoneEvidence=recording.finish(SystemClock.elapsedRealtime(),false).text
+            if (::evidenceButton.isInitialized) {
+                evidenceButton.text="LƯU BẰNG CHỨNG CHƯA HOÀN TẤT"
+                evidenceStatus.text="Camera đã dừng; bản ghi này chưa được nghiệm thu."
+            }
+        }
         try { session?.close() } catch (_:Exception) {}
         session=null
         try { camera?.close() } catch (_:Exception) {}
