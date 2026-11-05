@@ -43,6 +43,11 @@ class GpsSpeedMonitor(private val activity: Activity) {
     fun hasPermission(): Boolean = activity.checkSelfPermission(
         Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
+    /** Permission-safe provider observation for owner-triggered diagnostics. */
+    fun isGpsProviderEnabled(): Boolean = try {
+        manager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+    } catch (_: Exception) { false }
+
     fun start(): Boolean {
         if (!hasPermission()) return false
         if (active) return true

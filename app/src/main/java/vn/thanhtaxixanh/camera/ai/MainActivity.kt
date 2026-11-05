@@ -70,6 +70,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private var activeLiveTrace: FiveMinuteStreamEvidence? = null
     private var pendingLiveTrace: String? = null
     private val saveLiveTraceRequestCode = 735
+    private val saveGpsPipTraceRequestCode = 736
+    private lateinit var gpsPipTraceButton: Button
+    private var activeGpsPipTrace: GpsPipFieldEvidence? = null
+    private var pendingGpsPipTrace: String? = null
     @Volatile private var rawVision: OpenpilotInferencePipeline? = null
     @Volatile private var rawBridge: A500sRawVisionBridge? = null
     @Volatile private var rawVisionRequested = false
@@ -325,16 +329,59 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
         root.addView(liveTraceButton)
 
+        gpsPipTraceButton = Button(this).apply {
+            text = "THU KIỂM TRA GPS / PiP / CÀI ĐẶT"
+            textSize = 11f
+            setOnClickListener {
+                val trace = activeGpsPipTrace
+                if (trace?.isActive() == true) {
+                    trace.stop(SystemClock.elapsedRealtime())
+                    pendingGpsPipTrace = trace.report()
+                    activeGpsPipTrace = null
+                    text = "XUẤT BIÊN BẢN TTXGPIP01"
+                    showStatus("Đã ghi sự kiện GPS/PiP. Xuất TTXGPIP01 để " +
+                        "kiểm tra độc lập trên thiết bị.")
+                } else if (pendingGpsPipTrace != null) {
+                    try {
+                        startActivityForResult(
+                            Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TITLE,
+                                    "TTX_GPS_PiP_Settings_phone_trace.txt")
+                            }, saveGpsPipTraceRequestCode)
+                    } catch (error: Exception) {
+                        showStatus("Không mở được trình lưu TTXGPIP01: " +
+                            error.javaClass.simpleName)
+                    }
+                } else {
+                    val started = GpsPipFieldEvidence()
+                    started.start(SystemClock.elapsedRealtime())
+                    activeGpsPipTrace = started
+                    text = "ĐANG GHI GPS / PiP · BẤM ĐỂ DỪNG"
+                    showStatus("Đang ghi dấu vết GPS/PiP/cài đặt, không lưu tọa độ. " +
+                        "Hãy bật GPS, phát IJK và thử vào/thoát PiP, đổi đơn vị.")
+                }
+            }
+        }
+        root.addView(gpsPipTraceButton)
+
         root.addView(Button(this).apply {
             text = "PiP · CỬA SỔ VIDEO NHỎ"
             textSize = 11f
             setOnClickListener {
+                activeGpsPipTrace?.event(SystemClock.elapsedRealtime(),
+                    GpsPipFieldEvidence.Event.PIP_REQUESTED)
                 if (backend != Backend.IJK || ijk == null) {
+                    activeGpsPipTrace?.event(SystemClock.elapsedRealtime(),
+                        GpsPipFieldEvidence.Event.PIP_REQUEST_REJECTED)
                     showStatus("PiP thử nghiệm chỉ bật khi đang phát IJK.")
                     return@setOnClickListener
                 }
                 if (!packageManager.hasSystemFeature(
                         PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+                    activeGpsPipTrace?.event(SystemClock.elapsedRealtime(),
+                        GpsPipFieldEvidence.Event.PIP_REQUEST_REJECTED)
                     showStatus("Thiết bị không hỗ trợ Picture-in-Picture.")
                     return@setOnClickListener
                 }
@@ -343,13 +390,21 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     val entered = enterPictureInPictureMode(
                         PictureInPictureParams.Builder()
                             .setAspectRatio(Rational(4, 3)).build())
-                    if (!entered) {
+                    if (entered) {
+                        // Only onPictureInPictureModeChanged(true) confirms entry.
+                        activeGpsPipTrace?.event(SystemClock.elapsedRealtime(),
+                            GpsPipFieldEvidence.Event.PIP_REQUEST_RETURNED_TRUE)
+                    } else {
+                        activeGpsPipTrace?.event(SystemClock.elapsedRealtime(),
+                            GpsPipFieldEvidence.Event.PIP_REQUEST_REJECTED)
                         // Android can return false WITHOUT throwing. A stuck
                         // transition flag would then mis-handle Surface teardown.
                         pipTransitioning = false
                         showStatus("PiP bị Android từ chối; tiếp tục xem video bình thường.")
                     }
                 } catch (e: Exception) {
+                    activeGpsPipTrace?.event(SystemClock.elapsedRealtime(),
+                        GpsPipFieldEvidence.Event.PIP_REQUEST_EXCEPTION)
                     pipTransitioning = false
                     showStatus("PiP không thể mở: " + e.javaClass.simpleName)
                 }
@@ -388,6 +443,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             if (prefs.getBoolean(AdasPrefs.HIDE_STATUS_BAR, false))
                 android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
             else 0
+        activeGpsPipTrace?.event(SystemClock.elapsedRealtime(),
+            GpsPipFieldEvidence.Event.SETTINGS_RESUMED)
         if (::adasHud.isInitialized) {
             // Logo preference is NOT a global HUD-off switch: users must
             // retain GPS speed when they hide the TTX research label.
@@ -401,6 +458,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private fun toggleGps() {
         if (gpsEnabled) {
+            activeGpsPipTrace?.event(SystemClock.elapsedRealtime(),
+                GpsPipFieldEvidence.Event.GPS_TOGGLE_OFF)
             gpsMonitor.stop()
             gpsEnabled = false
             adasHud.speedKmh = null
@@ -412,6 +471,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             return
         }
         gpsEnabled = gpsMonitor.start()
+        activeGpsPipTrace?.event(SystemClock.elapsedRealtime(),
+            if (gpsEnabled) GpsPipFieldEvidence.Event.GPS_TOGGLE_ON
+            else GpsPipFieldEvidence.Event.GPS_TOGGLE_OFF)
         showStatus(if (gpsEnabled) "GPS bật, chờ tốc độ từ vệ tinh"
             else "Không thể mở GPS. Hãy kiểm tra vị trí thiết bị.")
     }
@@ -421,8 +483,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 815) {
-            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED)
-                toggleGps()
+            val granted = grantResults.firstOrNull() ==
+                PackageManager.PERMISSION_GRANTED
+            activeGpsPipTrace?.event(SystemClock.elapsedRealtime(),
+                if (granted) GpsPipFieldEvidence.Event.GPS_PERMISSION_GRANTED
+                else GpsPipFieldEvidence.Event.GPS_PERMISSION_DENIED)
+            if (granted) toggleGps()
             else showStatus("Chưa cấp quyền GPS, không thể hiển thị tốc độ")
         }
     }
@@ -978,8 +1044,32 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private val statusTicker = object : Runnable {
         override fun run() {
-            if (::adasHud.isInitialized && ::gpsMonitor.isInitialized)
-                adasHud.speedKmh = if (gpsEnabled) gpsMonitor.currentSpeed() else null
+            val latestGpsSpeed = if (::gpsMonitor.isInitialized && gpsEnabled)
+                gpsMonitor.currentSpeed() else null
+            if (::adasHud.isInitialized) adasHud.speedKmh = latestGpsSpeed
+            val phoneTrace = activeGpsPipTrace
+            if (phoneTrace?.isActive() == true && ::gpsMonitor.isInitialized &&
+                ::surfaceView.isInitialized) {
+                val prefs = AdasPrefs.of(this@MainActivity)
+                phoneTrace.sample(GpsPipFieldEvidence.Snapshot(
+                    elapsedMs = SystemClock.elapsedRealtime(),
+                    gpsRequested = gpsEnabled,
+                    gpsPermission = gpsMonitor.hasPermission(),
+                    gpsProviderEnabled = gpsMonitor.isGpsProviderEnabled(),
+                    freshSpeedPresent = latestGpsSpeed != null,
+                    inPip = isInPictureInPictureMode,
+                    videoSurfaceValid = surfaceView.holder.surface.isValid,
+                    playback = when (backend) {
+                        Backend.DIRECT -> GpsPipFieldEvidence.Playback.DIRECT
+                        Backend.IJK -> GpsPipFieldEvidence.Playback.IJK
+                        null -> GpsPipFieldEvidence.Playback.NONE
+                    },
+                    unitsImperial = HudDisplayFormat.UnitMode.fromPreference(
+                        prefs.getString(AdasPrefs.SPEED_UNIT, "km/h · m")) ==
+                        HudDisplayFormat.UnitMode.IMPERIAL,
+                    brandVisible = prefs.getBoolean(AdasPrefs.SHOW_LOGO, true)
+                ))
+            }
             if (::detailView.isInitialized) {
                 val d = direct
                 if (backend == Backend.DIRECT && d != null) {
@@ -1198,6 +1288,38 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     @Deprecated("Android Storage Access Framework result callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == saveGpsPipTraceRequestCode) {
+            val report = pendingGpsPipTrace
+            if (resultCode != RESULT_OK || data?.data == null || report == null) {
+                showStatus("Chưa lưu TTXGPIP01; có thể bấm Xuất để thử lại.")
+                return
+            }
+            val target = data.data ?: return
+            Thread({
+                val failure = try {
+                    val stream = contentResolver.openOutputStream(target, "w")
+                        ?: error("Không mở được tệp đích")
+                    stream.use { it.write(report.toByteArray(Charsets.UTF_8)) }
+                    null
+                } catch (error: Exception) {
+                    error.message ?: error.javaClass.simpleName
+                }
+                runOnUiThread {
+                    if (!isDestroyed) {
+                        if (failure == null) {
+                            if (pendingGpsPipTrace === report) {
+                                pendingGpsPipTrace = null
+                                gpsPipTraceButton.text =
+                                    "THU KIỂM TRA GPS / PiP / CÀI ĐẶT"
+                            }
+                            showStatus("Đã xuất TTXGPIP01. Cần đánh giá " +
+                                "GPS/PiP trên điện thoại trước khi tính #19 PASS.")
+                        } else showStatus("Không lưu được TTXGPIP01: " + failure)
+                    }
+                }
+            }, "TTX-GPS-PiP-Trace-Writer").start()
+            return
+        }
         if (requestCode == saveLiveTraceRequestCode) {
             val report = pendingLiveTrace
             if (resultCode != RESULT_OK || data?.data == null || report == null) {
@@ -1258,6 +1380,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun stopPlayback() {
+        activeGpsPipTrace?.event(SystemClock.elapsedRealtime(),
+            GpsPipFieldEvidence.Event.PLAYBACK_STOPPED)
         activeLiveTrace?.let { trace ->
             if (trace.isActive()) {
                 trace.stop(SystemClock.elapsedRealtime(), "PLAYBACK_STOPPED")
@@ -1312,6 +1436,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         isInPictureInPictureMode: Boolean, newConfig: Configuration
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        activeGpsPipTrace?.event(SystemClock.elapsedRealtime(),
+            if (isInPictureInPictureMode)
+                GpsPipFieldEvidence.Event.PIP_ENTERED_CALLBACK
+            else GpsPipFieldEvidence.Event.PIP_EXITED_CALLBACK)
         pipTransitioning = false
         val content = findViewById<android.view.ViewGroup>(android.R.id.content)
         val root = content?.getChildAt(0) as? LinearLayout ?: return
@@ -1328,6 +1456,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun onDestroy() {
+        activeGpsPipTrace?.stop(SystemClock.elapsedRealtime(),
+            "ACTIVITY_DESTROYED")
+        activeGpsPipTrace = null
         ui.removeCallbacksAndMessages(null)
         gpsMonitor.stop()
         stopPlayback()

@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.22-hud-units (Lite / AI flavors)  
+**Version**: 1.3.23-gps-pip-evidence (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
@@ -706,3 +706,18 @@ lead data. The `round distance to 5m` setting is also displayed correctly.
 14 JVM regression tests cover unit conversion, invalid values and logo
 isolation. See [HUD unit audit](docs/HUD_UNITS_AND_LABEL_V1322.md).
 Gate A **7/20**, field Gate B **0/5**; hardware GPS/PiP still unverified.
+
+
+## V1.3.23 — Android GPS/PiP phone evidence collection
+
+The main screen now offers **THU KIỂM TRA GPS / PiP / CÀI ĐẶT**.
+When started by the owner, TTXGPIP01 records non-identifying state:
+GNSS permission/provider/fresh-speed presence, selected playback, Surface,
+PiP entry/exit platform callbacks, request rejection, and saved HUD units.
+The trace can be exported through Android's document picker. No GPS
+coordinates, real numeric speed, camera footage, camera URL or passwords
+are stored. A request returning true never counts as confirmed PiP entry.
+
+See [on-device GPS/PiP acceptance](docs/GPS_PIP_ONDEVICE_EVIDENCE_V1323.md).
+The trace itself is not independent Android verification; #19 remains CODED,
+**Gate A 7/20 (35%), Gate B 0/5** pending a phone test and review.
