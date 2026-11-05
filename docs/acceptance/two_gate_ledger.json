@@ -1,0 +1,327 @@
+{
+  "schema_version": 1,
+  "updated_utc": "2026-11-05",
+  "engineering_target_pass": 18,
+  "field_mandatory_ids": [
+    14,
+    15,
+    16,
+    17,
+    20
+  ],
+  "source_gate": "docs/PREDEVICE_90_GATE.md",
+  "note": "Engineering PASS is offline readiness, not A500S validation. The field gate has no successes recorded. Any later proof needs independent review.",
+  "criteria": [
+    {
+      "id": 1,
+      "name": "Stable package and CI build",
+      "engineering": {
+        "status": "PASS",
+        "evidence": [
+          {
+            "kind": "CI_BUILD",
+            "ref": "https://github.com/ThanhTaxiXanh/ThanhTaxiXanh_Camera-Openpilot/actions/runs/41967248957"
+          }
+        ],
+        "next_required": "Keep reproducible exact SHA build evidence and publish both APK variants"
+      },
+      "field": {
+        "status": "NOT_REQUIRED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 2,
+      "name": "Lite and AI ARM64 native packaging",
+      "engineering": {
+        "status": "PASS",
+        "evidence": [
+          {
+            "kind": "CI_BUILD",
+            "ref": "https://github.com/ThanhTaxiXanh/ThanhTaxiXanh_Camera-Openpilot/actions/runs/41967248957"
+          },
+          {
+            "kind": "CI_PACKAGE",
+            "ref": ".github/workflows/build.yml"
+          }
+        ],
+        "next_required": "Retain native ABI and separate Lite/AI packaging verification"
+      },
+      "field": {
+        "status": "NOT_REQUIRED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 3,
+      "name": "70mai A500S RTSP playback and fallback",
+      "engineering": {
+        "status": "CODED",
+        "evidence": [],
+        "next_required": "Complete deterministic RTSP/transport fallback replay; physical playback is Gate B evidence if claimed"
+      },
+      "field": {
+        "status": "NOT_REQUIRED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 4,
+      "name": "Owner-approved 70mai CGI pairing and heartbeat",
+      "engineering": {
+        "status": "CODED",
+        "evidence": [],
+        "next_required": "Prove owner-approved CGI timeout and heartbeat replay independently"
+      },
+      "field": {
+        "status": "NOT_REQUIRED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 5,
+      "name": "RTP/RTCP loss and jitter diagnostics",
+      "engineering": {
+        "status": "PASS",
+        "evidence": [
+          {
+            "kind": "CI_UNIT",
+            "ref": "app/src/test/java/vn/thanhtaxixanh/camera/ai/RtpReceiverDiagnosticsTest.kt"
+          },
+          {
+            "kind": "CI_UNIT",
+            "ref": "app/src/test/java/vn/thanhtaxixanh/camera/ai/RtpJitterQueueTest.kt"
+          }
+        ],
+        "next_required": "Keep bounded loss/jitter and RTP clock diagnostics in offline integration"
+      },
+      "field": {
+        "status": "NOT_REQUIRED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 6,
+      "name": "70mai/Vietmap/AZCAM adapter parity",
+      "engineering": {
+        "status": "NOT_READY",
+        "evidence": [],
+        "next_required": "Implement/verify real non-mutating vendor adapters and owner-approved fixtures"
+      },
+      "field": {
+        "status": "NOT_REQUIRED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 7,
+      "name": "USB/UVC live video adapter",
+      "engineering": {
+        "status": "NOT_READY",
+        "evidence": [],
+        "next_required": "Implement UVC ingest, lifecycle and representative USB fixtures"
+      },
+      "field": {
+        "status": "NOT_REQUIRED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 8,
+      "name": "Phone Camera2 preview and YUV420",
+      "engineering": {
+        "status": "CODED",
+        "evidence": [],
+        "next_required": "Prove Camera2 output/stride lifecycle with controlled frames; test on phone separately"
+      },
+      "field": {
+        "status": "NOT_REQUIRED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 9,
+      "name": "Stride-aware YUV420 converter",
+      "engineering": {
+        "status": "PASS",
+        "evidence": [
+          {
+            "kind": "CI_UNIT",
+            "ref": "app/src/test/java/vn/thanhtaxixanh/camera/ai/Yuv420FrameConverterTest.kt"
+          },
+          {
+            "kind": "CI_UNIT",
+            "ref": "app/src/test/java/vn/thanhtaxixanh/camera/ai/YuvPlaneSnapshotTest.kt"
+          }
+        ],
+        "next_required": "Keep row/pixel-stride and odd crop reference parity"
+      },
+      "field": {
+        "status": "NOT_REQUIRED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 10,
+      "name": "Temporal 12-channel preprocess and virtual warp",
+      "engineering": {
+        "status": "PASS",
+        "evidence": [
+          {
+            "kind": "CI_UNIT",
+            "ref": "app/src/test/java/vn/thanhtaxixanh/camera/ai/OpenpilotYuvPackerTest.kt"
+          },
+          {
+            "kind": "CI_UNIT",
+            "ref": "app/src/test/java/vn/thanhtaxixanh/camera/ai/VirtualCameraWarpTest.kt"
+          }
+        ],
+        "next_required": "Verify 12-channel temporal tensors and warp against independent authorized references"
+      },
+      "field": {
+        "status": "NOT_REQUIRED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 11,
+      "name": "ONNX Runtime graph and worker",
+      "engineering": {
+        "status": "CODED",
+        "evidence": [],
+        "next_required": "Import a legally usable actual ONNX graph and demonstrate reproducible output parity"
+      },
+      "field": {
+        "status": "NOT_REQUIRED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 12,
+      "name": "NCNN alternate engine",
+      "engineering": {
+        "status": "NOT_READY",
+        "evidence": [],
+        "next_required": "Provide a real alternate inference engine and parity contract or document exclusion"
+      },
+      "field": {
+        "status": "NOT_REQUIRED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 13,
+      "name": "1576-output lane/lead/road-edge parser",
+      "engineering": {
+        "status": "PASS",
+        "evidence": [
+          {
+            "kind": "CI_UNIT",
+            "ref": "app/src/test/java/vn/thanhtaxixanh/camera/ai/OpenpilotVisionDecoderTest.kt"
+          }
+        ],
+        "next_required": "Validate all 1576 output indices with independently specified reference vectors"
+      },
+      "field": {
+        "status": "NOT_REQUIRED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 14,
+      "name": "Non-disruptive A500S YUV to AI",
+      "engineering": {
+        "status": "CODED",
+        "evidence": [],
+        "next_required": "Prove full YUV-to-real-ONNX offline pipeline and reset behavior with authorized frames"
+      },
+      "field": {
+        "status": "NOT_VERIFIED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 15,
+      "name": "A500S camera intrinsics, model axes and warp",
+      "engineering": {
+        "status": "CODED",
+        "evidence": [],
+        "next_required": "Derive/calibrate camera intrinsics and model axes with independent marker reference"
+      },
+      "field": {
+        "status": "NOT_VERIFIED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 16,
+      "name": "Licensed model and independent ground-truth inference",
+      "engineering": {
+        "status": "NOT_READY",
+        "evidence": [],
+        "next_required": "Secure model use rights, cryptographic hash and independently reviewed ground-truth vectors"
+      },
+      "field": {
+        "status": "NOT_VERIFIED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 17,
+      "name": "Validated live lane and metric lead HUD",
+      "engineering": {
+        "status": "NOT_READY",
+        "evidence": [],
+        "next_required": "Verify fail-closed HUD projection and metric lead behavior against real reference measurements"
+      },
+      "field": {
+        "status": "NOT_VERIFIED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 18,
+      "name": "Passive headway/TTC and fail-closed warnings",
+      "engineering": {
+        "status": "PASS",
+        "evidence": [
+          {
+            "kind": "CI_UNIT",
+            "ref": "app/src/test/java/vn/thanhtaxixanh/camera/ai/AdasWarningEngineTest.kt"
+          }
+        ],
+        "next_required": "Maintain safety unit tests and no actionable uncalibrated outputs"
+      },
+      "field": {
+        "status": "NOT_REQUIRED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 19,
+      "name": "GPS, PiP and settings",
+      "engineering": {
+        "status": "CODED",
+        "evidence": [],
+        "next_required": "Verify GPS/PiP/settings behavior and lifecycle with device evidence"
+      },
+      "field": {
+        "status": "NOT_REQUIRED",
+        "evidence": []
+      }
+    },
+    {
+      "id": 20,
+      "name": "5-minute uninterrupted live stream and near-1s glass-to-glass",
+      "engineering": {
+        "status": "CODED",
+        "evidence": [],
+        "next_required": "Construct deterministic 5-minute stability harness, metric log and optical timing protocol"
+      },
+      "field": {
+        "status": "NOT_VERIFIED",
+        "evidence": []
+      }
+    }
+  ]
+}

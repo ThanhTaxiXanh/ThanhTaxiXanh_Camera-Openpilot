@@ -1,8 +1,25 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.16-yuv-gop-age (Lite / AI flavors)  
+**Version**: 1.3.17-two-gate-acceptance (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
+
+## Current acceptance: TWO separate gates (V1.3.17)
+
+- **Gate A engineering readiness:** 7/20 (35%); target >=18/20.
+- **Gate B real camera/model/metric validation:** 0/5 mandatory
+  requirements (#14, #15, #16, #17, #20).
+- **Final acceptance 90% requires BOTH A>=18/20 AND B=5/5.**
+- PR/CI GREEN never proves camera exposure delay, legal model provenance,
+  lane/lead distance or physical decoder capacity.
+
+See docs/TWO_GATE_ACCEPTANCE.md and
+docs/acceptance/two_gate_ledger.json. GitHub Actions validates the
+machine ledger on every PR and push; separate independent physical
+evidence is required before a mandatory field PASS.
+
+The old build-and-protocol version history below does not override the
+new acceptance policy.
 
 ## Playback and ADAS development modules
 
