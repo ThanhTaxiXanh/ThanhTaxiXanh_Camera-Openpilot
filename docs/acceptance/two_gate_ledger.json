@@ -137,7 +137,7 @@
             "ref": "app/src/test/java/vn/thanhtaxixanh/camera/ai/PhoneCameraSessionLeaseTest.kt"
           }
         ],
-        "next_required": "Verify concurrent Camera2 Surface+YUV lifecycle with an authorized physical Android handset; validate preview and YUV crops using a measured live capture, without fabricating an ONNX result"
+        "next_required": "V1.3.20: Camera2 RAW ONNX now accepts only REALTIME sensor-timestamped YUV, age <=550ms, and rejects late/duplicate/unknown timebase images (JVM test). Independently validate actual phone Camera2 simultaneous Surface/YUV output and sensor timestamp on a real device before #8 PASS."
       },
       "field": {
         "status": "NOT_REQUIRED",

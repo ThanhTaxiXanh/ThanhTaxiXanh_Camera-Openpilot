@@ -212,3 +212,6 @@ V1.3.18: phone Camera2/ONNX lifecycle now rejects stale `onOpened`, `onConfigure
 
 
 V1.3.19: CI generates an original synthetic, arithmetic-only ONNX graph with exact two-input/1576-output shape, runs a real independent CPU ONNX Runtime inference, checks full outputs with a separately calculated formula, and exports TTXREF01 + hashes for Android AI smoke-testing. This does not demonstrate a licensed production ADAS model, independent driving ground truth or actual A500S data. #11 remains CODED; Gate A **7/20=35%**, Gate B **0/5**.
+
+
+V1.3.20: Phone Camera2 RAW ONNX uses genuine Image.timestamp only when SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME shares elapsedRealtimeNanos. Unknown, stale (>550ms), duplicate and impossible sensor timestamps are excluded; invalid frames break inference pairing, while camera preview remains independent. Ten JVM regression tests do not prove Camera2 hardware. #8 stays CODED, Gate A **7/20 (35%)**, Gate B **0/5**.

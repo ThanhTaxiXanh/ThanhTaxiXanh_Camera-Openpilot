@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.19-onnx-cpu-parity (Lite / AI flavors)  
+**Version**: 1.3.20-camera2-sensor-clock (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
@@ -664,3 +664,18 @@ smoke test without copying proprietary xADAS weights or including any model
 in the APK. It is NOT a trained driving model, optical calibration or metric
 lead reference. See docs/ONNX_CPU_CONTRACT_FIXTURE_V1319.md.
 Gate A remains 7/20=35% and mandatory Gate B remains 0/5.
+
+
+## V1.3.20 — Camera2 sensor timestamp correctness for RAW ONNX
+
+Phone Camera2 YUV input previously stamped frames at callback receipt,
+which could hide old ImageReader frames as fresh. The diagnostic branch now
+uses `Image.timestamp` ONLY if the selected camera advertises a REALTIME
+sensor timebase. Unknown timebase disables RAW ONNX, while preview remains
+available. REALTIME frames older than 550 ms, duplicated or future-dated
+cannot reach the temporal inference pipeline. Any invalid frame breaks the
+pending pair; accepted PairSample uses sensor capture time, not delivery time.
+Ten host regression tests cover clock domains and delayed callbacks.
+See [Camera2 timestamp policy](docs/CAMERA2_SENSOR_TIMESTAMP_V1320.md).
+Criterion #8 still requires independent on-device Camera2 verification.
+Gate A **7/20 (35%)**, Gate B **0/5**.
