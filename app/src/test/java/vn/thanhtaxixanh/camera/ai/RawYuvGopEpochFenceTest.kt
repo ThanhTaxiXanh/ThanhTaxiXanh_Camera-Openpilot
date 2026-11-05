@@ -126,11 +126,13 @@ class RawYuvGopEpochFenceTest {
             DelayedEngine(entered,release),
             VirtualCameraWarp.Matrix.identity(),
             VirtualCameraWarp.Matrix.identity(),
-            null,2,2,nowMs={10_000L}
+            null,512,256,nowMs={10_000L}
         ) {callbacks.incrementAndGet()}
         try {
+            // Actual warp worker requires model-scale source pixels;
+            // 2x2 would be rejected before the delayed engine starts.
             assertTrue(p.offer(OpenpilotInferencePipeline.PairSample(
-                IntArray(4),IntArray(4),9_950,
+                IntArray(512*256),IntArray(512*256),9_950,
                 isSourceCurrent={sourceValid.get()})))
             assertTrue("ONNX worker did not start",entered.await(5,TimeUnit.SECONDS))
             sourceValid.set(false)
