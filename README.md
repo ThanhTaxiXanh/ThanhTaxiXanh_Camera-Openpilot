@@ -1,10 +1,16 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.26-sps-codec-size (Lite / AI flavors)  
+**Version**: 1.3.27-sdp-h264-csd (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
+
+V1.3.27 restricts H.264 SPS/PPS in RTSP SDP to the selected video media
+section and matching payload type; malformed/mismatched codec headers are
+not forwarded to MediaCodec. See docs/RTSP_SDP_H264_CSD_V1327.md.
+This is protocol hardening, NOT camera/AI or optical-latency acceptance.
+
 
 - **Gate A engineering readiness:** 7/20 (35%); target >=18/20.
 - **Gate B real camera/model/metric validation:** 0/5 mandatory
