@@ -206,3 +206,6 @@ V1.3.16: compressed offscreen YUV AUs now have a 550ms local-receipt age guard a
 
 
 V1.3.17 migration: two-gate policy and a fail-closed machine ledger separate engineering readiness (A: 7/20) from mandatory physical/independent validation (B: 0/5). CI verifies ledger format and threshold immutability; no acceptance criteria are promoted. Final 90% requires A>=18/20 AND B=5/5.
+
+
+V1.3.18: phone Camera2/ONNX lifecycle now rejects stale `onOpened`, `onConfigured` and pending model load completions after Activity pause/Surface teardown. Added nine host lease tests; a real Camera2+YUV run is still missing. Two-gate totals unchanged: **A 7/20, B 0/5**.

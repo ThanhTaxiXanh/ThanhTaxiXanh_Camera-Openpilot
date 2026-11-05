@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.17-two-gate-acceptance (Lite / AI flavors)  
+**Version**: 1.3.18-camera2-lifecycle (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
@@ -637,3 +637,18 @@ expired backlog resets; nine pure JVM tests cover recovery and freshness.
 
 No hardware/optical latency or licensed ONNX parity is asserted.
 Formal predevice gate remains **7/20=35%**.
+
+
+## V1.3.18 — Camera2 / RAW ONNX session ownership
+
+Closes asynchronous Camera2 and ONNX lifecycle gaps: a model-opening
+worker must not resurrect RAW inference after Activity pause, Surface
+loss, session replacement or explicit cancellation. Native CameraDevice,
+ImageReader and capture-session callbacks are verified again on the UI
+thread using independent revocable camera/model leases. Invalid or late
+callbacks cannot change active status. 640x480 YUV output is requested
+only if advertised by Camera2 and actual crops are rejected when they
+do not match the tensor source contract. Pausing no longer joins the
+Camera2 HandlerThread on the UI thread. Nine pure JVM tests verify lease
+revocation across 20,000 synthetic transitions. This remains CODED in
+Gate A item #8, not a claim of hardware verification; A=7/20, B=0/5.
