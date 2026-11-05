@@ -46,6 +46,7 @@ class GpsPipFieldEvidence(private val maxRows: Int = 900) {
     private var permissionDenied = 0
     private var freshSpeedSamples = 0
     private var snapshots = 0
+    private var pipCallbackState = false
     private var finalReport: String? = null
 
     @Synchronized fun start(atMs: Long) {
@@ -87,8 +88,16 @@ class GpsPipFieldEvidence(private val maxRows: Int = 900) {
         rowCount++
         when (event) {
             Event.PIP_REQUESTED -> pipRequests++
-            Event.PIP_ENTERED_CALLBACK -> pipConfirmedEntries++
-            Event.PIP_EXITED_CALLBACK -> pipConfirmedExits++
+            Event.PIP_ENTERED_CALLBACK -> {
+                if (pipCallbackState) faults.add("DUPLICATE_PIP_ENTRY")
+                pipCallbackState = true
+                pipConfirmedEntries++
+            }
+            Event.PIP_EXITED_CALLBACK -> {
+                if (!pipCallbackState) faults.add("PIP_EXIT_WITHOUT_ENTRY")
+                pipCallbackState = false
+                pipConfirmedExits++
+            }
             Event.GPS_PERMISSION_DENIED -> permissionDenied++
             else -> Unit
         }
@@ -107,6 +116,11 @@ class GpsPipFieldEvidence(private val maxRows: Int = 900) {
         }
         rowCount++
         snapshots++
+        if (value.inPip != pipCallbackState) faults.add("PIP_SAMPLE_CALLBACK_MISMATCH")
+        if (value.inPip && !value.videoSurfaceValid) faults.add("PIP_SURFACE_INVALID")
+        if (value.freshSpeedPresent && (!value.gpsRequested ||
+                !value.gpsPermission || !value.gpsProviderEnabled))
+            faults.add("GPS_FRESHNESS_CONTRADICTION")
         if (value.gpsRequested && value.gpsPermission &&
             value.gpsProviderEnabled && value.freshSpeedPresent)
             freshSpeedSamples++
