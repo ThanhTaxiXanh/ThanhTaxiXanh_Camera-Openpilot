@@ -308,7 +308,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "Verify GPS/PiP/settings behavior and lifecycle with device evidence"
+        "next_required": "V1.3.22 fixes real HUD km/h/m and mph/ft unit preferences, hides only the TTX brand on SHOW_LOGO toggle and applies 5m rounding to verified metric leads (14 JVM tests); independent Android GNSS permission/stale-fix and PiP entry/exit/rejection lifecycle evidence is still needed before #19 Gate A PASS."
       },
       "field": {
         "status": "NOT_REQUIRED",

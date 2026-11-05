@@ -1,7 +1,7 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.21-five-minute-evidence (Lite / AI flavors)  
+**Version**: 1.3.22-hud-units (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
@@ -694,3 +694,15 @@ external simultaneous scene/display recording and independent review remain
 mandatory for #20. See
 [5-minute/optical protocol](docs/FIVE_MINUTE_OPTICAL_ACCEPTANCE_V1321.md).
 Formal progress: **Gate A 7/20 (35%), Gate B 0/5**.
+
+
+## V1.3.22 — GPS speed unit and label-setting correctness
+
+Changing `km/h · m` to `mph · ft` in settings now updates the live GPS HUD
+speed when the app resumes; any separately verified lead distance uses
+matching feet/metres without modifying ADAS model geometry. Turning off
+`Hiển thị nhãn TTX` hides **only** the brand label, not GPS or calibrated
+lead data. The `round distance to 5m` setting is also displayed correctly.
+14 JVM regression tests cover unit conversion, invalid values and logo
+isolation. See [HUD unit audit](docs/HUD_UNITS_AND_LABEL_V1322.md).
+Gate A **7/20**, field Gate B **0/5**; hardware GPS/PiP still unverified.
