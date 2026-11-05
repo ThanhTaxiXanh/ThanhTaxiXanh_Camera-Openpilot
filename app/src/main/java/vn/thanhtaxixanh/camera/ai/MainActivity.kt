@@ -321,11 +321,21 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         showStatus("Hãy phát video Direct hoặc IJK trước khi thu 5 phút.")
                     } else {
                         val newAudit = FiveMinuteStreamEvidence()
-                        newAudit.start(selected, SystemClock.elapsedRealtime())
+                        val dualYuv = selected == FiveMinuteStreamEvidence.Backend.DIRECT &&
+                            yuvTapEnabled
+                        newAudit.start(selected, SystemClock.elapsedRealtime(),
+                            requireRawYuv = dualYuv)
                         activeLiveTrace = newAudit
-                        text = "ĐANG THU 5 PHÚT · BẤM ĐỂ DỪNG"
-                        showStatus("Đang ghi tiến độ video mỗi giây. " +
-                            "Chưa đo độ trễ cảnh thực; cần quay đồng thời cảnh và màn hình.")
+                        text = "ĐANG THU 5 PHÚT " +
+                            (if (dualYuv) "SURFACE + YUV" else "VIDEO") +
+                            " · BẤM ĐỂ DỪNG"
+                        showStatus(if (dualYuv)
+                            "Đang ghi riêng Surface và YUV offscreen từng giây. " +
+                                "YUV dừng, reset, lỗi hay tắt trong phiên đều được ghi nhận. " +
+                                "Không đo trễ quang học hoặc xác thực model ONNX."
+                        else "Đang ghi tiến độ video mỗi giây. " +
+                            "Muốn kiểm chứng A500S YUV, bật YUV offscreen TRƯỚC khi thu. " +
+                            "Chưa đo độ trễ cảnh thực.")
                     }
                 }
             }
@@ -1268,7 +1278,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         FiveMinuteStreamEvidence.Sample(
                             clock, FiveMinuteStreamEvidence.Backend.DIRECT,
                             releasedFrames = counters.rendered,
-                            reconnecting = directRecoveryPending)
+                            reconnecting = directRecoveryPending,
+                            yuvEnabled = yuvTapEnabled,
+                            yuvFrames = yuvFrames.get(),
+                            sidecarResets = counters.sidecar?.resets,
+                            sidecarErrors = counters.sidecar?.errors,
+                            rawPairs = rawBridge?.metrics()?.pairs,
+                            onnxResults = rawResults.get())
                     }
                     Backend.IJK -> ijk?.let { player ->
                         var fps: Float? = null
