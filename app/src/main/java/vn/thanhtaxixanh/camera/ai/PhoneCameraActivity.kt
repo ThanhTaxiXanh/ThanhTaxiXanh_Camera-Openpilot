@@ -524,32 +524,56 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
         }
         val manager=getSystemService(CAMERA_SERVICE) as CameraManager
         try {
-            val id=manager.cameraIdList.firstOrNull {
-                manager.getCameraCharacteristics(it).get(
-                    CameraCharacteristics.LENS_FACING)==CameraCharacteristics.LENS_FACING_BACK
-            } ?: manager.cameraIdList.firstOrNull()
-            if (id==null) {
-                status.text="Không tìm thấy camera trên thiết bị."
+            // Survey ALL camera IDs before selecting a lens: on multi-lens
+            // phones the first rear camera need not advertise YUV 640x480.
+            // A per-ID CameraAccessException should not hide other viable IDs.
+            val available = manager.cameraIdList.mapNotNull { candidateId ->
+                try {
+                    val characteristic = manager.getCameraCharacteristics(candidateId)
+                    val sizes = characteristic.get(
+                        CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                        ?.getOutputSizes(ImageFormat.YUV_420_888)
+                    val matchesContract = sizes?.any {
+                        it.width == 640 && it.height == 480
+                    } == true
+                    val facing = when (characteristic.get(
+                        CameraCharacteristics.LENS_FACING)) {
+                        CameraCharacteristics.LENS_FACING_BACK ->
+                            PhoneCameraCandidateSelector.Facing.BACK
+                        CameraCharacteristics.LENS_FACING_FRONT ->
+                            PhoneCameraCandidateSelector.Facing.FRONT
+                        else -> PhoneCameraCandidateSelector.Facing.OTHER
+                    }
+                    val realTime = characteristic.get(
+                        CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
+                        CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
+                    PhoneCameraCandidateSelector.Candidate(
+                        candidateId, facing, matchesContract, realTime)
+                } catch (_: CameraAccessException) {
+                    // A temporarily unavailable auxiliary lens cannot
+                    // prevent selecting another compatible physical camera.
+                    null
+                } catch (_: IllegalArgumentException) {
+                    null
+                }
+            }
+            val selected = PhoneCameraCandidateSelector.select(available)
+            if (selected == null) {
+                status.text = if (available.isEmpty())
+                    "Không đọc được cấu hình Camera2 của thiết bị."
+                else "Không camera nào công bố YUV420 640×480; " +
+                    "không tạo kích thước giả cho preview/AI."
                 return
             }
-            // Only promise YUV420 at 640x480 if Camera2 advertises it.
-            val map=manager.getCameraCharacteristics(id).get(
-                CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-            val supported=map?.getOutputSizes(ImageFormat.YUV_420_888)
-                ?.any { it.width==640 && it.height==480 } == true
-            if (!supported) {
-                status.text="Camera2 không công bố YUV420 640×480; " +
-                    "không mở stream AI với kích thước tự đoán."
-                return
-            }
-            val characteristics = manager.getCameraCharacteristics(id)
-            realtimeSensorClock = characteristics.get(
-                CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
-                CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
-            selectedLens = when(characteristics.get(CameraCharacteristics.LENS_FACING)) {
-                CameraCharacteristics.LENS_FACING_BACK -> PhoneCameraFieldEvidence.Lens.BACK
-                CameraCharacteristics.LENS_FACING_FRONT -> PhoneCameraFieldEvidence.Lens.FRONT
-                else -> PhoneCameraFieldEvidence.Lens.OTHER
+            val id = selected.id
+            realtimeSensorClock = selected.realtimeSensorClock
+            selectedLens = when(selected.facing) {
+                PhoneCameraCandidateSelector.Facing.BACK ->
+                    PhoneCameraFieldEvidence.Lens.BACK
+                PhoneCameraCandidateSelector.Facing.FRONT ->
+                    PhoneCameraFieldEvidence.Lens.FRONT
+                PhoneCameraCandidateSelector.Facing.OTHER ->
+                    PhoneCameraFieldEvidence.Lens.OTHER
             }
 
             started=true
@@ -642,7 +666,8 @@ class PhoneCameraActivity : Activity(), SurfaceHolder.Callback {
                                             }
                                         },handler)
                                     repeatingStarted = true
-                                    status.text="Camera2 preview + YUV420 đang hoạt động. " +
+                                    status.text="Camera2 " + selectedLens.name +
+                                        " preview + YUV420 đang hoạt động. " +
                                         (if (realtimeSensorClock)
                                             "Timestamp cảm biến REALTIME; " +
                                                 "RAW ONNX chỉ là chẩn đoán."
