@@ -43,7 +43,10 @@ class H264YuvSidecar(
         val queueDepth: Int,
         val lastFailure: String,
         val staleAccessUnits: Long,
-        val expiredBacklogResets: Long
+        val expiredBacklogResets: Long,
+        val staleYuvOutputs: Long,
+        val revokedYuvOutputs: Long,
+        val unsupportedYuvOutputs: Long
     )
 
     private data class UnitSample(
@@ -56,6 +59,7 @@ class H264YuvSidecar(
     private val active = AtomicBoolean(false)
     private val resetRequested = AtomicBoolean(false)
     private val gate = OffscreenGopAgeGate()
+    private val outputGate = OffscreenYuvOutputGate()
     private val epoch = AtomicLong(0L)
     private val pending = ArrayBlockingQueue<UnitSample>(16)
     private val received = AtomicLong()
@@ -68,6 +72,9 @@ class H264YuvSidecar(
     private val staleAccessUnits = AtomicLong()
     private val expiredBacklogResets = AtomicLong()
     private val lastFailure = AtomicReference("")
+    private val staleYuvOutputs = AtomicLong()
+    private val revokedYuvOutputs = AtomicLong()
+    private val unsupportedYuvOutputs = AtomicLong()
     private val worker = Thread({ runDecoder() }, "TTX-A500S-YUV-Offscreen").apply {
         isDaemon = true
         start()
@@ -76,7 +83,9 @@ class H264YuvSidecar(
     fun metrics() = Metrics(received.get(), skipped.get(), overflows.get(),
         decoded.get(), delivered.get(), resets.get(), errors.get(),
         pending.size, lastFailure.get(),
-        staleAccessUnits.get(), expiredBacklogResets.get())
+        staleAccessUnits.get(), expiredBacklogResets.get(),
+        staleYuvOutputs.get(), revokedYuvOutputs.get(),
+        unsupportedYuvOutputs.get())
 
     /** Never blocks RTP, the H264 assembler, UI, or the preview feeder. */
     @Synchronized fun offer(annexB: ByteArray, capturedElapsedMs: Long): Boolean {
@@ -180,10 +189,20 @@ class H264YuvSidecar(
         var codec: MediaCodec? = null
         var decoderSynced = false
         var decoderEpoch = -1L
-        var lastCopyAt = 0L
+        // The cadence threshold advances only after a valid YUV callback.
+        // An invalid image, failed plane copy or revoked epoch must not
+        // throttle the next otherwise-healthy offscreen frame.
+        var lastCopyAt = -1L
         val clock = OffscreenPresentationClock()
         val timeline = LinkedHashMap<Long, Long>()
         val bufferInfo = MediaCodec.BufferInfo()
+        fun acceptDecodedImage(captured: Long, image: android.media.Image) {
+            // This is only the secondary decoder's worker; the primary
+            // Surface/RTSP thread never waits for native YUV plane copying.
+            if (deliver(image, captured, decoderEpoch, lastCopyAt)) {
+                lastCopyAt = SystemClock.elapsedRealtime()
+            }
+        }
         try {
             while (alive.get()) {
                 if (resetRequested.getAndSet(false)) {
@@ -193,23 +212,14 @@ class H264YuvSidecar(
                     clock.reset()
                     decoderSynced = false
                     decoderEpoch = -1L
-                    lastCopyAt = 0L
+                    lastCopyAt = -1L
                     resets.incrementAndGet()
                 }
                 val item = try { pending.poll(100, TimeUnit.MILLISECONDS) }
                     catch (_: InterruptedException) { break }
                 if (item == null) {
                     try {
-                        codec?.let { drain(it, bufferInfo, timeline) { captured, image ->
-                            val now = SystemClock.elapsedRealtime()
-                            if (active.get() && !resetRequested.get() &&
-                                decoderEpoch == epoch.get() &&
-                                now - lastCopyAt >= 300L &&
-                                now - captured in 0..550L) {
-                                lastCopyAt = now
-                                deliver(image, captured)
-                            }
-                        } }
+                        codec?.let { drain(it, bufferInfo, timeline, ::acceptDecodedImage) }
                     } catch (error: Exception) {
                         // An idle-output exception must not silently kill the
                         // decoder worker while the network continues offering AUs.
@@ -247,16 +257,7 @@ class H264YuvSidecar(
                 try {
                     var index = running.dequeueInputBuffer(10_000L)
                     if (index < 0) {
-                        drain(running, bufferInfo, timeline) { captured, image ->
-                            val now = SystemClock.elapsedRealtime()
-                            if (active.get() && !resetRequested.get() &&
-                            decoderEpoch == epoch.get() &&
-                            now - lastCopyAt >= 300L &&
-                                now - captured in 0..550L) {
-                                lastCopyAt = now
-                                deliver(image, captured)
-                            }
-                        }
+                        drain(running, bufferInfo, timeline, ::acceptDecodedImage)
                         index = running.dequeueInputBuffer(10_000L)
                     }
                     if (index < 0) {
@@ -289,16 +290,7 @@ class H264YuvSidecar(
                         val oldest = timeline.keys.first()
                         timeline.remove(oldest)
                     }
-                    drain(running, bufferInfo, timeline) { captured, image ->
-                        val now = SystemClock.elapsedRealtime()
-                        if (active.get() && !resetRequested.get() &&
-                            decoderEpoch == epoch.get() &&
-                            now - lastCopyAt >= 300L &&
-                            now - captured in 0..550L) {
-                            lastCopyAt = now
-                            deliver(image, captured)
-                        }
-                    }
+                    drain(running, bufferInfo, timeline, ::acceptDecodedImage)
                 } catch (e: Exception) {
                     report(e)
                     dropPredictionChain()
@@ -309,15 +301,70 @@ class H264YuvSidecar(
         }
     }
 
-    private fun deliver(image: android.media.Image, capturedAtMs: Long) {
-        if (image.format != ImageFormat.YUV_420_888) return
+    private fun deliver(
+        image: android.media.Image,
+        capturedAtMs: Long,
+        decoderEpoch: Long,
+        lastDeliveredAtMs: Long
+    ): Boolean {
+        fun inspect(): OffscreenYuvOutputGate.Verdict = outputGate.check(
+            expectedEpoch = decoderEpoch,
+            currentEpoch = epoch.get(),
+            active = alive.get() && active.get(),
+            resetPending = resetRequested.get(),
+            capturedAtMs = capturedAtMs,
+            checkedAtMs = SystemClock.elapsedRealtime(),
+            lastDeliveredAtMs = lastDeliveredAtMs
+        )
+        fun rejected(verdict: OffscreenYuvOutputGate.Verdict): Boolean {
+            when (verdict) {
+                OffscreenYuvOutputGate.Verdict.STALE_FRAME,
+                OffscreenYuvOutputGate.Verdict.INVALID_CLOCK -> {
+                    staleYuvOutputs.incrementAndGet()
+                    // This offscreen GOP can no longer provide fresh temporal
+                    // frames; resync at an IDR without touching preview.
+                    dropPredictionChain()
+                }
+                OffscreenYuvOutputGate.Verdict.EPOCH_REVOKED,
+                OffscreenYuvOutputGate.Verdict.RESET_PENDING ->
+                    revokedYuvOutputs.incrementAndGet()
+                else -> Unit
+            }
+            return false
+        }
+        val first = inspect()
+        if (first != OffscreenYuvOutputGate.Verdict.DELIVER)
+            return rejected(first)
+        if (image.format != ImageFormat.YUV_420_888) {
+            unsupportedYuvOutputs.incrementAndGet()
+            report(IllegalStateException("Decoder output format " + image.format +
+                " is not YUV_420_888"))
+            dropPredictionChain()
+            return false
+        }
         try {
-            // Snapshot takes ownership of NO native memory. Image is closed
-            // by the drain routine before its codec buffer is released.
+            // Native YUV plane copy can take enough time for an RTP damage
+            // event to revoke the GOP or for this receipt to expire. Recheck
+            // BEFORE passing immutable pixels to any evidence/ONNX consumer.
             val frame = AndroidYuvImageBridge.snapshot(image)
-            delivered.incrementAndGet()
+            val afterCopy = inspect()
+            if (afterCopy != OffscreenYuvOutputGate.Verdict.DELIVER)
+                return rejected(afterCopy)
             onFrame(frame, capturedAtMs)
-        } catch (e: Exception) { report(e) }
+            // Discontinuity may be raised synchronously from the consumer.
+            // Count only a callback that completed within the same GOP.
+            if (!alive.get() || !active.get() || resetRequested.get() ||
+                decoderEpoch != epoch.get()) {
+                revokedYuvOutputs.incrementAndGet()
+                return false
+            }
+            delivered.incrementAndGet()
+            return true
+        } catch (e: Exception) {
+            report(e)
+            dropPredictionChain()
+            return false
+        }
     }
 
     private inline fun drain(

@@ -1180,6 +1180,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                             " · reset ${yuv.resets} · tràn ${yuv.overflows}" +
                             " · AU quá hạn ${yuv.staleAccessUnits}" +
                             " · đệm quá hạn ${yuv.expiredBacklogResets}" +
+                            " · YUV hết hạn ${yuv.staleYuvOutputs}" +
+                            " · YUV sai epoch ${yuv.revokedYuvOutputs}" +
+                            " · YUV sai định dạng ${yuv.unsupportedYuvOutputs}" +
                             " · lỗi ${yuv.errors}")
                         if (yuv.lastFailure.isNotBlank())
                             detailView.append("\n" + yuv.lastFailure)
