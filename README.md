@@ -1,10 +1,19 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.32-phone-camera-field-evidence (Lite / AI flavors)  
+**Version**: 1.3.33-camera2-multilens-yuv (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
+
+V1.3.33 selects the Camera2 phone lens by its advertised physical
+640x480 YUV_420_888 support instead of blindly taking the first rear
+camera ID. Rear lenses remain preferred; a viable front/other camera
+can be used if no suitable rear exists. REALTIME clocks are preferred
+within the same lens category; UNKNOWN continues to fail closed for RAW
+ONNX. Ten pure JVM tests cover this policy; physical review is pending.
+See docs/PHONE_CAMERA2_MULTILENS_V1333.md.
+
 
 V1.3.32: Direct entry to Android phone Camera2 (rear preview + YUV 640x480)
 without the 70mai Wi-Fi. A 60-second user-armed Camera2 diagnostic recorder
