@@ -58,7 +58,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "Scoped independent physical proof: V1.3.35/V1.3.37 owner videos and 2026-11-06 review confirm moving A500S Direct Surface preview, plus TTXLIVE01 300.548s local Surface progress (0 reconnect, YUV OFF). Still needs independently demonstrated RTSP IJK fallback/transport recovery and actual hardware frame timing before #3 PASS. docs/acceptance/A500S_REAL_FIELD_BUNDLE_REVIEW_20261106.md"
+        "next_required": "V1.3.41 owner-requested IJKPlayer/FFmpeg PRIMARY A500S preview replaces xADAS Direct as normal entry point (IJK SMOOTH TCP retained; watchdog and IJK-only reconnect unchanged). IJK is open-source and NOT the proprietary 70mai 4.5.0 native SDK. Need actual owner A500S on-device IJK live footage, IJK reconnect and fallback/transport behavior, and independent video timing before #3 PASS. docs/A500S_IJK_FIRST_LIVE_V1341.md"
       },
       "field": {
         "status": "NOT_REQUIRED",
@@ -254,7 +254,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "V1.3.39 physical A500S video owner 2026-11-06: at t45 software c2.android.avc.decoder sidecar delivered 16 YUV/912 decoded outputs (829 stale dropped), native resets/errors 0; unlike V1.3.38 27 stale-output-induced resets. RTSP Socket closed/reconnect up to 2/3 at t48-60, so not long-term continuous. V1.3.40 opt-in before-Direct codec selection (software-first default vs Android system-default which MAY still be software) enables independent A/B comparison while keeping primary Surface & 550ms output freshness unchanged. Must still prove sustained real A500S YUV→valid temporal pairs→authorized ONNX with parity before #14 PASS. docs/acceptance/A500S_V1339_FIELD_AND_V1340_CODEC_TRIAL.md"
+        "next_required": "V1.3.41 primary video IJKPlayer/FFmpeg sends decoded video to Surface but DOES NOT provide an IJK-frame YUV callback to A500sRawVisionBridge. The V1.3.38 TTXYUV02 four non-temporal samples only established native secondary MediaCodec output (gaps 30.205s, 7.272s, 8.723s); ONNX never verified. Build a separately authorized, continuous, genuine IJK FFmpeg YUV tap with temporal pairing and model/device parity, prove no harm to IJK preview, before #14 PASS. docs/A500S_IJK_FIRST_LIVE_V1341.md"
       },
       "field": {
         "status": "NOT_VERIFIED",
@@ -337,7 +337,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "Owner 2026-11-06 actual TTXLIVE01: 300.548s Direct local frame progression, 283/292 progress samples, 0 reconnect, 9 isolated no-progress, faults NONE, but YUV NOT ARMED; optical video covers only 158.733s, scene-to-display delay NOT MEASURED. Independent synchronized 5-minute optical source-to-screen review near 1 second and continuity/visual verification still required. Do NOT claim #20 PASS. docs/acceptance/A500S_REAL_FIELD_BUNDLE_REVIEW_20261106.md"
+        "next_required": "V1.3.41 primary IJKPlayer supports owner-armed 300s TTXLIVE01 with local native output FPS and IJK-only reconnect; previous 300.548s owner trace was Direct/YUV-OFF and did NOT measure physical optical latency. Need independent 300s moving IJK A500S real-world video, absence of freezes/reconnect and synchronized scene-to-display optical delay near ~1s before #20 PASS. docs/A500S_IJK_FIRST_LIVE_V1341.md"
       },
       "field": {
         "status": "NOT_VERIFIED",
