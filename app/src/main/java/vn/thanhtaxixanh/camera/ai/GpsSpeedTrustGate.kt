@@ -25,6 +25,7 @@ class GpsSpeedTrustGate(
     private var newestObservedFixNs: Long = -1L
     private var acceptedFixNs: Long = -1L
     private var speedKmh: Float? = null
+    private var receiptClockInvalid = false
 
     /**
      * [speedMps] null means Location.hasSpeed() == false.
@@ -37,6 +38,15 @@ class GpsSpeedTrustGate(
         receivedElapsedNs: Long,
         speedAccuracyMps: Float? = null
     ): Boolean {
+        // A negative receipt clock cannot establish ordering against cached fixes.
+        // Quarantine the session until an explicit lifecycle reset rather than
+        // allowing a later cached callback to resurrect rejected speed.
+        if (receivedElapsedNs < 0L) {
+            receiptClockInvalid = true
+            invalidate()
+            return false
+        }
+        if (receiptClockInvalid) return false
         // An older callback is irrelevant even when its payload is malformed.
         // Check ordering BEFORE invalidation: an invalid late cached fix must
         // not erase a newer trusted speed (or falsely extend its lifetime).
@@ -48,8 +58,6 @@ class GpsSpeedTrustGate(
         // older cached fixes cannot resurrect a rejected speed reading.
         if (fixElapsedNs > 0L && receivedElapsedNs >= 0L) {
             newestObservedFixNs = minOf(fixElapsedNs, receivedElapsedNs)
-        } else if (fixElapsedNs > 0L) {
-            newestObservedFixNs = fixElapsedNs
         }
         if (fixElapsedNs <= 0L || receivedElapsedNs < 0L ||
             fixElapsedNs > receivedElapsedNs) {
@@ -82,6 +90,7 @@ class GpsSpeedTrustGate(
 
     @Synchronized fun reset() {
         newestObservedFixNs = -1L
+        receiptClockInvalid = false
         invalidate()
     }
 
