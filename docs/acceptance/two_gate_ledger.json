@@ -10,7 +10,7 @@
     20
   ],
   "source_gate": "docs/PREDEVICE_90_GATE.md",
-  "note": "V1.3.43 includes opt-in IJK Surface PixelCopy ARGB→temporal ONNX RAW diagnostic (no second decoder, NOT genuine native YUV) and bounded host-tested leases. Independently reviewed owner's real A500S field bundle still has only non-temporal native secondary-decoder YUV, >300s Direct Surface trace and GPS/PiP evidence; no IJK RAW, native YUV→ONNX, model, optical latency or metric calibration proof. Gate A 8/20; Gate B 0/5; no new PASS.",
+  "note": "2026-11-06 V1.3.44: owner uploaded 73.8s screen recording, 30.667s road+handset single-shot video and IJK TTXLIVE01. Owner reports ~3s optical lag, despite IJK internal-cache 0ms (NOT a true latency measurement). Audit 37.47s with one RTSP OnCompletion reconnect at 37.438s and premature PLAYER_UNAVAILABLE trace stop. New opt-in BALANCED TCP bounded-cache A/B and full trace continuity across reconnect; any reconnect still fails #20. No new acceptance PASS: Gate A 8/20=40%, Gate B 0/5.",
   "criteria": [
     {
       "id": 1,
@@ -58,7 +58,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "V1.3.41 owner-requested IJKPlayer/FFmpeg PRIMARY A500S preview replaces xADAS Direct as normal entry point (IJK SMOOTH TCP retained; watchdog and IJK-only reconnect unchanged). IJK is open-source and NOT the proprietary 70mai 4.5.0 native SDK. Need actual owner A500S on-device IJK live footage, IJK reconnect and fallback/transport behavior, and independent video timing before #3 PASS. docs/A500S_IJK_FIRST_LIVE_V1341.md"
+        "next_required": "V1.3.44 owner field IJK SMOOTH TCP screen video shows last reason RTSP OnCompletion; 37.438s IJK trace recovered but recorder ended early. New BALANCED TCP 1000ms native cache bound and LOW_LATENCY TCP A/B require owner handset comparison with real scene, successful reconnect and no worsening jitter. No complete #3 proof. docs/A500S_IJK_LAG_AB_V1344.md"
       },
       "field": {
         "status": "NOT_REQUIRED",
@@ -337,7 +337,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "V1.3.41 primary IJKPlayer supports owner-armed 300s TTXLIVE01 with local native output FPS and IJK-only reconnect; previous 300.548s owner trace was Direct/YUV-OFF and did NOT measure physical optical latency. Need independent 300s moving IJK A500S real-world video, absence of freezes/reconnect and synchronized scene-to-display optical delay near ~1s before #20 PASS. docs/A500S_IJK_FIRST_LIVE_V1341.md"
+        "next_required": "2026-11-06 actual IJK TTXLIVE01 lasted only 37.470s: 1 reconnect at 37.438s, end PLAYER_UNAVAILABLE. Owner-reported ~3s scene-to-screen delay; media player cache 0ms is NOT optical delay. V1.3.44 records full 300s even through reconnect, but RECONNECT_OBSERVED permanently denies #20; test BALANCED/SMOOTH/LOW_LATENCY A/B on same camera and submit external scene+handset optical video and a NEW uninterrupted IJK 300s trace near ~1s optical latency. docs/acceptance/A500S_IJK_LAG_AND_COMPLETION_FIELD_REVIEW_20261106.md"
       },
       "field": {
         "status": "NOT_VERIFIED",
