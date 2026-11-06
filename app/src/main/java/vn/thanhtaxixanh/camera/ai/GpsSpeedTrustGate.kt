@@ -41,12 +41,15 @@ class GpsSpeedTrustGate(
         // Check ordering BEFORE invalidation: an invalid late cached fix must
         // not erase a newer trusted speed (or falsely extend its lifetime).
         if (fixElapsedNs > 0L && fixElapsedNs <= newestObservedFixNs) return false
+        // A malformed newer fix still advances the timestamp watermark.
+        // Otherwise a late, older cached fix could resurrect rejected speed.
+        // Future-dated fixes require reset() to recover the session clock.
+        if (fixElapsedNs > 0L) newestObservedFixNs = fixElapsedNs
         if (fixElapsedNs <= 0L || receivedElapsedNs < 0L ||
             fixElapsedNs > receivedElapsedNs) {
             invalidate()
             return false
         }
-        newestObservedFixNs = fixElapsedNs
 
         val kmh = speedMps?.times(3.6f)
         if (receivedElapsedNs - fixElapsedNs >= maxAgeNs ||
