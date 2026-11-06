@@ -28,6 +28,8 @@ jobs:
         run: |
           python3 tools/verify_two_gate.py
           python3 -m unittest discover -s tools -p 'test_two_gate.py' -v
+      - name: Verify independent optical latency audit fail-closed tests
+        run: python3 -m unittest discover -s tools -p 'test_optical_latency_audit.py' -v
       - name: Guard persistent camera viewport on compact screens
         run: python3 -m unittest discover -s tools -p 'test_preview_viewport.py' -v
       - name: Guard against black SurfaceView
