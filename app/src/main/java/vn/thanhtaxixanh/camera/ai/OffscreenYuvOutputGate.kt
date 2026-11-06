@@ -47,3 +47,30 @@ class OffscreenYuvOutputGate(
         else -> Verdict.DELIVER
     }
 }
+
+/**
+ * Decoded output age is NOT the same as H264 prediction-chain integrity.
+ * A late decoded Image must never reach the RAW/ONNX temporal consumer,
+ * but discarding that output does not make previously queued reference
+ * pictures invalid. Restarting the native decoder on EVERY stale Image
+ * causes an IDR-dependent reset loop (observed on owner A500S).
+ *
+ * Invalid physical/monotonic clocks still demand sidecar resync. RTP/AU
+ * corruption and stale compressed input remain governed by their own
+ * existing fail-closed H264 epoch and GOP gates.
+ */
+object OffscreenYuvRejectionPolicy {
+    enum class Action {
+        DROP_ONLY,
+        DROP_AND_INVALIDATE_TEMPORAL,
+        RESET_SECONDARY_GOP
+    }
+
+    fun action(verdict:OffscreenYuvOutputGate.Verdict):Action = when(verdict) {
+        OffscreenYuvOutputGate.Verdict.STALE_FRAME ->
+            Action.DROP_AND_INVALIDATE_TEMPORAL
+        OffscreenYuvOutputGate.Verdict.INVALID_CLOCK ->
+            Action.RESET_SECONDARY_GOP
+        else -> Action.DROP_ONLY
+    }
+}
