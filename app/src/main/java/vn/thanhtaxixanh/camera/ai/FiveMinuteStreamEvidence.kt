@@ -69,6 +69,9 @@ class FiveMinuteStreamEvidence(
     private var lastRawPairs: Long? = null
     private var lastOnnxResults: Long? = null
     private var reconnectCount = 0
+    private var recoveredCount = 0
+    private var pendingReconnectMs = -1L
+    private var maxRecoveryGapMs = 0L
     private var lastElapsed = 0L
     private var completion: String? = null
 
@@ -105,14 +108,24 @@ class FiveMinuteStreamEvidence(
 
     private fun problem(code: String) { faults.add(code) }
 
-    @Synchronized fun reconnect(atElapsedMs: Long) {
+    @Synchronized fun reconnect(atElapsedMs: Long, reason: String = "UNCLASSIFIED") {
         if (!isActive()) return
         reconnectCount++
         problem("RECONNECT_OBSERVED")
         if (atElapsedMs < beginMs || atElapsedMs < lastTickMs)
             problem("RECONNECT_INVALID_CLOCK")
+        if (pendingReconnectMs >= 0L) problem("RECONNECT_BEFORE_RECOVERY")
+        pendingReconnectMs = atElapsedMs
+        // The reason must be a short allowlisted code. Never persist raw
+        // player exceptions, tokens, RTSP URLs, IPs or device identifiers.
+        val safeReason = if (reason in setOf(
+                "RTSP_ON_COMPLETION", "IJK_ON_ERROR", "STARTUP_FPS_TIMEOUT",
+                "OUTPUT_FPS_STALL", "IJK_INITIALIZATION_OR_OTHER",
+                "DIRECT_RECONNECT", "UNCLASSIFIED")) reason
+            else "UNCLASSIFIED"
         rows.append("event:reconnect,")
             .append((atElapsedMs - beginMs).coerceAtLeast(0L))
+            .append(',').append(safeReason)
             .append('\n')
     }
 
@@ -164,6 +177,17 @@ class FiveMinuteStreamEvidence(
         if (moving) {
             progressCount++
             lastProgressMs = input.atElapsedMs
+            if (pendingReconnectMs >= 0L &&
+                input.atElapsedMs >= pendingReconnectMs) {
+                recoveredCount++
+                val recoveryGap = input.atElapsedMs - pendingReconnectMs
+                maxRecoveryGapMs = maxOf(maxRecoveryGapMs, recoveryGap)
+                rows.append("event:local_progress_resumed,")
+                    .append(input.atElapsedMs - beginMs)
+                    .append(',').append(recoveryGap)
+                    .append('\n')
+                pendingReconnectMs = -1L
+            }
         } else if (input.atElapsedMs - lastProgressMs >= maxNoProgressMs) {
             problem("VIDEO_PROGRESS_STALLED")
         }
@@ -297,6 +321,12 @@ class FiveMinuteStreamEvidence(
                 else if (localPass) "OBSERVED_LOCAL_ONLY"
                 else "INCOMPLETE_OR_INTERRUPTED").append('\n')
             append("reconnect_events=").append(reconnectCount).append('\n')
+            append("recovered_events=").append(recoveredCount).append('\n')
+            append("max_local_recovery_gap_ms=").append(
+                if (recoveredCount > 0) maxRecoveryGapMs.toString()
+                else "NOT_MEASURED").append('\n')
+            append("unresolved_reconnect=").append(
+                pendingReconnectMs >= 0L).append('\n')
             append("faults=").append(if (faults.isEmpty()) "NONE"
                 else faults.joinToString("|")).append('\n')
             append("local_five_minute_trace=")
