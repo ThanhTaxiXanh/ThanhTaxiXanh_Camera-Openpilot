@@ -838,15 +838,23 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1L)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 1000000L)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 32768L)
-            if (activeIjkProfile.experimentalLowLatency) {
-                // Experimental: reduce app-side buffering only. A500S may
-                // already be encoding with a multi-second GOP/stream delay.
-                // Do not enable nobuffer/skip_frame/codec_low_delay here:
-                // combinations can corrupt H264 playback on some devices.
-                player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "min-frames", 5L)
+            // Only the two explicit experimental TCP profiles set cache
+            // limits. SMOOTH and UDP_SMOOTH retain the exact native defaults
+            // previously observed on the owner's handset.
+            // These limits cannot cap camera-side encode/GOP delay.
+            // Do not combine nobuffer/skip_frame/codec_low_delay here:
+            // combinations can corrupt H264 or break RTSP on some devices.
+            activeIjkProfile.minFrames?.let { frames ->
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER,
-                    "max_cached_duration", 600L)
-                player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "max_delay", 300000L)
+                    "min-frames", frames)
+            }
+            activeIjkProfile.maxCachedDurationMs?.let { maxMs ->
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER,
+                    "max_cached_duration", maxMs)
+            }
+            activeIjkProfile.maxDelayUs?.let { maxUs ->
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT,
+                    "max_delay", maxUs)
             }
             player.setDisplay(surfaceView.holder)
             player.setDataSource(currentUrl)
@@ -898,7 +906,16 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         if (token != generation || backend != Backend.IJK || ijkRecoveryPending) return
         ijkRecoveryPending = true
         suspendIjkSurfaceTap()
-        activeLiveTrace?.reconnect(SystemClock.elapsedRealtime())
+        // Record only a fixed reason class, never an arbitrary native
+        // exception string that could contain an RTSP URL or credentials.
+        val cause = when {
+            reason.startsWith("RTSP kết thúc") -> "RTSP_ON_COMPLETION"
+            reason.startsWith("IJK OnError") -> "IJK_ON_ERROR"
+            reason.startsWith("IJK chưa đạt") -> "STARTUP_FPS_TIMEOUT"
+            reason.startsWith("IJK dừng FPS") -> "OUTPUT_FPS_STALL"
+            else -> "IJK_INITIALIZATION_OR_OTHER"
+        }
+        activeLiveTrace?.reconnect(SystemClock.elapsedRealtime(), cause)
         ijkLastStopCause = reason.take(140)
         val now = SystemClock.elapsedRealtime()
         if (ijkFirstVideoAtMs > 0L && now - ijkFirstVideoAtMs >= 15_000L)
@@ -1581,17 +1598,25 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                             rawPairs = rawBridge?.metrics()?.pairs,
                             onnxResults = rawResults.get())
                     }
-                    Backend.IJK -> ijk?.let { player ->
-                        var fps: Float? = null
+                    Backend.IJK -> {
+                        // During a normal async reconnect ijk is temporarily
+                        // null. Keep observing the full owner-armed period and
+                        // record NO_PROGRESS, rather than sealing the trace
+                        // at 37 seconds with PLAYER_UNAVAILABLE.
+                        // A reconnect still irrevocably disqualifies PASS.
+                        val player = ijk
+                        var fps = 0f
                         var playing = false
-                        try {
-                            fps = player.videoOutputFramesPerSecond
-                            playing = player.isPlaying
-                        } catch (_: Throwable) {}
+                        if (player != null) {
+                            try {
+                                fps = player.videoOutputFramesPerSecond
+                                playing = player.isPlaying
+                            } catch (_: Throwable) {}
+                        }
                         FiveMinuteStreamEvidence.Sample(
                             clock, FiveMinuteStreamEvidence.Backend.IJK,
                             ijkOutputFps = fps, ijkPlaying = playing,
-                            reconnecting = ijkRecoveryPending)
+                            reconnecting = ijkRecoveryPending || player == null)
                     }
                     null -> null
                 }
