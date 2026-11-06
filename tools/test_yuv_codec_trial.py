@@ -31,12 +31,14 @@ class OwnerSecondaryCodecTrial(unittest.TestCase):
         self.assertIn('MediaCodec.createDecoderByType("video/avc")',SIDECAR)
 
     def test_primary_media_codec_not_switched_to_secondary_selection(self):
-        # Primary preview has separate hardware/software selection scope.
-        self.assertNotIn("yuvPreference",DIRECT.split("val decoder=MediaCodec")[0].split("val decoder=MediaCodec")[-1]
-            if False else "")
+        # Main output Surface must keep its own standard AVC codec.
+        primary='val decoder=MediaCodec.createDecoderByType("video/avc")'
+        self.assertIn(primary,DIRECT)
+        region=DIRECT[DIRECT.index(primary):DIRECT.index(primary)+400]
+        self.assertNotIn("yuvPreference",region)
+        self.assertNotIn("decoderPreference",region)
         self.assertNotIn("decoderPreference",MAIN)
-        self.assertIn("val decoder=MediaCodec",DIRECT)
         self.assertIn("frameConsumer",DIRECT)
-        
+
 if __name__=="__main__":
     unittest.main()
