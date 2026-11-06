@@ -90,4 +90,18 @@ class GpsSpeedTrustGateTest {
         assertTrue(x.observe(4f,10*second,10*second,null))
         assertEquals(14.4f,x.currentKmh(11*second)!!,0.001f)
     }
+    @Test fun malformedNewerFixCannotBeFollowedByOlderCachedResurrection() {
+        val x=g()
+        assertTrue(x.observe(10f,10*second,10*second,0.2f))
+        // A newer timestamp with a receipt-clock inconsistency is invalid.
+        assertFalse(x.observe(12f,13*second,12*second,0.2f))
+        assertNull(x.currentKmh(12*second))
+        // Even a superficially valid callback must not roll back that verdict.
+        assertFalse(x.observe(9f,11*second,12*second,0.2f))
+        assertNull(x.currentKmh(12*second))
+        // A genuinely newer, well-formed fix can restore display speed.
+        assertTrue(x.observe(8f,14*second,14*second,0.2f))
+        assertEquals(28.8f,x.currentKmh(14*second)!!,0.001f)
+    }
+
 }
