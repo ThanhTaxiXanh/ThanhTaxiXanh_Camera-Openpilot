@@ -254,7 +254,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "Independently reviewed owner 2026-11-06 V1.3.38: four checksum-valid genuine-looking A500S 640x480 TTXYUV02 samples, but gaps 30.205s/7.272s/8.723s => non-temporal only, no ONNX. Phone video 84.03s shows independent primary Surface still moving, secondary c2.android.avc.decoder SOFTWARE around t48 with 27 resets and 27 expired YUV outputs, 0 exhausted input-buffer errors. V1.3.39 prevents unnecessary decoder GOP reset for stale DECODED outputs while STILL dropping stale frames and invalidating temporal pairs; corrupt input/clock/epoch remain fail-closed. Still needs continuous physical YUV and authorized ONNX model/proven outputs before PASS. See docs/acceptance/A500S_REAL_FOUR_YUV_REVIEW_20261106.md"
+        "next_required": "V1.3.39 physical A500S video owner 2026-11-06: at t45 software c2.android.avc.decoder sidecar delivered 16 YUV/912 decoded outputs (829 stale dropped), native resets/errors 0; unlike V1.3.38 27 stale-output-induced resets. RTSP Socket closed/reconnect up to 2/3 at t48-60, so not long-term continuous. V1.3.40 opt-in before-Direct codec selection (software-first default vs Android system-default which MAY still be software) enables independent A/B comparison while keeping primary Surface & 550ms output freshness unchanged. Must still prove sustained real A500S YUV→valid temporal pairs→authorized ONNX with parity before #14 PASS. docs/acceptance/A500S_V1339_FIELD_AND_V1340_CODEC_TRIAL.md"
       },
       "field": {
         "status": "NOT_VERIFIED",
