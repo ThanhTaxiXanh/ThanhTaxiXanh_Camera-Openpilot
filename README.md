@@ -1,10 +1,23 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.40-yuv-secondary-codec-trial (Lite / AI flavors)  
+**Version**: 1.3.41-ijk-first-a500s-live (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
+
+**V1.3.41: IJKPlayer/FFmpeg is now the owner-requested PRIMARY A500S live video mode.**
+The IJK LIVE button is fixed below the camera viewport; Direct
+MediaCodec and secondary YUV/ONNX experiments are collapsed into
+an explicit advanced panel, NOT auto-started or used for IJK recovery.
+Previous IJK smooth TCP profile, IJK-only restart/owner heartbeat,
+native FPS diagnostics, GPS/PiP and five-minute IJK local trace remain.
+This uses the repo's open-source IJKPlayer, **not proprietary 70mai
+4.5.0 binaries**. It does NOT introduce an IJK-to-ONNX YUV adapter,
+validated ADAS or one-second optical latency. See
+`docs/A500S_IJK_FIRST_LIVE_V1341.md`.
+Gate A **8/20 (40%)**, Gate B **0/5**.
+
 
 V1.3.39 physical follow-up (owner 61s A500S screen video): at t45
 software AVC sidecar delivered 16 real YUV frames/912 decoded outputs,
