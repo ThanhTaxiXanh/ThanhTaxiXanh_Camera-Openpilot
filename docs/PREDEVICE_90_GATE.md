@@ -454,3 +454,13 @@ GPS/PiP and local 5min trace unchanged. IJK has NO validated
 YUV→Openpilot/ONNX frame tap in this version. Exact scope is recorded
 in docs/A500S_IJK_FIRST_LIVE_V1341.md. CI source-layout tests do
 not increase PASS. Gate A **8/20=40%**, Gate B **0/5**.
+
+
+V1.3.42: native IJK health guard refuses to consider cached positive
+output FPS healthy if IJK `isPlaying=false`. First-frame notifications
+no longer suppress a >12-second sustained-FPS startup watchdog; two
+overdue samples after >5.5s of unhealthy native playback request an
+IJK-only reconnect. Seven synthetic JVM tests and a source-wiring check
+protect recovery logic. This does not create a native IJK YUV frame tap,
+calibrated AI, independent optical proof or owner-device verification.
+Gate A **8/20 (40%)**, Gate B **0/5**, unchanged.
