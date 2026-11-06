@@ -80,4 +80,44 @@ class OffscreenCodecSelectionTest {
             c("vendor.hevc",avc=false,software=false)))
         assertFalse(names.contains("vendor.avc"))
     }
+
+    @Test fun softwareDecoderHasBoundedLongerInputBudgetThanHardware() {
+        val sw=OffscreenCodecSelection.inputWaitPlan(true)
+        val hw=OffscreenCodecSelection.inputWaitPlan(false)
+        assertEquals(8,sw.maxAttempts)
+        assertEquals(20_000L,sw.timeoutUs)
+        assertEquals(3,hw.maxAttempts)
+        assertEquals(10_000L,hw.timeoutUs)
+        assertTrue(sw.maxAttempts*sw.timeoutUs<=200_000L)
+        assertTrue(hw.maxAttempts*hw.timeoutUs<=200_000L)
+    }
+
+    @Test fun softwareOnlyResyncsAfterEightExhaustedInputWaits() {
+        val sw=OffscreenCodecSelection.inputWaitPlan(true)
+        for (n in 1 until sw.maxAttempts) {
+            assertEquals(OffscreenCodecSelection.InputWaitVerdict.RETRY_DRAIN,
+                OffscreenCodecSelection.inputBufferUnavailable(n,sw.maxAttempts))
+        }
+        assertEquals(OffscreenCodecSelection.InputWaitVerdict.RESYNC_IDR,
+            OffscreenCodecSelection.inputBufferUnavailable(8,8))
+    }
+
+    @Test fun hardwareBudgetStillExhaustsAfterThreeInputWaits() {
+        val hw=OffscreenCodecSelection.inputWaitPlan(false)
+        assertEquals(OffscreenCodecSelection.InputWaitVerdict.RESYNC_IDR,
+            OffscreenCodecSelection.inputBufferUnavailable(hw.maxAttempts,
+                hw.maxAttempts))
+    }
+
+    @Test fun invalidNativeWaitPlanCannotExtendInputStarvationIndefinitely() {
+        val invalid=listOf(
+            Pair(0,10_000L),Pair(9,10_000L),Pair(8,30_000L),
+            Pair(8,0L),Pair(1,-1L),Pair(8,25_001L))
+        for ((attempts,us) in invalid) {
+            try {
+                OffscreenCodecSelection.InputWaitPlan(attempts,us)
+                fail("Accepted unbounded input wait policy: $attempts/$us")
+            } catch (_:IllegalArgumentException) {}
+        }
+    }
 }
