@@ -133,4 +133,74 @@ class OffscreenYuvOutputGateTest {
                     gate.check(epoch-1,epoch,true,false,now-100L,now,last))
         }
     }
+
+    @Test fun lateNativeYuvNeverEntersInferenceButDoesNotResetDecoderGop() {
+        val verdict = check(captured=9_000L, now=10_000L)
+        assertEquals(OffscreenYuvOutputGate.Verdict.STALE_FRAME,verdict)
+        assertEquals(OffscreenYuvRejectionPolicy.Action.DROP_AND_INVALIDATE_TEMPORAL,
+            OffscreenYuvRejectionPolicy.action(verdict))
+    }
+
+    @Test fun droppingLateOutputDoesNotRevokeCurrentCodecEpoch() {
+        // The caller drops this aged Image and invalidates the old
+        // temporal pair WITHOUT incrementing the sidecar H264 epoch.
+        val late = guard.check(4L,4L,true,false,9_000L,10_000L,-1L)
+        assertEquals(OffscreenYuvRejectionPolicy.Action.DROP_AND_INVALIDATE_TEMPORAL,
+            OffscreenYuvRejectionPolicy.action(late))
+        val next = guard.check(4L,4L,true,false,10_050L,10_100L,-1L)
+        assertEquals(OffscreenYuvOutputGate.Verdict.DELIVER,next)
+    }
+
+    @Test fun invalidMonotonicClockStillForcesDecoderGopReset() {
+        for (verdict in listOf(
+            check(captured=-1L),
+            check(captured=10_001L),
+            check(delivered=10_100L))) {
+            assertEquals(OffscreenYuvOutputGate.Verdict.INVALID_CLOCK,verdict)
+            assertEquals(OffscreenYuvRejectionPolicy.Action.RESET_SECONDARY_GOP,
+                OffscreenYuvRejectionPolicy.action(verdict))
+        }
+    }
+
+    @Test fun revokedEpochMustBeDroppedAndCannotResurrectYuvImage() {
+        for (verdict in listOf(
+            OffscreenYuvOutputGate.Verdict.EPOCH_REVOKED,
+            OffscreenYuvOutputGate.Verdict.RESET_PENDING,
+            OffscreenYuvOutputGate.Verdict.INACTIVE)) {
+            assertEquals(OffscreenYuvRejectionPolicy.Action.DROP_ONLY,
+                OffscreenYuvRejectionPolicy.action(verdict))
+        }
+        assertEquals(OffscreenYuvOutputGate.Verdict.EPOCH_REVOKED,
+            guard.check(4L,5L,true,false,10_000L,10_050L,-1L))
+    }
+
+    @Test fun throttledOutputsRemainDropsNotCodecRestarts() {
+        val t=check(captured=9_900L,now=10_000L,delivered=9_900L)
+        assertEquals(OffscreenYuvOutputGate.Verdict.THROTTLED,t)
+        assertEquals(OffscreenYuvRejectionPolicy.Action.DROP_ONLY,
+            OffscreenYuvRejectionPolicy.action(t))
+    }
+
+    @Test fun repeatedLateYuvAcrossThousandsOfFramesDoesNotDemandReset() {
+        val gate = OffscreenYuvOutputGate()
+        var nativeDecoderResets = 0
+        var temporalInvalidations = 0
+        repeat(10_000) { i ->
+            val now=20_000L+i*35L
+            val verdict=gate.check(2L,2L,true,false,
+                now-800L,now,-1L)
+            when(OffscreenYuvRejectionPolicy.action(verdict)) {
+                OffscreenYuvRejectionPolicy.Action.RESET_SECONDARY_GOP ->
+                    nativeDecoderResets++
+                OffscreenYuvRejectionPolicy.Action.DROP_AND_INVALIDATE_TEMPORAL ->
+                    temporalInvalidations++
+                else -> Unit
+            }
+            assertEquals(OffscreenYuvOutputGate.Verdict.STALE_FRAME,verdict)
+        }
+        assertEquals(10_000,temporalInvalidations)
+        assertEquals(0,nativeDecoderResets)
+        assertEquals(OffscreenYuvOutputGate.Verdict.DELIVER,
+            gate.check(2L,2L,true,false,400_000L,400_120L,-1L))
+    }
 }

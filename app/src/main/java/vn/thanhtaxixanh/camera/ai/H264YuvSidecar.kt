@@ -401,18 +401,27 @@ class H264YuvSidecar(
             lastDeliveredAtMs = lastDeliveredAtMs
         )
         fun rejected(verdict: OffscreenYuvOutputGate.Verdict): Boolean {
-            when (verdict) {
-                OffscreenYuvOutputGate.Verdict.STALE_FRAME,
-                OffscreenYuvOutputGate.Verdict.INVALID_CLOCK -> {
+            when (OffscreenYuvRejectionPolicy.action(verdict)) {
+                OffscreenYuvRejectionPolicy.Action.DROP_AND_INVALIDATE_TEMPORAL -> {
                     staleYuvOutputs.incrementAndGet()
-                    // This offscreen GOP can no longer provide fresh temporal
-                    // frames; resync at an IDR without touching preview.
+                    // This decoded output is too old for RAW/ONNX, but the
+                    // compressed GOP itself can still be healthy. Release
+                    // the image via drain() without resetting the codec.
+                    // Still revoke the previous temporal pair so a later
+                    // fresh output cannot use an image before this gap.
+                    try { onDiscontinuity() } catch (_: Exception) {}
+                }
+                OffscreenYuvRejectionPolicy.Action.RESET_SECONDARY_GOP -> {
+                    staleYuvOutputs.incrementAndGet()
+                    // Broken monotonic clock cannot be trusted; resync
+                    // secondary codec at a new IDR, not the main Surface.
                     dropPredictionChain()
                 }
-                OffscreenYuvOutputGate.Verdict.EPOCH_REVOKED,
-                OffscreenYuvOutputGate.Verdict.RESET_PENDING ->
-                    revokedYuvOutputs.incrementAndGet()
-                else -> Unit
+                OffscreenYuvRejectionPolicy.Action.DROP_ONLY -> {
+                    if (verdict == OffscreenYuvOutputGate.Verdict.EPOCH_REVOKED ||
+                        verdict == OffscreenYuvOutputGate.Verdict.RESET_PENDING)
+                        revokedYuvOutputs.incrementAndGet()
+                }
             }
             return false
         }

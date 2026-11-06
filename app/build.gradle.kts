@@ -9,8 +9,8 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 78
-        versionName = "1.3.38-software-avc-backpressure"
+        versionCode = 79
+        versionName = "1.3.39-yuv-stale-output-drop"
         ndk {
             // Modern A500S Android test device: one CPU architecture only.
             abiFilters += "arm64-v8a"
