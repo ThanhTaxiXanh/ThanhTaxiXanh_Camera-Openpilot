@@ -30,7 +30,7 @@ class OpticalLatencyAuditTest(unittest.TestCase):
         self.assertFalse(report["eligible_for_independent_field_review"])
 
     def test_long_trace_is_review_eligible_but_never_auto_passes(self):
-        rows = [(str(i), str(i * 1000), str(i * 31000 + 950), "optical", "optical") for i in range(311)]
+        rows = [(str(i), str(i * 1000), str(i * 1000 + 950), "optical", "optical") for i in range(311)]
         self.write(rows)
         report = audit_csv(self.path)
         self.assertTrue(report["duration_over_five_minutes"])
@@ -38,13 +38,13 @@ class OpticalLatencyAuditTest(unittest.TestCase):
         self.assertFalse(report["gate_b_20_pass"])
 
     def test_exact_five_minutes_is_insufficient(self):
-        rows = [(str(i), str(i * 1000), str(i * 30000 + 950), "optical", "optical") for i in range(301)]
+        rows = [(str(i), str(i * 1000), str(i * 1000 + 950), "optical", "optical") for i in range(301)]
         self.write(rows)
         report = audit_csv(self.path)
         self.assertFalse(report["duration_over_five_minutes"])
 
     def test_long_trace_with_high_p95_is_not_review_eligible(self):
-        rows = [(str(i), str(i * 31000), str(i * 31000 + 1700), "optical", "optical") for i in range(311)]
+        rows = [(str(i), str(i * 1000), str(i * 1000 + 1700), "optical", "optical") for i in range(311)]
         self.write(rows)
         report = audit_csv(self.path)
         self.assertFalse(report["eligible_for_independent_field_review"])
