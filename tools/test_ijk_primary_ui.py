@@ -54,8 +54,11 @@ class IjkFirstA500sUI(unittest.TestCase):
         self.assertIn('UDP_SMOOTH("THỬ UDP', PROFILE)
         self.assertIn("private var ijkProfile = IjkPlaybackProfile.SMOOTH", MAIN)
         self.assertIn('player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 1L)', MAIN)
-        self.assertIn('ijkLastHealthyMs > 5500L', MAIN)
-        self.assertIn('recoverIjk(generation, "IJK chưa xuất khung sau 12 giây")', MAIN)
+        self.assertIn("IjkPlaybackHealthGate()", MAIN)
+        self.assertIn("ijkPlaybackHealth.sample(now, outputFps, nativePlaying)", MAIN)
+        self.assertIn("IjkPlaybackHealthGate.Verdict.START_TIMEOUT", MAIN)
+        self.assertIn("IjkPlaybackHealthGate.Verdict.STALLED", MAIN)
+        self.assertIn('recoverIjk(generation,', MAIN)
 
 if __name__ == "__main__":
     unittest.main()
