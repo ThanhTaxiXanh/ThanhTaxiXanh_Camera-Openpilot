@@ -374,3 +374,18 @@ replaces immediate hard reset for one transient -1 input buffer index.
 These are code mitigations, NOT proven to fix the owner's previous native
 YUV input starvation until an actual A500S YUV trial is reviewed.
 Gate A **8/20=40%**, Gate B **0/5**, no PASS promotion.
+
+
+2026-11-06 V1.3.37 based on owner 106.27s V1.3.36 field recording:
+Main Direct A500S preview remains optically visible, but optional YUV
+sidecar intermittently produced only a few frames (4 accumulated at an
+early ~30s point), then failed repeated `Offscreen input unavailable
+after 3 drain/wait attempts; await next IDR`. The owner armed strict
+4-frame TTXYUV01 later; a damaged GOP and/or >500ms gaps cancelled
+the capture with no file dialog and stale `ĐANG THU` text. New TTXYUV02
+holds up to 4 actually decoded frames in RAM after explicit YUV opt-in,
+without requiring temporal adjacency, and supports exporting 1–3 if the
+sidecar later fails. TTXYUV01 strict parser/writer remains unchanged and
+never accepts TTXYUV02; no fabricated YUV, model or optical evidence.
+Both collector and serialiser have 9 new host tests; real-device retest
+is still required. Gate A **8/20=40%**, Gate B **0/5**.
