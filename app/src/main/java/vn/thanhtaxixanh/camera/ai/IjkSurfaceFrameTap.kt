@@ -44,37 +44,45 @@ class IjkSurfaceFrameTap(
                 video.holder.surface.isValid && video.width > 0 && video.height > 0
             )
             if (ticket != null) {
-                var bitmap: Bitmap? = null
-                try {
-                    // One 640x480 ARGB copy per admitted request. The image is
-                    // not a native YUV frame, and no bitmap is persisted.
-                    val image = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888)
-                    bitmap = image
-                    PixelCopy.request(video, image, { result ->
-                        try {
-                            if (result == PixelCopy.SUCCESS) {
-                                val pixels = IntArray(640 * 480)
-                                image.getPixels(pixels, 0, 640, 0, 0, 640, 480)
-                                if (gate.complete(ticket,
-                                        SystemClock.elapsedRealtime(), true) &&
-                                    gate.isCurrent(ticket)) {
-                                    onFrame(pixels, ticket.requestedAtMs)
+                // Allocate and read pixels on the dedicated worker rather
+                // than allocating 1.2 MB Bitmaps on every UI sampling tick.
+                val accepted = callbackHandler.post {
+                    if (!gate.isCurrent(ticket)) return@post
+                    var bitmap: Bitmap? = null
+                    try {
+                        val image = Bitmap.createBitmap(
+                            640, 480, Bitmap.Config.ARGB_8888)
+                        bitmap = image
+                        PixelCopy.request(video, image, { result ->
+                            try {
+                                if (result == PixelCopy.SUCCESS) {
+                                    val pixels = IntArray(640 * 480)
+                                    image.getPixels(pixels, 0, 640, 0, 0, 640, 480)
+                                    if (gate.complete(ticket,
+                                            SystemClock.elapsedRealtime(), true) &&
+                                        gate.isCurrent(ticket)) {
+                                        onFrame(pixels, ticket.requestedAtMs)
+                                    }
+                                } else {
+                                    gate.complete(ticket, SystemClock.elapsedRealtime(), false)
+                                    callbackFaults.incrementAndGet()
                                 }
-                            } else {
+                            } catch (_: Exception) {
                                 gate.complete(ticket, SystemClock.elapsedRealtime(), false)
                                 callbackFaults.incrementAndGet()
+                            } finally {
+                                image.recycle()
                             }
-                        } catch (_: Exception) {
-                            gate.complete(ticket, SystemClock.elapsedRealtime(), false)
-                            callbackFaults.incrementAndGet()
-                        } finally {
-                            image.recycle()
-                        }
-                    }, callbackHandler)
-                } catch (_: Exception) {
+                        }, callbackHandler)
+                    } catch (_: Exception) {
+                        gate.complete(ticket, SystemClock.elapsedRealtime(), false)
+                        callbackFaults.incrementAndGet()
+                        bitmap?.recycle()
+                    }
+                }
+                if (!accepted) {
                     gate.complete(ticket, SystemClock.elapsedRealtime(), false)
                     callbackFaults.incrementAndGet()
-                    bitmap?.recycle()
                 }
             }
             // Single in-flight request enforced by the gate. This periodic
