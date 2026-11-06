@@ -1,10 +1,20 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.36-software-yuv-sidecar (Lite / AI flavors)  
+**Version**: 1.3.37-yuv-snapshot-diagnostics (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
+
+V1.3.37 fixes the owner's inability to save A500S YUV after a real
+106.27-second test: the strict TTXYUV01 collector required 4 frames with
+every successive receipt gap <=500ms, and cancelled a damaged GOP.
+The additional TTXYUV02 **non-temporal diagnostic** exports 1..4 real
+640x480 YUV420p decoder frames from a bounded RAM cache even if the
+sidecar later stalls. TTXYUV01 stays untouched and only accepts temporal
+frames for OFFLINE input checks. TTXYUV02 cannot be used as validated
+ONNX temporal pairs. See docs/A500S_YUV_SNAPSHOT_FIELD_V1337.md.
+
 
 V1.3.35 owner's actual 25-second phone trial verified the repaired,
 persistent xADAS Direct Surface preview remains visible with YUV OFF,
