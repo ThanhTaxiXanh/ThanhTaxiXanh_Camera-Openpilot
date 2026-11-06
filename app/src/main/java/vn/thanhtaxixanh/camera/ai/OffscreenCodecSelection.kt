@@ -10,6 +10,12 @@ package vn.thanhtaxixanh.camera.ai
  * Candidate availability does NOT establish successful physical YUV output.
  */
 object OffscreenCodecSelection {
+    /** Owner-controlled mode for the OPTIONAL decoder, never the video Surface. */
+    enum class Preference { SOFTWARE_FIRST, PLATFORM_DEFAULT }
+
+    fun shouldProbeSoftware(preference: Preference): Boolean =
+        preference == Preference.SOFTWARE_FIRST
+
     data class Candidate(
         val name: String,
         val supportsAvc: Boolean,
