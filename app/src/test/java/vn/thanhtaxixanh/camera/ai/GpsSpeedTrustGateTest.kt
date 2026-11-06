@@ -45,6 +45,17 @@ class GpsSpeedTrustGateTest {
         assertFalse(x.observe(4f,9*second,11*second))
         assertEquals(36f,x.currentKmh(11*second)!!,0.001f)
     }
+    @Test fun malformedOlderFixCannotRevokeNewerAcceptedSpeed() {
+        val x=g()
+        assertTrue(x.observe(10f,10*second,10*second,0.2f))
+        // Late cached callback: its timestamp predates the latest fix and
+        // its reported receipt clock is inconsistent. It must be ignored.
+        assertFalse(x.observe(12f,9*second,8*second,0.1f))
+        assertEquals(36f,x.currentKmh(11*second)!!,0.001f)
+        // A malformed NEWER fix still revokes the previous reading.
+        assertFalse(x.observe(12f,12*second,11*second,0.1f))
+        assertNull(x.currentKmh(11*second))
+    }
     @Test fun futureFixIsInvalidAndNeverFabricatesSpeed() {
         val x=g()
         assertFalse(x.observe(10f,11*second,10*second))
