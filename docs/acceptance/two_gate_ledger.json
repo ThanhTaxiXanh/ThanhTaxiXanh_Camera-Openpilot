@@ -10,7 +10,7 @@
     20
   ],
   "source_gate": "docs/PREDEVICE_90_GATE.md",
-  "note": "As of 2026-11-06 independently reviewed owner A500S real-device bundle: one hash-valid non-temporal YUV frame, >300s local Direct Surface trace (no reconnect; YUV off; optical latency unknown), and 125 GPS samples with two rejected PiP requests. Scope documented in docs/acceptance/A500S_REAL_FIELD_BUNDLE_REVIEW_20261106.md. Gate A remains 8/20, Gate B 0/5. No synthetic or CI PASS promotions.",
+  "note": "V1.3.43 includes opt-in IJK Surface PixelCopy ARGB→temporal ONNX RAW diagnostic (no second decoder, NOT genuine native YUV) and bounded host-tested leases. Independently reviewed owner's real A500S field bundle still has only non-temporal native secondary-decoder YUV, >300s Direct Surface trace and GPS/PiP evidence; no IJK RAW, native YUV→ONNX, model, optical latency or metric calibration proof. Gate A 8/20; Gate B 0/5; no new PASS.",
   "criteria": [
     {
       "id": 1,
@@ -254,7 +254,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "V1.3.41 primary video IJKPlayer/FFmpeg sends decoded video to Surface but DOES NOT provide an IJK-frame YUV callback to A500sRawVisionBridge. The V1.3.38 TTXYUV02 four non-temporal samples only established native secondary MediaCodec output (gaps 30.205s, 7.272s, 8.723s); ONNX never verified. Build a separately authorized, continuous, genuine IJK FFmpeg YUV tap with temporal pairing and model/device parity, prove no harm to IJK preview, before #14 PASS. docs/A500S_IJK_FIRST_LIVE_V1341.md"
+        "next_required": "V1.3.43 opt-in IJK Surface PixelCopy→ARGB temporal ONNX RAW avoids SECOND H264 decoder, but is NOT native A500S decoded YUV, may scale/repeat screen content and has no exposure timestamps. Need independently verified real IJK frame-origin/color/temporal parity, model permission and native YUV source or rigorously validated equivalent before #14 PASS; avoid overloading primary preview. docs/A500S_IJK_PIXELCOPY_RAW_V1343.md"
       },
       "field": {
         "status": "NOT_VERIFIED",

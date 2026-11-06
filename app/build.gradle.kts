@@ -9,8 +9,8 @@ android {
         applicationId = "vn.thanhtaxixanh.camera.ai"
         minSdk = 29
         targetSdk = 35
-        versionCode = 82
-        versionName = "1.3.42-ijk-watchdog-health"
+        versionCode = 83
+        versionName = "1.3.43-ijk-surface-argb-raw"
         ndk {
             // Modern A500S Android test device: one CPU architecture only.
             abiFilters += "arm64-v8a"

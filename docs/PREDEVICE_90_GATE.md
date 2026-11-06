@@ -464,3 +464,17 @@ IJK-only reconnect. Seven synthetic JVM tests and a source-wiring check
 protect recovery logic. This does not create a native IJK YUV frame tap,
 calibrated AI, independent optical proof or owner-device verification.
 Gate A **8/20 (40%)**, Gate B **0/5**, unchanged.
+
+
+V1.3.43: introduced an opt-in Android PixelCopy readback of the EXISTING
+IJK video Surface (640×480 ARGB), not native decoder YUV and not an extra
+MediaCodec decoder. Owner-only raw mode feeds fresh, bounded local request
+time ARGB pairs through the existing warp/12-channel ONNX pipeline.
+Copies use a separate HandlerThread, single in-flight admission, a
+350ms minimum interval, 550ms callback age, and local <=500ms temporal
+pairing. Reconnect, PiP, activity pause and stop revoke old work; model
+results remain RAW diagnostic and never reach HUD/warnings. PixelCopy can
+scale/read old Surface content and may cost GPU bandwidth; no actual
+A500S hardware/optical/model ground truth has been proven by synthetic
+host tests. Details: docs/A500S_IJK_PIXELCOPY_RAW_V1343.md.
+Gate A **8/20 (40%)**, Gate B **0/5**, no new PASS.

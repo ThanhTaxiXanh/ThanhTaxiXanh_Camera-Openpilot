@@ -71,6 +71,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private var yuvCodecPreference =
         OffscreenCodecSelection.Preference.SOFTWARE_FIRST
     private lateinit var rawAiButton: Button
+    private lateinit var ijkRawAiButton: Button
     private lateinit var yuvCaptureButton: Button
     private lateinit var yuvSnapshotButton: Button
     // Owner opts in by enabling YUV. Keep only first four genuine frames
@@ -92,6 +93,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private var pendingGpsPipTrace: String? = null
     @Volatile private var rawVision: OpenpilotInferencePipeline? = null
     @Volatile private var rawBridge: A500sRawVisionBridge? = null
+    @Volatile private var ijkArgbBridge: IjkArgbVisionBridge? = null
+    private var ijkSurfaceTap: IjkSurfaceFrameTap? = null
+    private var previewResumed = false
     @Volatile private var rawVisionRequested = false
     private var rawVisionLoading = false
     // UI-only nonce prevents a cancelled model load from resurrecting when
@@ -345,9 +349,16 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         rawAiButton = Button(this).apply {
             text = "ONNX A500S: TẮT · RAW-ONLY"
             textSize = 11f
-            setOnClickListener { toggleA500sRawVision() }
+            setOnClickListener { toggleA500sRawVision(Backend.DIRECT) }
         }
         directAdvancedControls.addView(rawAiButton)
+
+        ijkRawAiButton = Button(this).apply {
+            text = "IJK → ARGB → ONNX: TẮT · PIXELCOPY THỬ NGHIỆM"
+            textSize = 11f
+            setOnClickListener { toggleA500sRawVision(Backend.IJK) }
+        }
+        directAdvancedControls.addView(ijkRawAiButton)
 
         yuvCaptureButton = Button(this).apply {
             text = "LƯU 4 KHUNG YUV A500S · TẮT"
@@ -588,6 +599,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onResume() {
         super.onResume()
+        previewResumed = true
+        if (backend == Backend.IJK && rawVision != null) restartIjkSurfaceTap()
         val prefs = AdasPrefs.of(this)
         window.decorView.systemUiVisibility =
             if (prefs.getBoolean(AdasPrefs.HIDE_STATUS_BAR, false))
@@ -604,6 +617,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             adasHud.roundLeadDistance = prefs.getBoolean(
                 AdasPrefs.ROUND_DISTANCE, false)
         }
+    }
+
+    override fun onPause() {
+        previewResumed = false
+        suspendIjkSurfaceTap()
+        super.onPause()
     }
 
     private fun toggleGps() {
@@ -834,6 +853,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             player.setOnPreparedListener {
                 if (token == generation && backend == Backend.IJK && ijk === player) {
                     it.start()
+                    if (rawVision != null) restartIjkSurfaceTap()
                     showStatus("70mai IJK: đang phát (" + activeIjkProfile.shortLabel +
                         ", yêu cầu RTP/" + activeIjkProfile.rtspTransport.uppercase(Locale.US) + ")")
                 }
@@ -877,6 +897,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private fun recoverIjk(token: Int, reason: String) {
         if (token != generation || backend != Backend.IJK || ijkRecoveryPending) return
         ijkRecoveryPending = true
+        suspendIjkSurfaceTap()
         activeLiveTrace?.reconnect(SystemClock.elapsedRealtime())
         ijkLastStopCause = reason.take(140)
         val now = SystemClock.elapsedRealtime()
@@ -920,27 +941,41 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
      * from app-private storage; a successful graph load is not camera
      * calibration. These outputs NEVER reach AdasHudView or warning audio.
      */
-    private fun toggleA500sRawVision() {
+    /**
+     * Owner-controlled RAW-only model diagnostic. IJK uses Surface PixelCopy
+     * ARGB and never opens the Direct offscreen H264/YUV decoder. The existing
+     * Direct mode retains its independent original native YUV bridge.
+     * Neither output can trigger HUD lanes, distance or audio warnings.
+     */
+    private fun toggleA500sRawVision(source: Backend) {
         if (rawVisionLoading) return
         if (rawVision != null) {
             stopRawVision()
-            showStatus("ONNX RAW đã tắt; không lưu khung hình hoặc cảnh báo.")
+            showStatus("ONNX RAW đã tắt; không lưu ảnh hoặc phát cảnh báo.")
             return
         }
-        if (backend != Backend.DIRECT || !yuvTapEnabled) {
-            showStatus("Bật Direct MediaCodec rồi chọn YUV A500S trước khi chạy ONNX RAW.")
+        if (source == Backend.DIRECT && (backend != Backend.DIRECT || !yuvTapEnabled)) {
+            showStatus("Bật Direct MediaCodec và YUV A500S trước khi chạy ONNX RAW.")
+            return
+        }
+        if (source == Backend.IJK && (backend != Backend.IJK || ijk == null ||
+                !surfaceView.holder.surface.isValid)) {
+            showStatus("Hãy PHÁT LIVE IJK trước khi bật đường ARGB thử nghiệm.")
             return
         }
         val model = File(filesDir, "models/vision.onnx")
         if (!model.isFile) {
-            showStatus("Chưa có model ONNX được phép sử dụng. Nhập tại OPENPILOT.")
+            showStatus("Chưa có model ONNX được phép dùng. Nhập tại OPENPILOT.")
             return
         }
         rawVisionLoading = true
         rawVisionRequested = true
         val requestId = ++rawVisionSequence
         rawAiButton.isEnabled = false
-        rawAiButton.text = "ONNX A500S: ĐANG NẠP MODEL"
+        ijkRawAiButton.isEnabled = false
+        if (source == Backend.DIRECT)
+            rawAiButton.text = "ONNX A500S: ĐANG NẠP MODEL"
+        else ijkRawAiButton.text = "IJK → ARGB → ONNX: ĐANG NẠP MODEL"
         rawModelStatus = "Đang xác minh model đã nhập"
         val token = generation
         Thread({
@@ -968,7 +1003,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         rawModelStatus = outcome.status +
                             " · xử lý " + outcome.runtimeMs + "ms" +
                             (if (measured != null)
-                                " · nhận AU→tensor→model " + measured + "ms" +
+                                " · local input→model " + measured + "ms" +
                                     " (KHÔNG phải trễ cảnh thực)"
                             else "")
                     }
@@ -984,31 +1019,100 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             val problem = failure
             runOnUiThread {
                 if (token != generation || requestId != rawVisionSequence ||
-                    !rawVisionRequested || backend != Backend.DIRECT ||
-                    !yuvTapEnabled || isDestroyed) {
+                    !rawVisionRequested || backend != source ||
+                    (source == Backend.DIRECT && !yuvTapEnabled) ||
+                    (source == Backend.IJK && ijk == null) || isDestroyed) {
                     candidate?.close()
                     return@runOnUiThread
                 }
                 rawVisionLoading = false
                 rawAiButton.isEnabled = true
+                ijkRawAiButton.isEnabled = true
                 if (candidate == null) {
                     rawVisionRequested = false
                     rawAiButton.text = "ONNX A500S: TẮT · RAW-ONLY"
+                    ijkRawAiButton.text = "IJK → ARGB → ONNX: TẮT · PIXELCOPY THỬ NGHIỆM"
                     rawModelStatus = problem ?: "Không thể tạo ONNX runner"
                     showStatus("ONNX RAW không khởi động: " + rawModelStatus)
                 } else {
                     rawResults.set(0L)
                     rawVision = candidate
-                    rawBridge = A500sRawVisionBridge(
-                        nowMs = { SystemClock.elapsedRealtime() },
-                        submit = { pair -> candidate.offer(pair) })
-                    rawAiButton.text = "ONNX A500S: RAW ĐANG CHẠY · TẮT"
-                    rawModelStatus = "YUV → temporal pair → ONNX; chưa hiệu chuẩn"
-                    showStatus("ONNX RAW đã mở. CHỈ CHẨN ĐOÁN: " +
-                        "không hiển thị làn, mét hoặc cảnh báo.")
+                    if (source == Backend.DIRECT) {
+                        rawBridge = A500sRawVisionBridge(
+                            nowMs = { SystemClock.elapsedRealtime() },
+                            submit = { pair -> candidate.offer(pair) })
+                        rawAiButton.text = "ONNX A500S: RAW ĐANG CHẠY · TẮT"
+                        rawModelStatus = "YUV → temporal pair → ONNX; chưa hiệu chuẩn"
+                        showStatus("ONNX RAW đã mở: decoder Direct phụ. KHÔNG phát cảnh báo.")
+                    } else {
+                        ijkArgbBridge = IjkArgbVisionBridge(
+                            nowMs = { SystemClock.elapsedRealtime() },
+                            submit = { pair -> candidate.offer(pair) })
+                        ijkRawAiButton.text = "IJK → ARGB → ONNX: ĐANG CHẠY · TẮT"
+                        rawModelStatus = "IJK PixelCopy ARGB (không native YUV); chưa hiệu chuẩn"
+                        restartIjkSurfaceTap()
+                        showStatus("IJK PixelCopy RAW đã bật. KHÔNG phải native YUV; " +
+                            "không hiển thị làn, mét hoặc cảnh báo.")
+                    }
                 }
             }
         }, "TTX-A500S-RAW-ModelLoader").start()
+    }
+
+    /** Revoke any active PixelCopy before a reconnect, PiP or model teardown. */
+    private fun suspendIjkSurfaceTap() {
+        ijkArgbBridge?.signalDiscontinuity()
+        rawVision?.invalidate()
+        val old = ijkSurfaceTap
+        ijkSurfaceTap = null
+        old?.close()
+        ijkArgbBridge?.reset()
+    }
+
+    /**
+     * Uses the very same already-rendered IJK Surface. This is NOT a second
+     * H264 decoder and NOT a native decoded YUV tap. Surface readback may
+     * cause GPU load; all admission/copy callbacks are bounded and opt-in.
+     */
+    private fun restartIjkSurfaceTap() {
+        suspendIjkSurfaceTap()
+        if (!previewResumed || isInPictureInPictureMode ||
+            backend != Backend.IJK || ijk == null ||
+            rawVision == null || !rawVisionRequested ||
+            !surfaceView.holder.surface.isValid) return
+        val activePlayer = ijk ?: return
+        val bridge = ijkArgbBridge ?: return
+        val token = generation
+        val tap = IjkSurfaceFrameTap(
+            surfaceView,
+            nativeState = {
+                val same = token == generation && backend == Backend.IJK &&
+                    ijk === activePlayer && !ijkRecoveryPending
+                if (!same) IjkSurfaceFrameTap.NativeState(false, 0f, 0, 0)
+                else try {
+                    IjkSurfaceFrameTap.NativeState(
+                        activePlayer.isPlaying,
+                        activePlayer.videoOutputFramesPerSecond,
+                        activePlayer.videoWidth, activePlayer.videoHeight)
+                } catch (_: Exception) {
+                    IjkSurfaceFrameTap.NativeState(false, 0f, 0, 0)
+                }
+            },
+            onFrame = { pixels, localRequestMs ->
+                if (rawVisionRequested && token == generation &&
+                    ijkArgbBridge === bridge) {
+                    try {
+                        bridge.accept(pixels, localRequestMs)
+                    } catch (error: Exception) {
+                        rawModelStatus = "IJK PixelCopy RAW: " + error.javaClass.simpleName
+                        bridge.signalDiscontinuity()
+                        rawVision?.invalidate()
+                    }
+                }
+            }
+        )
+        ijkSurfaceTap = tap
+        tap.start()
     }
 
     private fun stopRawVision() {
@@ -1016,6 +1120,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         rawVisionRequested = false
         rawVisionLoading = false
         rawPairResetPending.set(false)
+        suspendIjkSurfaceTap()
+        ijkArgbBridge?.reset()
+        ijkArgbBridge = null
         rawBridge?.reset()
         rawBridge = null
         val old = rawVision
@@ -1025,6 +1132,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         if (::rawAiButton.isInitialized) {
             rawAiButton.isEnabled = true
             rawAiButton.text = "ONNX A500S: TẮT · RAW-ONLY"
+        }
+        if (::ijkRawAiButton.isInitialized) {
+            ijkRawAiButton.isEnabled = true
+            ijkRawAiButton.text = "IJK → ARGB → ONNX: TẮT · PIXELCOPY THỬ NGHIỆM"
         }
     }
 
@@ -1436,6 +1547,19 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         (ownerSession?.failure ?: "").ifBlank {
                             if (ownerSession == null) "chưa ghép đôi" else "đang duy trì"
                         }, ijkLastStopCause)
+                    ijkSurfaceTap?.let { currentTap ->
+                        val (c, faults) = currentTap.metrics()
+                        val b = ijkArgbBridge?.metrics()
+                        detailView.append("\nIJK PixelCopy ARGB: yêu cầu " + c.attempts +
+                            " · bản sao " + c.completed + " · trễ " + c.stale +
+                            " · lỗi " + (c.errors + faults) +
+                            " · đang bận " + c.busySkips)
+                        detailView.append("\nONNX RAW ARGB: " + rawModelStatus +
+                            " · khung " + (b?.frames ?: 0L) +
+                            " · temporal pair " + (b?.pairs ?: 0L) +
+                            " · kết quả " + rawResults.get() +
+                            " · KHÔNG đo trễ cảnh thực")
+                    }
                 } else {
                     detailView.text = "Ưu tiên IJKPlayer/FFmpeg: nhấn PHÁT LIVE ở trên. " +
                         "Direct MediaCodec và YUV phụ chỉ dành cho chẩn đoán."
@@ -1685,8 +1809,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             LinearLayout.LayoutParams.MATCH_PARENT,
             if (isInPictureInPictureMode) 0 else normalPreviewHeightPx,
             if (isInPictureInPictureMode) 1f else 0f)
+        if (isInPictureInPictureMode) suspendIjkSurfaceTap()
         if (backend == Backend.IJK && surfaceView.holder.surface.isValid) {
             try { ijk?.setDisplay(surfaceView.holder) } catch (_: Throwable) {}
+            if (!isInPictureInPictureMode && previewResumed && rawVision != null)
+                restartIjkSurfaceTap()
         }
     }
 
