@@ -423,3 +423,19 @@ input, invalid clocks, age, epoch and ONNX admission checks remain.
 CI unit tests do not establish real-device YUV continuity: #14 and
 #20 NOT PASS, Gate A **8/20 (40%)**, Gate B **0/5**. See
 `docs/acceptance/A500S_REAL_FOUR_YUV_REVIEW_20261106.md`.
+
+
+V1.3.40 independent 2026-11-06 owner 61.033s A500S video: with
+software `c2.android.avc.decoder`, YUV t15 5 callbacks/165 native
+outputs/143 aged drops; t30 9/575/535; t45 16/912/829 (90.9%
+output too old). Secondary native resets/errors 0 through t45,
+physically validating scoped improvement to V1.3.39 reset loop.
+At t48 separate RTSP status reports SocketException Socket closed;
+by t60 reconnect budget shows 2/3. NO proof of uninterrupted stream,
+no 4-frame contiguous TTXYUV01, no authorized ONNX execution, no
+optical latency measurement. V1.3.40 adds an explicit **pre-playback**
+owner codec preference for SECONDARY YUV only, default SOFTWARE-FIRST;
+optional SYSTEM DEFAULT asks Android to choose AVC (may be hardware
+or software); Direct Surface codec and 550ms freshness gate unchanged.
+See docs/acceptance/A500S_V1339_FIELD_AND_V1340_CODEC_TRIAL.md.
+Gate A **8/20=40%**, Gate B **0/5**, no new PASS.

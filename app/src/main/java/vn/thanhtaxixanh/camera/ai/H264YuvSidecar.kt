@@ -32,7 +32,9 @@ class H264YuvSidecar(
     private val pps: ByteArray?,
     private val onFrame: (Yuv420FrameConverter.Frame, Long) -> Unit,
     private val onFault: (String) -> Unit = {},
-    private val onDiscontinuity: () -> Unit = {}
+    private val onDiscontinuity: () -> Unit = {},
+    private val decoderPreference: OffscreenCodecSelection.Preference =
+        OffscreenCodecSelection.Preference.SOFTWARE_FIRST
 ) : AutoCloseable {
     data class Metrics(
         val received: Long,
@@ -186,7 +188,13 @@ class H264YuvSidecar(
                 codec.configure(format, null, null, 0)
                 codec.start()
                 chosenDecoderName.set(codec.name)
-                softwareDecoder.set(name != null)
+                // The system default is free to select SOFTWARE as well;
+                // do not mislabel it as hardware just because no explicit
+                // codec name was supplied.
+                softwareDecoder.set(try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                        codec.codecInfo.isSoftwareOnly else name != null
+                } catch (_: Exception) { name != null })
                 return codec
             } catch (error: Exception) {
                 try { codec.release() } catch (_: Exception) {}
@@ -198,7 +206,9 @@ class H264YuvSidecar(
         // avoiding the observed second-hardware-decoder input starvation
         // when such software codec is present. If unavailable or unable
         // to configure, restore the previous default codec selection.
-        val softwareNames = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+        val softwareNames = if (
+            OffscreenCodecSelection.shouldProbeSoftware(decoderPreference) &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
             try {
                 OffscreenCodecSelection.softwareAvcCandidates(
                     MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos

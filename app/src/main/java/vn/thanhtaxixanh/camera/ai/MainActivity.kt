@@ -65,6 +65,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var latencyButton: Button
     private lateinit var directLatencyButton: Button
     private lateinit var yuvTapButton: Button
+    private lateinit var yuvCodecButton: Button
+    // Owner explicitly selects this BEFORE a new Direct RTSP session.
+    // No hidden runtime switch or change to the preview's MediaCodec.
+    private var yuvCodecPreference =
+        OffscreenCodecSelection.Preference.SOFTWARE_FIRST
     private lateinit var rawAiButton: Button
     private lateinit var yuvCaptureButton: Button
     private lateinit var yuvSnapshotButton: Button
@@ -255,6 +260,37 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             setOnClickListener { pairA500s() }
         }
         root.addView(pairButton)
+
+        yuvCodecButton = Button(this).apply {
+            text = "CODEC YUV PHỤ: PHẦN MỀM (MẶC ĐỊNH)"
+            textSize = 11f
+            setOnClickListener {
+                if (backend != null) {
+                    showStatus("DỪNG PHÁT trước khi chọn codec YUV phụ. " +
+                        "Thay đổi chỉ có hiệu lực cho phiên Direct mới; " +
+                        "không khởi động lại decoder khi đang phát.")
+                    return@setOnClickListener
+                }
+                yuvCodecPreference = if (yuvCodecPreference ==
+                    OffscreenCodecSelection.Preference.SOFTWARE_FIRST)
+                    OffscreenCodecSelection.Preference.PLATFORM_DEFAULT
+                else OffscreenCodecSelection.Preference.SOFTWARE_FIRST
+                text = if (yuvCodecPreference ==
+                    OffscreenCodecSelection.Preference.SOFTWARE_FIRST)
+                    "CODEC YUV PHỤ: PHẦN MỀM (MẶC ĐỊNH)"
+                else "CODEC YUV PHỤ: HỆ THỐNG (THỬ NGHIỆM)"
+                showStatus(if (yuvCodecPreference ==
+                    OffscreenCodecSelection.Preference.PLATFORM_DEFAULT)
+                    "THỬ NGHIỆM: Android tự chọn AVC cho YUV phụ. " +
+                        "Có thể chọn phần cứng HOẶC phần mềm; hai decoder " +
+                        "có thể tranh chấp tài nguyên. Chỉ thử khi xe đỗ. " +
+                        "Nếu preview giật/dừng, tắt YUV và trở về " +
+                        "chế độ PHẦN MỀM. ONNX vẫn phải tắt."
+                else "YUV phụ về ưu tiên codec phần mềm như V1.3.39. " +
+                    "Sẽ áp dụng cho phiên Direct tiếp theo.")
+            }
+        }
+        root.addView(yuvCodecButton)
 
         yuvTapButton = Button(this).apply {
             text = "YUV A500S: TẮT · CHẨN ĐOÁN OFFSCREEN"
@@ -1101,7 +1137,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     rawVision?.invalidate()
                 }
             },
-            activeDirectLatencyPolicy
+            activeDirectLatencyPolicy,
+            yuvCodecPreference
         )
         direct = player
         player.start()

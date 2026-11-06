@@ -1,10 +1,25 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.39-yuv-stale-output-drop (Lite / AI flavors)  
+**Version**: 1.3.40-yuv-secondary-codec-trial (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
+
+V1.3.39 physical follow-up (owner 61s A500S screen video): at t45
+software AVC sidecar delivered 16 real YUV frames/912 decoded outputs,
+with 829 stale outputs but **0 native YUV decoder resets or errors**.
+The V1.3.39 stale-output reset-loop fix is independently supported,
+yet live YUV remains too sparse for continuous temporal ONNX. At t48
+Direct RTSP reports Socket closed and later reconnect 2/3; optical
+continuity is NOT verified. V1.3.40 introduces owner-controlled codec
+comparison: existing SOFTWARE-FIRST default vs SYSTEM DEFAULT for
+SECONDARY YUV decoder only (platform may still pick software).
+Codec choice is locked while playing; original Surface preview stays
+untouched; no stale YUV is admitted to AI. See
+`docs/acceptance/A500S_V1339_FIELD_AND_V1340_CODEC_TRIAL.md`.
+Gate A 8/20 (40%), Gate B 0/5.
+
 
 V1.3.39 reviews the owner's 84.03s A500S screen recording and
 actual TTXYUV02 with FOUR SHA-256-valid 640x480 YUV frames. Gaps
