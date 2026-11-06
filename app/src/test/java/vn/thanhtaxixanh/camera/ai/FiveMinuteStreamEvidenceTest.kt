@@ -42,6 +42,62 @@ class FiveMinuteStreamEvidenceTest {
         assertTrue(r.report()!!.contains("INCOMPLETE_OR_INTERRUPTED"))
     }
 
+    @Test fun ijkReconnectAt37SecondsStillRecordsFull300SecondsButNeverPasses() {
+        val r=FiveMinuteStreamEvidence()
+        r.start(FiveMinuteStreamEvidence.Backend.IJK,0)
+        for (i in 1..300) {
+            val now=i*1_000L
+            if(i==37) r.reconnect(now,"RTSP_ON_COMPLETION")
+            // 37s RTSP ends, next 4 seconds no native player is available.
+            val unavailable=i in 37..41
+            r.sample(FiveMinuteStreamEvidence.Sample(
+                now,FiveMinuteStreamEvidence.Backend.IJK,
+                ijkOutputFps=if (unavailable) 0f else 26f,
+                ijkPlaying=!unavailable,reconnecting=unavailable))
+        }
+        assertFalse(r.isActive())
+        val report=r.report()!!
+        assertTrue(report.contains("elapsed_ms=300000"))
+        assertTrue(report.contains("end_reason=DURATION_REACHED"))
+        assertTrue(report.contains("event:reconnect,37000,RTSP_ON_COMPLETION"))
+        assertTrue(report.contains("event:local_progress_resumed,42000,5000"))
+        assertTrue(report.contains("max_local_recovery_gap_ms=5000"))
+        assertTrue(report.contains("reconnect_events=1"))
+        assertTrue(report.contains("recovered_events=1"))
+        assertTrue(report.contains("faults=RECONNECT_OBSERVED"))
+        assertTrue(report.contains("local_five_minute_trace=INCOMPLETE_OR_INTERRUPTED"))
+        assertTrue(report.contains("field_gate_20=NOT_VERIFIED"))
+    }
+
+    @Test fun failedRecoveryNeverReportsResumption() {
+        val r=FiveMinuteStreamEvidence(5_000)
+        r.start(FiveMinuteStreamEvidence.Backend.IJK,0)
+        r.sample(FiveMinuteStreamEvidence.Sample(
+            1_000,FiveMinuteStreamEvidence.Backend.IJK,ijkOutputFps=25f,
+            ijkPlaying=true))
+        r.reconnect(1_500,"RTSP_ON_COMPLETION")
+        for(i in 2..5) r.sample(FiveMinuteStreamEvidence.Sample(
+            i*1_000L,FiveMinuteStreamEvidence.Backend.IJK,ijkOutputFps=0f,
+            ijkPlaying=false,reconnecting=true))
+        val report=r.report()!!
+        assertTrue(report.contains("unresolved_reconnect=true"))
+        assertTrue(report.contains("max_local_recovery_gap_ms=NOT_MEASURED"))
+        assertTrue(report.contains("local_five_minute_trace=INCOMPLETE_OR_INTERRUPTED"))
+    }
+
+    @Test fun reasonIsAllowlistedAndCannotLeakRtspUrl() {
+        val r=FiveMinuteStreamEvidence(5_000)
+        r.start(FiveMinuteStreamEvidence.Backend.IJK,0)
+        r.reconnect(500,"rtsp://secret:token@192.168.0.1")
+        for(i in 1..5) r.sample(FiveMinuteStreamEvidence.Sample(
+            i*1_000L,FiveMinuteStreamEvidence.Backend.IJK,
+            ijkOutputFps=25f,ijkPlaying=true))
+        val report=r.report()!!
+        assertTrue(report.contains("event:reconnect,500,UNCLASSIFIED"))
+        assertFalse(report.contains("secret"))
+        assertFalse(report.contains("192.168.0.1"))
+    }
+
     @Test fun counterRegressionCannotBePresentedAsHealthy() {
         val r=FiveMinuteStreamEvidence(5_000)
         r.start(FiveMinuteStreamEvidence.Backend.DIRECT,1_000)

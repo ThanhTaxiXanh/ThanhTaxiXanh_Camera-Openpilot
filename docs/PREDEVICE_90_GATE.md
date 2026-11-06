@@ -478,3 +478,23 @@ scale/read old Surface content and may cost GPU bandwidth; no actual
 A500S hardware/optical/model ground truth has been proven by synthetic
 host tests. Details: docs/A500S_IJK_PIXELCOPY_RAW_V1343.md.
 Gate A **8/20 (40%)**, Gate B **0/5**, no new PASS.
+
+
+## V1.3.44 — owner A500S IJK lag + 37-second RTSP completion
+
+Independent owner evidence: ~3s **reported** optical lag despite player internal
+buffer showing 0ms; screen labels `RTSP kết thúc (OnCompletion)` after a
+37.438s IJK trace. Audit ended at 37.470s because the original recorder
+treated the temporary null IJK object during async reconnect as a fatal
+trace-end event. New opt-in BALANCED TCP profile retains packet-buffering=1
+and bounds IJK cache to 1000ms, FFmpeg max_delay=500000us, min-frames=10.
+SMOOTH TCP baseline is unchanged; LOW_LATENCY TCP and UDP_SMOOTH remain
+available for A/B comparison. New trace records reconnect reason and
+local progress resumption while preserving fail-closed rejection of
+any session with a reconnect. See
+docs/acceptance/A500S_IJK_LAG_AND_COMPLETION_FIELD_REVIEW_20261106.md
+and docs/A500S_IJK_LAG_AB_V1344.md.
+
+No independent measured sub-second scene-to-screen delay, uninterrupted
+5-minute IJK A500S operation, real valid model or calibrated HUD has
+been demonstrated. **Gate A remains 8/20 (40%); Gate B remains 0/5.**

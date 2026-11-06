@@ -21,8 +21,36 @@ class IjkPlaybackProfileTest {
         assertEquals(a.packetBuffering, b.packetBuffering)
         assertEquals(a.experimentalLowLatency, b.experimentalLowLatency)
     }
-    @Test fun cyclesThroughThreeProfiles() {
-        assertSame(IjkPlaybackProfile.LOW_LATENCY, IjkPlaybackProfile.SMOOTH.next())
+    @Test fun balancedTcpCapsCacheWithoutDisablingPacketBuffering() {
+        val s = IjkPlaybackProfile.SMOOTH
+        val b = IjkPlaybackProfile.BALANCED
+        assertEquals(s.rtspTransport, b.rtspTransport)
+        assertEquals(s.packetBuffering, b.packetBuffering)
+        assertEquals(10L, b.minFrames)
+        assertEquals(1000L, b.maxCachedDurationMs)
+        assertEquals(500_000L, b.maxDelayUs)
+        assertFalse(b.experimentalLowLatency)
+    }
+    @Test fun nativeSmoothAndUdpDefaultsAreUnchanged() {
+        for (p in listOf(IjkPlaybackProfile.SMOOTH, IjkPlaybackProfile.UDP_SMOOTH)) {
+            assertNull(p.minFrames)
+            assertNull(p.maxCachedDurationMs)
+            assertNull(p.maxDelayUs)
+            assertEquals(1L, p.packetBuffering)
+        }
+    }
+    @Test fun lowLatencyHasDistinctAggressiveBoundsAndPacketBufferingOff() {
+        val b = IjkPlaybackProfile.BALANCED
+        val l = IjkPlaybackProfile.LOW_LATENCY
+        assertEquals(0L, l.packetBuffering)
+        assertEquals(5L, l.minFrames)
+        assertEquals(600L, l.maxCachedDurationMs)
+        assertEquals(300_000L, l.maxDelayUs)
+        assertTrue(b.maxCachedDurationMs!! > l.maxCachedDurationMs!!)
+    }
+    @Test fun cyclesThroughFourProfiles() {
+        assertSame(IjkPlaybackProfile.BALANCED, IjkPlaybackProfile.SMOOTH.next())
+        assertSame(IjkPlaybackProfile.LOW_LATENCY, IjkPlaybackProfile.BALANCED.next())
         assertSame(IjkPlaybackProfile.UDP_SMOOTH, IjkPlaybackProfile.LOW_LATENCY.next())
         assertSame(IjkPlaybackProfile.SMOOTH, IjkPlaybackProfile.UDP_SMOOTH.next())
     }
