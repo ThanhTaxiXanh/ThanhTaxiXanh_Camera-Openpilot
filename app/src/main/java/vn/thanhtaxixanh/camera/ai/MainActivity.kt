@@ -132,9 +132,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private var ijkRetryCount = 0
     private var ijkOpenedAtMs = 0L
     private var ijkFirstVideoAtMs = 0L
-    private var ijkLastHealthyMs = 0L
-    private var ijkHadFps = false
-    private var ijkZeroFpsSamples = 0
+    private val ijkPlaybackHealth = IjkPlaybackHealthGate()
     private var ijkLastStopCause = "Chưa có"
     private var lastMessage = "Chưa kết nối"
 
@@ -806,9 +804,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
         ijkOpenedAtMs = SystemClock.elapsedRealtime()
         ijkFirstVideoAtMs = 0L
-        ijkLastHealthyMs = 0L
-        ijkZeroFpsSamples = 0
-        ijkHadFps = false
+        ijkPlaybackHealth.reset(ijkOpenedAtMs)
         try {
             val player = IjkMediaPlayer()
             ijk = player
@@ -856,7 +852,6 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     when (what) {
                         3 -> {
                             ijkFirstVideoAtMs = SystemClock.elapsedRealtime()
-                            ijkLastHealthyMs = ijkFirstVideoAtMs
                             showStatus("IJK: đã nhận khung hình đầu tiên")
                         }
                         701 -> showStatus("IJK: đang đệm dữ liệu...")
@@ -1415,20 +1410,16 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         } catch (_: Throwable) {}
                     }
                     if (!ijkRecoveryPending && media != null) {
-                        if (outputFps > 2f) {
-                            ijkHadFps = true
-                            ijkLastHealthyMs = now
-                            ijkZeroFpsSamples = 0
-                        } else if (ijkHadFps && now - ijkLastHealthyMs > 5500L) {
-                            ijkZeroFpsSamples++
-                            if (ijkZeroFpsSamples >= 2)
+                        when (ijkPlaybackHealth.sample(now, outputFps, nativePlaying)) {
+                            IjkPlaybackHealthGate.Verdict.START_TIMEOUT ->
                                 recoverIjk(generation,
-                                    "Không còn khung IJK >5 giây (decode=" +
-                                    "%.1f/output=%.1f)".format(
-                                        Locale.US, decodeFps, outputFps))
-                        } else if (ijkFirstVideoAtMs == 0L &&
-                            now - ijkOpenedAtMs > 12000L) {
-                            recoverIjk(generation, "IJK chưa xuất khung sau 12 giây")
+                                    "IJK chưa đạt FPS phát ổn định sau 12 giây")
+                            IjkPlaybackHealthGate.Verdict.STALLED ->
+                                recoverIjk(generation,
+                                    "IJK dừng FPS >5.5 giây (nativePlaying=" +
+                                        nativePlaying + ", output=" +
+                                        "%.1f)".format(Locale.US, outputFps))
+                            else -> Unit
                         }
                     }
                     detailView.text = String.format(Locale.US,
