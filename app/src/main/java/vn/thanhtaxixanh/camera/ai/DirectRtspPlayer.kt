@@ -46,7 +46,9 @@ class DirectRtspPlayer(
     private val preferUdp: Boolean = false,
     private val onDecodedYuv: ((Yuv420FrameConverter.Frame, Long) -> Unit)? = null,
     private val onYuvDiscontinuity: (() -> Unit)? = null,
-    private val latencyPolicy: DirectLatencyPolicy = DirectLatencyPolicy.SMOOTH
+    private val latencyPolicy: DirectLatencyPolicy = DirectLatencyPolicy.SMOOTH,
+    private val yuvPreference: OffscreenCodecSelection.Preference =
+        OffscreenCodecSelection.Preference.SOFTWARE_FIRST
 ) : AutoCloseable {
     data class Counters(
         val decoded: Long, val rendered: Long, val droppedRtp: Long,
@@ -227,7 +229,8 @@ class DirectRtspPlayer(
             H264YuvSidecar(
                 pair.first, pair.second, frameConsumer,
                 onFault = { message -> status(message) },
-                onDiscontinuity = { onYuvDiscontinuity?.invoke() }
+                onDiscontinuity = { onYuvDiscontinuity?.invoke() },
+                decoderPreference = yuvPreference
             )
         }
         if (pair.first != null && pair.second != null) {
