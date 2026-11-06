@@ -155,7 +155,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        val header = label("TTX CAMERA AI · xADAS REBUILD", 17f, Color.WHITE)
+        val header = label("TTX CAMERA AI · IJK LIVE A500S", 17f, Color.WHITE)
         header.gravity = Gravity.CENTER
         outer.addView(header)
 
@@ -185,20 +185,27 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         outer.addView(cameraVideoContainer, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, normalPreviewHeightPx))
 
-        val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        // IJKPlayer/FFmpeg is the owner-requested primary playback mode.
+        // Keep this one-tap action pinned directly below the video;
+        // experimental Direct/YUV tooling is collapsed below.
         ijkButton = Button(this).apply {
-            text = "70MAI · IJK/FFMPEG"
-            textSize = 11f
+            text = "▶ PHÁT LIVE 70MAI · IJK/FFMPEG"
+            textSize = 14f
             setOnClickListener { begin(Backend.IJK) }
         }
+        outer.addView(ijkButton, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT))
+        val directAdvancedControls = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
         directButton = Button(this).apply {
-            text = "xADAS · MEDIACODEC"
+            text = "THỬ NGHIỆM: xADAS · DIRECT MEDIACODEC"
             textSize = 11f
             setOnClickListener { begin(Backend.DIRECT) }
         }
-        buttons.addView(ijkButton, LinearLayout.LayoutParams(0, -2, 1f))
-        buttons.addView(directButton, LinearLayout.LayoutParams(0, -2, 1f))
-        root.addView(buttons)
+        directAdvancedControls.addView(directButton)
 
         val navigation = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         fun nav(title: String, target: Class<out Activity>): Button =
@@ -219,6 +226,23 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             setOnClickListener { toggleGps() }
         }, LinearLayout.LayoutParams(0, -2, 0.6f))
         root.addView(navigation)
+        root.addView(label(
+            "IJK/FFmpeg mã nguồn mở là chế độ LIVE chính. " +
+                "Không phải bộ SDK riêng của 70mai 4.5.0; " +
+                "chưa xác nhận YUV→ONNX qua IJK.", 11f, Color.LTGRAY))
+        val advancedToggle = Button(this).apply {
+            text = "MỞ THỬ NGHIỆM xADAS / YUV (KHÔNG PHẢI LIVE CHÍNH)"
+            textSize = 10f
+            setOnClickListener {
+                val opening = directAdvancedControls.visibility != View.VISIBLE
+                directAdvancedControls.visibility = if (opening) View.VISIBLE
+                    else View.GONE
+                text = if (opening) "ĐÓNG THỬ NGHIỆM xADAS / YUV"
+                    else "MỞ THỬ NGHIỆM xADAS / YUV (KHÔNG PHẢI LIVE CHÍNH)"
+            }
+        }
+        root.addView(advancedToggle)
+        root.addView(directAdvancedControls)
         // One tap into independent Camera2 evidence, no 70mai Wi-Fi needed.
         root.addView(nav("CAMERA ĐIỆN THOẠI · THỬ NGHIỆM 60 GIÂY",
             PhoneCameraActivity::class.java))
@@ -252,7 +276,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     else ". Có hiệu lực khi phát Direct lần tới."))
             }
         }
-        root.addView(directLatencyButton)
+        directAdvancedControls.addView(directLatencyButton)
 
         pairButton = Button(this).apply {
             text = "GHÉP ĐÔI & HEARTBEAT A500S (KHÔNG GIẢM TRỄ)"
@@ -290,7 +314,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     "Sẽ áp dụng cho phiên Direct tiếp theo.")
             }
         }
-        root.addView(yuvCodecButton)
+        directAdvancedControls.addView(yuvCodecButton)
 
         yuvTapButton = Button(this).apply {
             text = "YUV A500S: TẮT · CHẨN ĐOÁN OFFSCREEN"
@@ -318,14 +342,14 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     else "Đã tắt nhánh YUV; video Direct tiếp tục độc lập.")
             }
         }
-        root.addView(yuvTapButton)
+        directAdvancedControls.addView(yuvTapButton)
 
         rawAiButton = Button(this).apply {
             text = "ONNX A500S: TẮT · RAW-ONLY"
             textSize = 11f
             setOnClickListener { toggleA500sRawVision() }
         }
-        root.addView(rawAiButton)
+        directAdvancedControls.addView(rawAiButton)
 
         yuvCaptureButton = Button(this).apply {
             text = "LƯU 4 KHUNG YUV A500S · TẮT"
@@ -347,7 +371,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 }
             }
         }
-        root.addView(yuvCaptureButton)
+        directAdvancedControls.addView(yuvCaptureButton)
 
         // Separate from strict TTXYUV01: this opt-in local snapshot file
         // permits 1..4 actually decoded frames with arbitrary receipt gaps.
@@ -389,7 +413,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 }
             }
         }
-        root.addView(yuvSnapshotButton)
+        directAdvancedControls.addView(yuvSnapshotButton)
 
         liveTraceButton = Button(this).apply {
             text = "THU BIÊN BẢN VIDEO 5 PHÚT"
@@ -1422,7 +1446,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                             if (ownerSession == null) "chưa ghép đôi" else "đang duy trì"
                         }, ijkLastStopCause)
                 } else {
-                    detailView.text = "Chỉ gồm hai bộ phát: IJKPlayer và Direct MediaCodec."
+                    detailView.text = "Ưu tiên IJKPlayer/FFmpeg: nhấn PHÁT LIVE ở trên. " +
+                        "Direct MediaCodec và YUV phụ chỉ dành cho chẩn đoán."
                 }
             }
             val audit = activeLiveTrace
