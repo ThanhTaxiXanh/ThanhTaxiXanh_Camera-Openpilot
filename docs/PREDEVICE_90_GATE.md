@@ -389,3 +389,21 @@ sidecar later fails. TTXYUV01 strict parser/writer remains unchanged and
 never accepts TTXYUV02; no fabricated YUV, model or optical evidence.
 Both collector and serialiser have 9 new host tests; real-device retest
 is still required. Gate A **8/20=40%**, Gate B **0/5**.
+
+
+2026-11-06 V1.3.38: Independently inspected actual owner bundle of
+158.733s screen video, TTXYUV02 single frame, TTXLIVE01 300.548s,
+and TTXGPIP01 128.551s. The one A500S YUV frame is a valid nonblank
+640x480 YUV420 image with verified SHA-256, but provides no temporal
+AI input continuity. TTXLIVE01 has 292 samples, 283 Surface progress,
+9 isolated NO_PROGRESS, 0 reconnect, faults NONE, with YUV OFF, and
+NO measured optical delay. GPS/PiP trace shows 125 fresh-speed samples
+and TWO rejected PiP requests while Direct; no actual PiP entry or
+settings-unit change. Video shows software c2.android.avc.decoder YUV
+starvation (7 decoder errors, 13 resets, no images by ~28s) while
+Direct Surface keeps moving. Added bounded software input wait policy
+(8 x 20ms instead of old 3 x 10ms; hardware unchanged), fresh-frame
+age checks remain strict. See
+`docs/acceptance/A500S_REAL_FIELD_BUNDLE_REVIEW_20261106.md`.
+CI success is NOT actual 30fps YUV hardware proof. Gate A **8/20=40%**,
+Gate B **0/5**; #14/#19/#20 NOT PASS.
