@@ -439,3 +439,18 @@ optional SYSTEM DEFAULT asks Android to choose AVC (may be hardware
 or software); Direct Surface codec and 550ms freshness gate unchanged.
 See docs/acceptance/A500S_V1339_FIELD_AND_V1340_CODEC_TRIAL.md.
 Gate A **8/20=40%**, Gate B **0/5**, no new PASS.
+
+
+2026-11-06 V1.3.41: owner explicitly selected **IJKPlayer/FFmpeg as
+PRIMARY A500S LIVE VIDEO**, ending priority work on xADAS dual
+MediaCodec offscreen YUV. Their 75.467s final V1.3.40 screen recording
+still shows an optional decoder buffer-unavailable error with native
+OMX.qcom.video.decoder.avc when system default is selected. This is
+independent of successful IJK playback; the video is NOT an IJK optical
+latency test. UI now has a pinned IJK PLAY button; Direct and all YUV
+experiments remain only under collapsed advanced controls, no
+automatic Direct fallback. Default smooth TCP, IJK-only reconnect,
+GPS/PiP and local 5min trace unchanged. IJK has NO validated
+YUV→Openpilot/ONNX frame tap in this version. Exact scope is recorded
+in docs/A500S_IJK_FIRST_LIVE_V1341.md. CI source-layout tests do
+not increase PASS. Gate A **8/20=40%**, Gate B **0/5**.
