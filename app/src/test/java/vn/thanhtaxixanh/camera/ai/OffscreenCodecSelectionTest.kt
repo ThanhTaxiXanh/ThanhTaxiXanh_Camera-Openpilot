@@ -120,4 +120,35 @@ class OffscreenCodecSelectionTest {
             } catch (_:IllegalArgumentException) {}
         }
     }
+
+    @Test fun softwareFirstRemainsSafeDefaultForExistingCallers() {
+        assertTrue(OffscreenCodecSelection.shouldProbeSoftware(
+            OffscreenCodecSelection.Preference.SOFTWARE_FIRST))
+    }
+
+    @Test fun systemDefaultDoesNotProbeSoftwareCandidatesBeforeNativeSelect() {
+        assertFalse(OffscreenCodecSelection.shouldProbeSoftware(
+            OffscreenCodecSelection.Preference.PLATFORM_DEFAULT))
+    }
+
+    @Test fun preferenceDoesNotChangeOutputFreshnessOrInputClockPolicy() {
+        val gate=OffscreenYuvOutputGate()
+        for (choice in OffscreenCodecSelection.Preference.values()) {
+            assertEquals(OffscreenYuvOutputGate.Verdict.STALE_FRAME,
+                gate.check(1L,1L,true,false,1000L,1600L,-1L))
+            assertEquals(OffscreenYuvRejectionPolicy.Action.DROP_AND_INVALIDATE_TEMPORAL,
+                OffscreenYuvRejectionPolicy.action(
+                    gate.check(1L,1L,true,false,1000L,1600L,-1L)))
+            assertEquals(OffscreenGopAgeGate.Age.STALE,
+                OffscreenGopAgeGate().age(1000L,1600L))
+        }
+    }
+
+    @Test fun nativeDefaultSelectionLabelMayAlsoBeSoftwareInAndroid() {
+        // Absence of an explicit codec name is NOT a hardware guarantee.
+        assertFalse(OffscreenCodecSelection.shouldProbeSoftware(
+            OffscreenCodecSelection.Preference.PLATFORM_DEFAULT))
+        assertTrue(OffscreenCodecSelection.softwareAvcCandidates(listOf(
+            c("c2.android.avc.decoder"))).isNotEmpty())
+    }
 }
