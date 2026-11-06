@@ -15,7 +15,8 @@ SIDECAR=(PKG/"H264YuvSidecar.kt").read_text()
 class OwnerSecondaryCodecTrial(unittest.TestCase):
     def test_ui_preference_locked_to_new_session(self):
         a=MAIN.index("yuvCodecButton = Button(this).apply")
-        b=MAIN.index("root.addView(yuvCodecButton)")
+        b=MAIN.index("directAdvancedControls.addView(yuvCodecButton)")
+        self.assertIn("visibility = View.GONE", MAIN[MAIN.index("val directAdvancedControls ="):b])
         controls=MAIN[a:b]
         self.assertIn("backend != null",controls)
         self.assertIn("return@setOnClickListener",controls)
