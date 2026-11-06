@@ -43,8 +43,14 @@ class GpsSpeedTrustGate(
         if (fixElapsedNs > 0L && fixElapsedNs <= newestObservedFixNs) return false
         // A malformed newer fix still advances the timestamp watermark.
         // Otherwise a late, older cached fix could resurrect rejected speed.
-        // Future-dated fixes require reset() to recover the session clock.
-        if (fixElapsedNs > 0L) newestObservedFixNs = fixElapsedNs
+        // Never allow an impossible future fix to poison the watermark far
+        // beyond the actual receipt clock. Still advance to receipt time so
+        // older cached fixes cannot resurrect a rejected speed reading.
+        if (fixElapsedNs > 0L && receivedElapsedNs >= 0L) {
+            newestObservedFixNs = minOf(fixElapsedNs, receivedElapsedNs)
+        } else if (fixElapsedNs > 0L) {
+            newestObservedFixNs = fixElapsedNs
+        }
         if (fixElapsedNs <= 0L || receivedElapsedNs < 0L ||
             fixElapsedNs > receivedElapsedNs) {
             invalidate()

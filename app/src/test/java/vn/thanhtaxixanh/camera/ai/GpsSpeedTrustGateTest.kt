@@ -62,6 +62,19 @@ class GpsSpeedTrustGateTest {
         assertNull(x.currentKmh(10*second))
         assertTrue(x.observe(5f,12*second,12*second))
     }
+    @Test fun farFutureFixCannotPermanentlyPoisonSessionWatermark() {
+        val x=g()
+        assertTrue(x.observe(10f,10*second,10*second,0.2f))
+        // A broken provider reports a fix far ahead of the monotonic clock.
+        assertFalse(x.observe(11f,1_000*second,12*second,0.2f))
+        assertNull(x.currentKmh(12*second))
+        // Reject cached fixes preceding the invalid observation's receipt.
+        assertFalse(x.observe(8f,11*second,12*second,0.2f))
+        assertNull(x.currentKmh(12*second))
+        // The next genuinely fresh fix must recover without session reset.
+        assertTrue(x.observe(7f,13*second,13*second,0.2f))
+        assertEquals(25.2f,x.currentKmh(13*second)!!,0.001f)
+    }
     @Test fun rejectsNonfiniteNegativeAndOutOfRangeSpeed() {
         val x=g()
         assertFalse(x.observe(Float.NaN,10*second,10*second))
