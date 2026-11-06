@@ -37,13 +37,15 @@ class GpsSpeedTrustGate(
         receivedElapsedNs: Long,
         speedAccuracyMps: Float? = null
     ): Boolean {
+        // An older callback is irrelevant even when its payload is malformed.
+        // Check ordering BEFORE invalidation: an invalid late cached fix must
+        // not erase a newer trusted speed (or falsely extend its lifetime).
+        if (fixElapsedNs > 0L && fixElapsedNs <= newestObservedFixNs) return false
         if (fixElapsedNs <= 0L || receivedElapsedNs < 0L ||
             fixElapsedNs > receivedElapsedNs) {
             invalidate()
             return false
         }
-        // A delayed duplicate must not roll back the latest accepted GPS fix.
-        if (fixElapsedNs <= newestObservedFixNs) return false
         newestObservedFixNs = fixElapsedNs
 
         val kmh = speedMps?.times(3.6f)
