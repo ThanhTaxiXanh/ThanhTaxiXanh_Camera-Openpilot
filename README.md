@@ -1,10 +1,23 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.38-software-avc-backpressure (Lite / AI flavors)  
+**Version**: 1.3.39-yuv-stale-output-drop (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
+
+V1.3.39 reviews the owner's 84.03s A500S screen recording and
+actual TTXYUV02 with FOUR SHA-256-valid 640x480 YUV frames. Gaps
+30.205s, 7.272s, 8.723s prove non-temporal only: no YUV→ONNX parity.
+Video diagnostics at 48s show 27 decoder resets and 27 stale YUV
+outputs but zero exhausted input-buffer errors; V1.3.38 reset the
+whole sidecar GOP on every expired DECODED output. V1.3.39 drops
+late output and invalidates temporal data WITHOUT resetting the
+native decoder on age alone; actual corrupted/stale H264 input and
+invalid clocks remain fail-closed. See
+`docs/acceptance/A500S_REAL_FOUR_YUV_REVIEW_20261106.md`.
+Real-device retest required; Gate A 8/20, Gate B 0/5.
+
 
 V1.3.38: Independently reviewed the owner's real 2026-11-06
 A500S field bundle: valid one-frame TTXYUV02 (embedded SHA-256
