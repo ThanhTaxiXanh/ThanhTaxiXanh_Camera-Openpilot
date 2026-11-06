@@ -10,7 +10,7 @@ import statistics
 from pathlib import Path
 
 
-def audit_csv(path, *, minimum_events=10, maximum_latency_ms=1500):
+def audit_csv(path, *, minimum_events=10, maximum_latency_ms=1500, minimum_duration_ms=300000):
     rows = list(csv.DictReader(Path(path).open(encoding="utf-8", newline="")))
     if len(rows) < minimum_events:
         raise ValueError("insufficient independently matched optical events")
@@ -34,12 +34,15 @@ def audit_csv(path, *, minimum_events=10, maximum_latency_ms=1500):
         latencies.append(display - scene)
     ordered = sorted(latencies)
     p95 = ordered[math.ceil(.95 * len(ordered)) - 1]
+    duration_ms = last_scene - float(rows[0]["scene_ms"])
     return {
         "events": len(ordered),
         "median_ms": statistics.median(ordered),
         "p95_ms": p95,
         "maximum_ms": ordered[-1],
-        "duration_scene_ms": last_scene - float(rows[0]["scene_ms"]),
+        "duration_scene_ms": duration_ms,
+        "duration_over_five_minutes": duration_ms > minimum_duration_ms,
+        "eligible_for_independent_field_review": duration_ms > minimum_duration_ms and p95 <= maximum_latency_ms,
         "within_latency_target": p95 <= maximum_latency_ms,
         "gate_b_20_pass": False,
         "note": "Requires independently reviewed >5-minute uninterrupted A500S stream, optical method and uncertainty; numeric audit alone never passes Gate B."
