@@ -407,3 +407,19 @@ age checks remain strict. See
 `docs/acceptance/A500S_REAL_FIELD_BUNDLE_REVIEW_20261106.md`.
 CI success is NOT actual 30fps YUV hardware proof. Gate A **8/20=40%**,
 Gate B **0/5**; #14/#19/#20 NOT PASS.
+
+
+2026-11-06 V1.3.39 independent owner A500S four-frame TTXYUV02 audit:
+all 4 genuine-looking 640x480 YUV420p frames hash-verified, with
+receipt gaps 30.205s, 7.272s, 8.723s (non-temporal diagnostic only).
+Video 84.03s shows A500S Direct primary Surface continuing normally.
+At ~48s software decoder diagnostics show 27 sidecar resets equal to
+27 stale YUV output drops and ZERO exhausted input waits, indicating
+the old on-STale-output reset policy unnecessarily reinitialized the
+codec for a late DECODED image, even when no compressed GOP damage
+was observed. V1.3.39 rejects a stale native YUV output and invalidates
+RAW temporal pairs without tearing down the sidecar decoder; corrupt
+input, invalid clocks, age, epoch and ONNX admission checks remain.
+CI unit tests do not establish real-device YUV continuity: #14 and
+#20 NOT PASS, Gate A **8/20 (40%)**, Gate B **0/5**. See
+`docs/acceptance/A500S_REAL_FOUR_YUV_REVIEW_20261106.md`.
