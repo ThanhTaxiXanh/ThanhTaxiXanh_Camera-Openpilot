@@ -309,27 +309,42 @@ class H264YuvSidecar(
                 val running = codec ?: continue
                 if (resetRequested.get() || item.epoch != epoch.get()) continue
                 try {
-                    var index = running.dequeueInputBuffer(10_000L)
+                    val waitPlan = OffscreenCodecSelection.inputWaitPlan(
+                        softwareDecoder.get())
+                    var index = running.dequeueInputBuffer(waitPlan.timeoutUs)
                     var attempts = 0
                     while (index < 0) {
                         attempts++
                         transientInputWaits.incrementAndGet()
-                        // A decoder may hold inputs until output is released.
-                        // Drain on THIS sidecar worker, without touching the
-                        // Direct preview, and reattempt a BOUNDED 10ms wait.
-                        // Never drop a dependent P-frame individually.
-                        val action = OffscreenCodecSelection.inputBufferUnavailable(
-                            attempts)
-                        if (action ==
-                            OffscreenCodecSelection.InputWaitVerdict.RESYNC_IDR) {
-                            exhaustedInputWaits.incrementAndGet()
-                            error("Offscreen input unavailable after 3 drain/wait " +
-                                "attempts; await next IDR")
-                        }
+                        // The owner-observed software codec could not free
+                        // buffers within the old 30ms retry window, causing
+                        // repeated full GOP resets. Drain output while
+                        // waiting up to a STRICT 160ms software budget.
+                        // Hardware remains at the previous 30ms budget.
+                        // This is an offscreen-only worker: RTP/Surface
+                        // preview must not block on these waits.
                         drain(running, bufferInfo, timeline, ::acceptDecodedImage)
                         if (resetRequested.get() || item.epoch != epoch.get())
                             break
-                        index = running.dequeueInputBuffer(10_000L)
+                        // A software decoder under load may have delayed
+                        // output, but no stale compressed AU may be queued.
+                        if (gate.age(item.capturedElapsedMs,
+                                SystemClock.elapsedRealtime()) !=
+                            OffscreenGopAgeGate.Age.CURRENT) {
+                            staleAccessUnits.incrementAndGet()
+                            dropPredictionChain()
+                            break
+                        }
+                        val action = OffscreenCodecSelection.inputBufferUnavailable(
+                            attempts,waitPlan.maxAttempts)
+                        if (action ==
+                            OffscreenCodecSelection.InputWaitVerdict.RESYNC_IDR) {
+                            exhaustedInputWaits.incrementAndGet()
+                            error("Offscreen input unavailable after " +
+                                waitPlan.maxAttempts + " drain/wait attempts " +
+                                "(" + waitPlan.timeoutUs + "us each); await next IDR")
+                        }
+                        index = running.dequeueInputBuffer(waitPlan.timeoutUs)
                     }
                     if (resetRequested.get() || item.epoch != epoch.get())
                         continue

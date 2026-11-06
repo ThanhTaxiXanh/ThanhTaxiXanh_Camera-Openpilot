@@ -10,7 +10,7 @@
     20
   ],
   "source_gate": "docs/PREDEVICE_90_GATE.md",
-  "note": "Gate A #8 real Android phone Camera2 preview/YUV420 verified from independently inspected owner video, TTXPHONE01 and TTXYUV01 on 2026-11-05; Gate A 8/20. Gate B 0/5 for A500S/ground-truth mandatory criteria. Original synthetic ONNX CPU contract remains only a smoke test, NOT licensed ADAS ground truth.",
+  "note": "As of 2026-11-06 independently reviewed owner A500S real-device bundle: one hash-valid non-temporal YUV frame, >300s local Direct Surface trace (no reconnect; YUV off; optical latency unknown), and 125 GPS samples with two rejected PiP requests. Scope documented in docs/acceptance/A500S_REAL_FIELD_BUNDLE_REVIEW_20261106.md. Gate A remains 8/20, Gate B 0/5. No synthetic or CI PASS promotions.",
   "criteria": [
     {
       "id": 1,
@@ -58,7 +58,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "V1.3.26 fixes both Direct Surface and offscreen YUV MediaCodec creation from validated RTSP SDP H264 SPS dimensions instead of hardcoded 1280x720 (known A500S profile 640x480); 11 pure Kotlin SPS tests. Must independently replay actual A500S RTSP transport and decoder startup/fallback, verify hardware output format and timing before #3 PASS."
+        "next_required": "Scoped independent physical proof: V1.3.35/V1.3.37 owner videos and 2026-11-06 review confirm moving A500S Direct Surface preview, plus TTXLIVE01 300.548s local Surface progress (0 reconnect, YUV OFF). Still needs independently demonstrated RTSP IJK fallback/transport recovery and actual hardware frame timing before #3 PASS. docs/acceptance/A500S_REAL_FIELD_BUNDLE_REVIEW_20261106.md"
       },
       "field": {
         "status": "NOT_REQUIRED",
@@ -254,7 +254,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "V1.3.26 aligns Direct and sidecar decoders with H264 SPS dimensions, in addition to V1.3.25 Android-YUV/ONNX parity tooling. Still requires real A500S H264->MediaCodec YUV->ONNX uninterrupted hardware trace and independently reviewed model/device proof before #14 PASS."
+        "next_required": "Owner 2026-11-06 TTXYUV02 physically delivered ONE SHA-valid nonblank 640x480 A500S native YUV image; real phone video still shows c2.android.avc.decoder [SOFTWARE] 7 input exhaustions/13 resets at ~28s with no delivered output at that instant. V1.3.38 only offers bounded 160ms software input wait/drain, not hardware proof. Must observe continuous non-disruptive A500S YUV, valid temporal pairs, authorized ONNX graph and independent device parity before #14 PASS. docs/acceptance/A500S_REAL_FIELD_BUNDLE_REVIEW_20261106.md"
       },
       "field": {
         "status": "NOT_VERIFIED",
@@ -324,7 +324,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "V1.3.23: on-device TTXGPIP01 recorder/export is available with GPS permission/provider/freshness, real PiP callback, Surface and persisted HUD settings plus JVM audit tests. Collect owner-controlled Android phone trace AND independent screen review verifying GPS denied/stale, PiP enter/exit/rejection, and both unit modes before #19 Gate A PASS."
+        "next_required": "Owner 2026-11-06 real TTXGPIP01: 128.551s, 125 fresh GPS/surface/metric samples in DIRECT, 2 PiP requests BOTH rejected and 0 confirmed enter/exit. This verifies scoped GPS availability/rejection only, NOT the full criterion. Need independent IJK PiP enter/exit/rejection sequence plus metric/imperial persisted settings and GPS stale/denied behavior on device before #19 PASS. docs/acceptance/A500S_REAL_FIELD_BUNDLE_REVIEW_20261106.md"
       },
       "field": {
         "status": "NOT_REQUIRED",
@@ -337,7 +337,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "V1.3.21 added owner-triggered 300s TTXLIVE01 local stream trace with bounded heartbeat, frame progress, reconnect/freeze and SAF export; still must obtain real A500S 5min recording and independently measured optical scene-to-screen delay near 1s before criterion #20 or field gate is PASS."
+        "next_required": "Owner 2026-11-06 actual TTXLIVE01: 300.548s Direct local frame progression, 283/292 progress samples, 0 reconnect, 9 isolated no-progress, faults NONE, but YUV NOT ARMED; optical video covers only 158.733s, scene-to-display delay NOT MEASURED. Independent synchronized 5-minute optical source-to-screen review near 1 second and continuity/visual verification still required. Do NOT claim #20 PASS. docs/acceptance/A500S_REAL_FIELD_BUNDLE_REVIEW_20261106.md"
       },
       "field": {
         "status": "NOT_VERIFIED",

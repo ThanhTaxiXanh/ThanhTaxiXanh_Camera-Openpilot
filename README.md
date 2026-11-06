@@ -1,10 +1,24 @@
 # TTX Camera AI — Independent xADAS Functionality Rebuild
 
 **Package**: vn.thanhtaxixanh.camera.ai  
-**Version**: 1.3.37-yuv-snapshot-diagnostics (Lite / AI flavors)  
+**Version**: 1.3.38-software-avc-backpressure (Lite / AI flavors)  
 **Target**: 70mai A500S (DR2500), Android arm64-v8a.
 
 ## Current acceptance: TWO separate gates (V1.3.17)
+
+V1.3.38: Independently reviewed the owner's real 2026-11-06
+A500S field bundle: valid one-frame TTXYUV02 (embedded SHA-256
+verified, 640x480 real scene), 300.548s TTXLIVE01 Direct Surface
+progress with zero reconnect but YUV NOT ARMED, and 128.551s GPS/PiP
+trace with two rejected PiP requests. See
+`docs/acceptance/A500S_REAL_FIELD_BUNDLE_REVIEW_20261106.md`.
+The phone video showed software AVC YUV input starvation and repeated
+sidecar resets. The independent software secondary decoder now receives
+a larger BUT BOUNDED 160ms maximum input wait/drain policy; hardware
+remains 30ms, and expired frame/GOP epoch checks still fail closed.
+This is not yet physically proven to fix YUV and is not ONNX inference.
+Gate A remains **8/20 (40%)**, Gate B **0/5**.
+
 
 V1.3.37 fixes the owner's inability to save A500S YUV after a real
 106.27-second test: the strict TTXYUV01 collector required 4 frames with
