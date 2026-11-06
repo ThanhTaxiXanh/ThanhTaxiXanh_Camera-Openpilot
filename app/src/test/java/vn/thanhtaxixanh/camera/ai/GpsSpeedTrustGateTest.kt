@@ -117,4 +117,18 @@ class GpsSpeedTrustGateTest {
         assertEquals(28.8f,x.currentKmh(14*second)!!,0.001f)
     }
 
+    @Test fun negativeReceiptClockQuarantinesSessionUntilReset() {
+        val x=g()
+        assertTrue(x.observe(10f,10*second,10*second,0.2f))
+        assertFalse(x.observe(11f,1_000*second,-1L,0.2f))
+        assertNull(x.currentKmh(10*second))
+        // Neither cached nor apparently fresh fixes can restore speed while
+        // the receipt clock is untrustworthy.
+        assertFalse(x.observe(8f,9*second,11*second,0.2f))
+        assertFalse(x.observe(8f,12*second,12*second,0.2f))
+        assertNull(x.currentKmh(12*second))
+        x.reset()
+        assertTrue(x.observe(7f,13*second,13*second,0.2f))
+        assertEquals(25.2f,x.currentKmh(13*second)!!,0.001f)
+    }
 }
