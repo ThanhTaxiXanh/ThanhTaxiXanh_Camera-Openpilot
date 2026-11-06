@@ -1083,6 +1083,19 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     rawBridge?.signalDiscontinuity()
                     rawPairResetPending.set(true)
                     liveYuvCapture.cancel()
+                    // Temporal TTXYUV01 must abandon a broken GOP, but the
+                    // separate TTXYUV02 diagnostic RAM buffer retains the
+                    // already decoded actual pictures (non-temporal only).
+                    runOnUiThread {
+                        if (directCallbackEpoch.isCurrent(callbackLease) &&
+                            backend == Backend.DIRECT &&
+                            ::yuvCaptureButton.isInitialized &&
+                            yuvCaptureButton.text.startsWith("ĐANG THU")) {
+                            yuvCaptureButton.text = "LƯU 4 KHUNG YUV A500S · TẮT"
+                            showStatus("GOP YUV bị ngắt, hủy TTXYUV01 liên tục. " +
+                                "Nếu có khung đã giải mã, chọn XUẤT TTXYUV02.")
+                        }
+                    }
                     // Nonblocking: an in-flight ONNX result from the damaged
                     // GOP is invalid even before the next YUV frame arrives.
                     rawVision?.invalidate()
