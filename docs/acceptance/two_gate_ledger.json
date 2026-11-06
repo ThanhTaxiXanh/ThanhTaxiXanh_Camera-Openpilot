@@ -254,7 +254,7 @@
       "engineering": {
         "status": "CODED",
         "evidence": [],
-        "next_required": "Owner 2026-11-06 TTXYUV02 physically delivered ONE SHA-valid nonblank 640x480 A500S native YUV image; real phone video still shows c2.android.avc.decoder [SOFTWARE] 7 input exhaustions/13 resets at ~28s with no delivered output at that instant. V1.3.38 only offers bounded 160ms software input wait/drain, not hardware proof. Must observe continuous non-disruptive A500S YUV, valid temporal pairs, authorized ONNX graph and independent device parity before #14 PASS. docs/acceptance/A500S_REAL_FIELD_BUNDLE_REVIEW_20261106.md"
+        "next_required": "Independently reviewed owner 2026-11-06 V1.3.38: four checksum-valid genuine-looking A500S 640x480 TTXYUV02 samples, but gaps 30.205s/7.272s/8.723s => non-temporal only, no ONNX. Phone video 84.03s shows independent primary Surface still moving, secondary c2.android.avc.decoder SOFTWARE around t48 with 27 resets and 27 expired YUV outputs, 0 exhausted input-buffer errors. V1.3.39 prevents unnecessary decoder GOP reset for stale DECODED outputs while STILL dropping stale frames and invalidating temporal pairs; corrupt input/clock/epoch remain fail-closed. Still needs continuous physical YUV and authorized ONNX model/proven outputs before PASS. See docs/acceptance/A500S_REAL_FOUR_YUV_REVIEW_20261106.md"
       },
       "field": {
         "status": "NOT_VERIFIED",
