@@ -69,6 +69,26 @@ class OpticalLatencyAuditTest(unittest.TestCase):
         self.assertTrue(report["eligible_for_independent_field_review"])
         self.assertFalse(report["gate_b_20_pass"])
 
+    def test_invalid_thresholds_cannot_force_review_eligibility(self):
+        self.write(self.valid())
+        for kwargs in (
+            {"minimum_events": 0}, {"minimum_events": 1},
+            {"minimum_events": 2.5}, {"minimum_events": True},
+            {"maximum_latency_ms": 0}, {"maximum_latency_ms": -1},
+            {"maximum_latency_ms": float("nan")},
+            {"minimum_duration_ms": 0}, {"minimum_duration_ms": -300000},
+            {"minimum_duration_ms": float("inf")},
+            {"maximum_event_gap_ms": True}, {"maximum_event_gap_ms": float("nan")},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                audit_csv(self.path, **kwargs)
+
+    def test_missing_required_csv_column_fails_closed(self):
+        self.path.write_text("event_id,scene_ms,display_ms,scene_source\\n"
+                             "a,0,950,optical\\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "missing required"):
+            audit_csv(self.path, minimum_events=2)
+
     def test_rejects_nonoptical_source(self):
         rows = self.valid()
         rows[0] = ("0", "0", "950", "optical", "rtp")
