@@ -25,21 +25,31 @@ class PipPreviewLayoutPolicyTest {
     }
 
     @Test fun restoreKeepsPreviouslyCollapsedControlsHidden() {
-        // Android visibility values: VISIBLE=0, INVISIBLE=4, GONE=8.
-        val before = listOf(0, 0, 8, 4)
-        for (index in before.indices) {
-            org.junit.Assert.assertEquals(before[index],
-                PipPreviewLayoutPolicy.restoredVisibility(before, index, before.size, 0))
-        }
+        val header = Any()
+        val preview = Any()
+        val collapsed = Any()
+        val invisible = Any()
+        val before = mapOf(header to 0, preview to 0, collapsed to 8, invisible to 4)
+        org.junit.Assert.assertEquals(8,
+            PipPreviewLayoutPolicy.restoredVisibility(before, collapsed, 0))
+        org.junit.Assert.assertEquals(4,
+            PipPreviewLayoutPolicy.restoredVisibility(before, invisible, 0))
     }
 
-    @Test fun restoreFallsBackWhenHierarchyChanged() {
+    @Test fun reorderedChildrenRetainTheirOwnVisibility() {
+        val first = Any()
+        val second = Any()
+        val saved = mapOf(first to 8, second to 4)
+        val reordered = listOf(second, first)
+        org.junit.Assert.assertEquals(4,
+            PipPreviewLayoutPolicy.restoredVisibility(saved, reordered[0], 0))
+        org.junit.Assert.assertEquals(8,
+            PipPreviewLayoutPolicy.restoredVisibility(saved, reordered[1], 0))
+    }
+
+    @Test fun newChildFallsBackWithoutInheritingAnotherControlsState() {
+        val saved = mapOf(Any() to 8)
         org.junit.Assert.assertEquals(0,
-            PipPreviewLayoutPolicy.restoredVisibility(listOf(8), 1, 3, 0))
-    }
-
-    @Test(expected = IllegalArgumentException::class)
-    fun restoreRejectsOutOfRangeIndex() {
-        PipPreviewLayoutPolicy.restoredVisibility(listOf(0), 2, 1, 0)
+            PipPreviewLayoutPolicy.restoredVisibility(saved, Any(), 0))
     }
 }
