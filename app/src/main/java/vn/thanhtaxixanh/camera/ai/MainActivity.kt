@@ -56,6 +56,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var gpsMonitor: GpsSpeedMonitor
     private var gpsEnabled = false
     private var pipTransitioning = false
+    private var prePipOuterVisibility: List<Int>? = null
     private lateinit var statusView: TextView
     private lateinit var detailView: TextView
     private lateinit var ijkButton: Button
@@ -1826,12 +1827,22 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         val outer = content?.getChildAt(0) as? LinearLayout ?: return
         val previewIndex = outer.indexOfChild(cameraVideoContainer)
         if (previewIndex < 0) return
-        for (i in 0 until outer.childCount) {
-            outer.getChildAt(i).visibility =
-                if (PipPreviewLayoutPolicy.showChild(
-                        isInPictureInPictureMode, i, previewIndex))
-                    View.VISIBLE else View.GONE
+        if (isInPictureInPictureMode && prePipOuterVisibility == null) {
+            prePipOuterVisibility = (0 until outer.childCount).map {
+                outer.getChildAt(it).visibility
+            }
         }
+        val savedVisibility = prePipOuterVisibility
+        for (i in 0 until outer.childCount) {
+            outer.getChildAt(i).visibility = if (isInPictureInPictureMode) {
+                if (PipPreviewLayoutPolicy.showChild(true, i, previewIndex))
+                    View.VISIBLE else View.GONE
+            } else {
+                PipPreviewLayoutPolicy.restoredVisibility(
+                    savedVisibility, i, outer.childCount, View.VISIBLE)
+            }
+        }
+        if (!isInPictureInPictureMode) prePipOuterVisibility = null
         // When other panes hide, video must occupy the PiP window rather
         // than retain a phone-sized fixed height and become cropped.
         cameraVideoContainer.layoutParams = LinearLayout.LayoutParams(
