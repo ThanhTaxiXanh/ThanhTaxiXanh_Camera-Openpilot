@@ -23,4 +23,23 @@ class PipPreviewLayoutPolicyTest {
     fun invalidPreviewIndexCannotHideVideo() {
         PipPreviewLayoutPolicy.showChild(true, 0, -1)
     }
+
+    @Test fun restoreKeepsPreviouslyCollapsedControlsHidden() {
+        // Android visibility values: VISIBLE=0, INVISIBLE=4, GONE=8.
+        val before = listOf(0, 0, 8, 4)
+        for (index in before.indices) {
+            org.junit.Assert.assertEquals(before[index],
+                PipPreviewLayoutPolicy.restoredVisibility(before, index, before.size, 0))
+        }
+    }
+
+    @Test fun restoreFallsBackWhenHierarchyChanged() {
+        org.junit.Assert.assertEquals(0,
+            PipPreviewLayoutPolicy.restoredVisibility(listOf(8), 1, 3, 0))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun restoreRejectsOutOfRangeIndex() {
+        PipPreviewLayoutPolicy.restoredVisibility(listOf(0), 2, 1, 0)
+    }
 }
