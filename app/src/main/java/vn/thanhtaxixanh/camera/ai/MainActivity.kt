@@ -1820,13 +1820,17 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             else GpsPipFieldEvidence.Event.PIP_EXITED_CALLBACK)
         pipTransitioning = false
         val content = findViewById<android.view.ViewGroup>(android.R.id.content)
-        val root = content?.getChildAt(0) as? LinearLayout ?: return
-        for (i in 0 until root.childCount) {
-            val child = root.getChildAt(i)
-            // Keep the preview/video surface only while in PiP.
-            child.visibility =
-                if (isInPictureInPictureMode && child !== cameraVideoContainer)
-                    View.GONE else View.VISIBLE
+        // cameraVideoContainer is a DIRECT child of the outer LinearLayout,
+        // not of the nested controls root. Hide siblings at the actual parent
+        // level or PiP leaves a phone-sized header/button pane on screen.
+        val outer = content?.getChildAt(0) as? LinearLayout ?: return
+        val previewIndex = outer.indexOfChild(cameraVideoContainer)
+        if (previewIndex < 0) return
+        for (i in 0 until outer.childCount) {
+            outer.getChildAt(i).visibility =
+                if (PipPreviewLayoutPolicy.showChild(
+                        isInPictureInPictureMode, i, previewIndex))
+                    View.VISIBLE else View.GONE
         }
         // When other panes hide, video must occupy the PiP window rather
         // than retain a phone-sized fixed height and become cropped.

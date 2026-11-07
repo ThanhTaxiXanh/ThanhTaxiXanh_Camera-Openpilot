@@ -1,0 +1,12 @@
+package vn.thanhtaxixanh.camera.ai
+
+/** Layout decision for the Activity's direct outer children.
+ * The camera preview remains visible in PiP; all siblings are hidden.
+ * No Android dependencies so lifecycle decisions can be tested on the JVM.
+ */
+internal object PipPreviewLayoutPolicy {
+    fun showChild(inPip: Boolean, childIndex: Int, previewIndex: Int): Boolean {
+        require(childIndex >= 0 && previewIndex >= 0)
+        return !inPip || childIndex == previewIndex
+    }
+}
