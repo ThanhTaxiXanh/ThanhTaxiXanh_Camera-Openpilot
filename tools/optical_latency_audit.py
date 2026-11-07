@@ -1,6 +1,6 @@
 """Independent optical scene-to-screen timing audit for Gate B #20.
 
-Input CSV columns: event_id,scene_ms,display_ms,scene_source,display_source.
+Input CSV columns: event_id,scene_ms,display_ms,scene_source,display_source,\nuncertainty_ms (nonnegative combined optical timing uncertainty).
 Times must come from independently inspected optical recording, not RTP/decoder
 timestamps. This tool does not certify the source of a recording.
 """
@@ -29,7 +29,7 @@ def audit_csv(path, *, minimum_events=10, maximum_latency_ms=1500, minimum_durat
     if len(rows) < minimum_events:
         raise ValueError("insufficient independently matched optical events")
     seen = set()
-    latencies = []
+    latencies = []\n    conservative_latencies = []\n    uncertainty_complete = "uncertainty_ms" in reader.fieldnames
     last_scene = last_display = -math.inf
     maximum_observed_gap_ms = 0.0
     for row in rows:
@@ -48,24 +48,24 @@ def audit_csv(path, *, minimum_events=10, maximum_latency_ms=1500, minimum_durat
         if latencies:
             maximum_observed_gap_ms = max(maximum_observed_gap_ms, scene - last_scene, display - last_display)
         last_scene, last_display = scene, display
-        latencies.append(display - scene)
+        latencies.append(display - scene)\n        if uncertainty_complete:\n            raw_uncertainty = row.get("uncertainty_ms")\n            if raw_uncertainty is None or not raw_uncertainty.strip():\n                uncertainty_complete = False\n            else:\n                try:\n                    uncertainty = float(raw_uncertainty)\n                except ValueError as exc:\n                    raise ValueError("invalid optical uncertainty") from exc\n                if not math.isfinite(uncertainty) or uncertainty < 0:\n                    raise ValueError("optical uncertainty must be finite and nonnegative")\n                conservative_latencies.append(display - scene + uncertainty)
     ordered = sorted(latencies)
     p95 = ordered[math.ceil(.95 * len(ordered)) - 1]
-    duration_ms = last_scene - float(rows[0]["scene_ms"])
+    conservative_p95 = (sorted(conservative_latencies)[math.ceil(.95 * len(conservative_latencies)) - 1]\n                        if uncertainty_complete else None)\n    duration_ms = last_scene - float(rows[0]["scene_ms"])
     if not math.isfinite(maximum_event_gap_ms) or maximum_event_gap_ms <= 0:
         raise ValueError("maximum_event_gap_ms must be positive and finite")
     sufficient_coverage = maximum_observed_gap_ms <= maximum_event_gap_ms
     return {
         "events": len(ordered),
         "median_ms": statistics.median(ordered),
-        "p95_ms": p95,
+        "p95_ms": p95,\n        "conservative_p95_ms": conservative_p95,\n        "optical_uncertainty_complete": uncertainty_complete,
         "maximum_ms": ordered[-1],
         "duration_scene_ms": duration_ms,
         "maximum_observed_event_gap_ms": maximum_observed_gap_ms,
         "event_coverage_sufficient": sufficient_coverage,
         "duration_over_five_minutes": duration_ms > minimum_duration_ms,
-        "eligible_for_independent_field_review": duration_ms > minimum_duration_ms and sufficient_coverage and p95 <= maximum_latency_ms,
-        "within_latency_target": p95 <= maximum_latency_ms,
+        "eligible_for_independent_field_review": duration_ms > minimum_duration_ms and sufficient_coverage and uncertainty_complete and conservative_p95 <= maximum_latency_ms,
+        "within_latency_target": uncertainty_complete and conservative_p95 <= maximum_latency_ms,
         "gate_b_20_pass": False,
-        "note": "Requires independently reviewed >5-minute uninterrupted A500S stream, optical method and uncertainty; event coverage is only a sampling guard, not proof of no freezes; numeric audit alone never passes Gate B."
+        "note": "Requires independently reviewed >5-minute uninterrupted A500S stream, optical method and uncertainty; uncertainty is an externally reviewed bound; event coverage is only a sampling guard, not proof of no freezes; numeric audit alone never passes Gate B."
     }
