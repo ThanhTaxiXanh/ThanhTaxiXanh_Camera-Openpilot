@@ -56,7 +56,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var gpsMonitor: GpsSpeedMonitor
     private var gpsEnabled = false
     private var pipTransitioning = false
-    private var prePipOuterVisibility: List<Int>? = null
+    private var prePipOuterVisibility: java.util.IdentityHashMap<View, Int>? = null
     private lateinit var statusView: TextView
     private lateinit var detailView: TextView
     private lateinit var ijkButton: Button
@@ -1828,8 +1828,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         val previewIndex = outer.indexOfChild(cameraVideoContainer)
         if (previewIndex < 0) return
         if (isInPictureInPictureMode && prePipOuterVisibility == null) {
-            prePipOuterVisibility = (0 until outer.childCount).map {
-                outer.getChildAt(it).visibility
+            prePipOuterVisibility = java.util.IdentityHashMap<View, Int>().apply {
+                for (i in 0 until outer.childCount) {
+                    val child = outer.getChildAt(i)
+                    put(child, child.visibility)
+                }
             }
         }
         val savedVisibility = prePipOuterVisibility
@@ -1839,7 +1842,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     View.VISIBLE else View.GONE
             } else {
                 PipPreviewLayoutPolicy.restoredVisibility(
-                    savedVisibility, i, outer.childCount, View.VISIBLE)
+                    savedVisibility, outer.getChildAt(i), View.VISIBLE)
             }
         }
         if (!isInPictureInPictureMode) prePipOuterVisibility = null
