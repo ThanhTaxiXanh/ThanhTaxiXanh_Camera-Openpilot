@@ -14,13 +14,22 @@ from pathlib import Path
 def audit_csv(path, *, minimum_events=10, maximum_latency_ms=1500, minimum_duration_ms=300000, maximum_event_gap_ms=5000):
     # Reject caller-controlled thresholds that could silently make an invalid
     # short/high-latency optical trace appear eligible for field review.
-    if isinstance(minimum_events, bool) or not isinstance(minimum_events, int) or minimum_events < 2:
-        raise ValueError("minimum_events must be an integer >= 2")
+    if isinstance(minimum_events, bool) or not isinstance(minimum_events, int) or minimum_events < 10:
+        raise ValueError("minimum_events must be an integer >= 10")
     for name, value in (("maximum_latency_ms", maximum_latency_ms),
                         ("minimum_duration_ms", minimum_duration_ms),
                         ("maximum_event_gap_ms", maximum_event_gap_ms)):
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
             raise ValueError(f"{name} must be positive and finite")
+    # These are hard acceptance limits, not caller-adjustable targets. A stricter
+    # experiment is allowed, but relaxed thresholds must never produce an
+    # eligible-for-review result for a noncompliant five-minute recording.
+    if maximum_latency_ms > 1500:
+        raise ValueError("maximum_latency_ms cannot exceed the 1500 ms acceptance ceiling")
+    if minimum_duration_ms < 300000:
+        raise ValueError("minimum_duration_ms cannot be below five minutes")
+    if maximum_event_gap_ms > 5000:
+        raise ValueError("maximum_event_gap_ms cannot exceed the 5000 ms coverage ceiling")
     with Path(path).open(encoding="utf-8", newline="") as stream:
         reader = csv.DictReader(stream)
         required = {"event_id", "scene_ms", "display_ms", "scene_source", "display_source"}
