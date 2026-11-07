@@ -6,9 +6,8 @@ package vn.thanhtaxixanh.camera.ai
  */
 internal object PipPreviewLayoutPolicy {
     /** Restore the pre-PiP visibility; do not unhide controls that were GONE. */
-    fun restoredVisibility(saved: List<Int>?, index: Int, count: Int, fallback: Int): Int {
-        require(index in 0 until count)
-        return if (saved?.size == count) saved[index] else fallback
+    fun <T : Any> restoredVisibility(saved: Map<T, Int>?, child: T, fallback: Int): Int {
+        return saved?.get(child) ?: fallback
     }
 
     fun showChild(inPip: Boolean, childIndex: Int, previewIndex: Int): Boolean {

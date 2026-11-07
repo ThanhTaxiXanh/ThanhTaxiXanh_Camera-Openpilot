@@ -32,8 +32,9 @@ class PreviewViewportStructure(unittest.TestCase):
         self.assertIn("if (previewIndex < 0) return", SOURCE)
         self.assertIn("PipPreviewLayoutPolicy.showChild(", SOURCE)
         self.assertIn("PipPreviewLayoutPolicy.restoredVisibility(", SOURCE)
-        self.assertIn("savedVisibility, i, outer.childCount, View.VISIBLE", SOURCE)
+        self.assertIn("savedVisibility, outer.getChildAt(i), View.VISIBLE", SOURCE)
         self.assertIn("prePipOuterVisibility = null", SOURCE)
+        self.assertIn("IdentityHashMap<View, Int>", SOURCE)
         self.assertIn("if (isInPictureInPictureMode) 1f else 0f", SOURCE)
         self.assertIn("if (isInPictureInPictureMode) 0 else normalPreviewHeightPx", SOURCE)
 
