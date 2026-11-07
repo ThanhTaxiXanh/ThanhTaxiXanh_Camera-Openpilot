@@ -15,8 +15,8 @@ class OpticalLatencyAuditTest(unittest.TestCase):
     def write(self, rows):
         with self.path.open("w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
-            w.writerow(("event_id", "scene_ms", "display_ms", "scene_source", "display_source"))
-            w.writerows(rows)
+            w.writerow(("event_id", "scene_ms", "display_ms", "scene_source", "display_source", "uncertainty_ms"))
+            w.writerows([(*row, "100") if len(row) == 5 else row for row in rows])
 
     def valid(self):
         return [(str(i), str(i * 1000), str(i * 1000 + 950), "optical", "optical") for i in range(11)]
@@ -24,7 +24,7 @@ class OpticalLatencyAuditTest(unittest.TestCase):
     def test_valid_observations_are_not_automatic_gate_pass(self):
         self.write(self.valid())
         report = audit_csv(self.path)
-        self.assertEqual(report["p95_ms"], 950)
+        self.assertEqual(report["p95_ms"], 950)\n        self.assertEqual(report["conservative_p95_ms"], 1050)
         self.assertFalse(report["gate_b_20_pass"])
         self.assertFalse(report["duration_over_five_minutes"])
         self.assertFalse(report["eligible_for_independent_field_review"])
@@ -89,7 +89,7 @@ class OpticalLatencyAuditTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing required"):
             audit_csv(self.path, minimum_events=2)
 
-    def test_rejects_nonoptical_source(self):
+    def test_uncertainty_can_push_p95_over_threshold(self):\n        rows = [(*row, "600") for row in\n                [(str(i), str(i * 1000), str(i * 1000 + 950), "optical", "optical") for i in range(311)]]\n        self.write(rows)\n        report = audit_csv(self.path)\n        self.assertEqual(report["p95_ms"], 950)\n        self.assertEqual(report["conservative_p95_ms"], 1550)\n        self.assertFalse(report["eligible_for_independent_field_review"])\n\n    def test_missing_uncertainty_never_qualifies(self):\n        rows = [(*row, "") for row in\n                [(str(i), str(i * 1000), str(i * 1000 + 950), "optical", "optical") for i in range(311)]]\n        self.write(rows)\n        report = audit_csv(self.path)\n        self.assertFalse(report["optical_uncertainty_complete"])\n        self.assertFalse(report["eligible_for_independent_field_review"])\n\n    def test_negative_or_nonfinite_uncertainty_is_rejected(self):\n        for bad in ("-1", "nan", "inf", "garbage"):\n            with self.subTest(bad=bad):\n                rows = [(*row, bad) for row in self.valid()]\n                self.write(rows)\n                with self.assertRaises(ValueError):\n                    audit_csv(self.path)\n\n    def test_rejects_nonoptical_source(self):
         rows = self.valid()
         rows[0] = ("0", "0", "950", "optical", "rtp")
         self.write(rows)
