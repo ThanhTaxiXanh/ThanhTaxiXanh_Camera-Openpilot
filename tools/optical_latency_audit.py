@@ -11,7 +11,21 @@ from pathlib import Path
 
 
 def audit_csv(path, *, minimum_events=10, maximum_latency_ms=1500, minimum_duration_ms=300000, maximum_event_gap_ms=5000):
-    rows = list(csv.DictReader(Path(path).open(encoding="utf-8", newline="")))
+    # Reject caller-controlled thresholds that could silently make an invalid
+    # short/high-latency optical trace appear eligible for field review.
+    if isinstance(minimum_events, bool) or not isinstance(minimum_events, int) or minimum_events < 2:
+        raise ValueError("minimum_events must be an integer >= 2")
+    for name, value in (("maximum_latency_ms", maximum_latency_ms),
+                        ("minimum_duration_ms", minimum_duration_ms),
+                        ("maximum_event_gap_ms", maximum_event_gap_ms)):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            raise ValueError(f"{name} must be positive and finite")
+    with Path(path).open(encoding="utf-8", newline="") as stream:
+        reader = csv.DictReader(stream)
+        required = {"event_id", "scene_ms", "display_ms", "scene_source", "display_source"}
+        if not reader.fieldnames or not required.issubset(reader.fieldnames):
+            raise ValueError("missing required optical event CSV columns")
+        rows = list(reader)
     if len(rows) < minimum_events:
         raise ValueError("insufficient independently matched optical events")
     seen = set()
