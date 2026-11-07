@@ -69,6 +69,8 @@ def audit_csv(path, *, minimum_events=10, maximum_latency_ms=1500, minimum_durat
     conservative_p95 = (sorted(conservative_latencies)[math.ceil(.95 * len(conservative_latencies)) - 1]
                         if uncertainty_complete else None)
     duration_ms = last_scene - float(rows[0]["scene_ms"])
+    display_duration_ms = last_display - float(rows[0]["display_ms"])
+    both_timelines_long_enough = duration_ms > minimum_duration_ms and display_duration_ms > minimum_duration_ms
     if not math.isfinite(maximum_event_gap_ms) or maximum_event_gap_ms <= 0:
         raise ValueError("maximum_event_gap_ms must be positive and finite")
     sufficient_coverage = maximum_observed_gap_ms <= maximum_event_gap_ms
@@ -80,11 +82,12 @@ def audit_csv(path, *, minimum_events=10, maximum_latency_ms=1500, minimum_durat
         "optical_uncertainty_complete": uncertainty_complete,
         "maximum_ms": ordered[-1],
         "duration_scene_ms": duration_ms,
+        "duration_display_ms": display_duration_ms,
         "maximum_observed_event_gap_ms": maximum_observed_gap_ms,
         "event_coverage_sufficient": sufficient_coverage,
-        "duration_over_five_minutes": duration_ms > minimum_duration_ms,
-        "eligible_for_independent_field_review": duration_ms > minimum_duration_ms and sufficient_coverage and uncertainty_complete and conservative_p95 <= maximum_latency_ms,
+        "duration_over_five_minutes": both_timelines_long_enough,
+        "eligible_for_independent_field_review": both_timelines_long_enough and sufficient_coverage and uncertainty_complete and conservative_p95 <= maximum_latency_ms,
         "within_latency_target": uncertainty_complete and conservative_p95 <= maximum_latency_ms,
         "gate_b_20_pass": False,
-        "note": "Requires independently reviewed >5-minute uninterrupted A500S stream, optical method and uncertainty; uncertainty is an externally reviewed bound; event coverage is only a sampling guard, not proof of no freezes; numeric audit alone never passes Gate B."
+        "note": "Requires independently reviewed >5-minute uninterrupted A500S stream, optical method and uncertainty; uncertainty is an externally reviewed bound; both scene and display timelines must span >5 minutes; event coverage is only a sampling guard, not proof of no freezes; numeric audit alone never passes Gate B."
     }
