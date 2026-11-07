@@ -1,6 +1,7 @@
 """Independent optical scene-to-screen timing audit for Gate B #20.
 
-Input CSV columns: event_id,scene_ms,display_ms,scene_source,display_source,\nuncertainty_ms (nonnegative combined optical timing uncertainty).
+Input CSV columns: event_id,scene_ms,display_ms,scene_source,display_source,
+uncertainty_ms (nonnegative combined optical timing uncertainty).
 Times must come from independently inspected optical recording, not RTP/decoder
 timestamps. This tool does not certify the source of a recording.
 """
@@ -29,7 +30,9 @@ def audit_csv(path, *, minimum_events=10, maximum_latency_ms=1500, minimum_durat
     if len(rows) < minimum_events:
         raise ValueError("insufficient independently matched optical events")
     seen = set()
-    latencies = []\n    conservative_latencies = []\n    uncertainty_complete = "uncertainty_ms" in reader.fieldnames
+    latencies = []
+    conservative_latencies = []
+    uncertainty_complete = "uncertainty_ms" in reader.fieldnames
     last_scene = last_display = -math.inf
     maximum_observed_gap_ms = 0.0
     for row in rows:
@@ -48,17 +51,33 @@ def audit_csv(path, *, minimum_events=10, maximum_latency_ms=1500, minimum_durat
         if latencies:
             maximum_observed_gap_ms = max(maximum_observed_gap_ms, scene - last_scene, display - last_display)
         last_scene, last_display = scene, display
-        latencies.append(display - scene)\n        if uncertainty_complete:\n            raw_uncertainty = row.get("uncertainty_ms")\n            if raw_uncertainty is None or not raw_uncertainty.strip():\n                uncertainty_complete = False\n            else:\n                try:\n                    uncertainty = float(raw_uncertainty)\n                except ValueError as exc:\n                    raise ValueError("invalid optical uncertainty") from exc\n                if not math.isfinite(uncertainty) or uncertainty < 0:\n                    raise ValueError("optical uncertainty must be finite and nonnegative")\n                conservative_latencies.append(display - scene + uncertainty)
+        latencies.append(display - scene)
+        if uncertainty_complete:
+            raw_uncertainty = row.get("uncertainty_ms")
+            if raw_uncertainty is None or not raw_uncertainty.strip():
+                uncertainty_complete = False
+            else:
+                try:
+                    uncertainty = float(raw_uncertainty)
+                except ValueError as exc:
+                    raise ValueError("invalid optical uncertainty") from exc
+                if not math.isfinite(uncertainty) or uncertainty < 0:
+                    raise ValueError("optical uncertainty must be finite and nonnegative")
+                conservative_latencies.append(display - scene + uncertainty)
     ordered = sorted(latencies)
     p95 = ordered[math.ceil(.95 * len(ordered)) - 1]
-    conservative_p95 = (sorted(conservative_latencies)[math.ceil(.95 * len(conservative_latencies)) - 1]\n                        if uncertainty_complete else None)\n    duration_ms = last_scene - float(rows[0]["scene_ms"])
+    conservative_p95 = (sorted(conservative_latencies)[math.ceil(.95 * len(conservative_latencies)) - 1]
+                        if uncertainty_complete else None)
+    duration_ms = last_scene - float(rows[0]["scene_ms"])
     if not math.isfinite(maximum_event_gap_ms) or maximum_event_gap_ms <= 0:
         raise ValueError("maximum_event_gap_ms must be positive and finite")
     sufficient_coverage = maximum_observed_gap_ms <= maximum_event_gap_ms
     return {
         "events": len(ordered),
         "median_ms": statistics.median(ordered),
-        "p95_ms": p95,\n        "conservative_p95_ms": conservative_p95,\n        "optical_uncertainty_complete": uncertainty_complete,
+        "p95_ms": p95,
+        "conservative_p95_ms": conservative_p95,
+        "optical_uncertainty_complete": uncertainty_complete,
         "maximum_ms": ordered[-1],
         "duration_scene_ms": duration_ms,
         "maximum_observed_event_gap_ms": maximum_observed_gap_ms,
