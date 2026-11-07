@@ -41,7 +41,7 @@ class OpticalLatencyAuditTest(unittest.TestCase):
     def test_short_display_timeline_cannot_pass_on_long_scene_timeline(self):
         # A delayed first display and gradually shrinking delay can make the
         # displayed observation span shorter than the physical scene capture.
-        rows = [(str(i), str(i * 1000), str(i * 1000 + 10000 - 30 * i), "optical", "optical") for i in range(311)]
+        rows = [(str(i), str(i * 1000), str(i * 1000 + 15000 - 40 * i), "optical", "optical") for i in range(311)]
         self.write(rows)
         report = audit_csv(self.path, maximum_latency_ms=12000)
         self.assertGreater(report["duration_scene_ms"], 300000)
