@@ -43,7 +43,7 @@ class OpticalLatencyAuditTest(unittest.TestCase):
         # displayed observation span shorter than the physical scene capture.
         rows = [(str(i), str(i * 1000), str(i * 1000 + 15000 - 40 * i), "optical", "optical") for i in range(311)]
         self.write(rows)
-        report = audit_csv(self.path, maximum_latency_ms=12000)
+        report = audit_csv(self.path)
         self.assertGreater(report["duration_scene_ms"], 300000)
         self.assertLess(report["duration_display_ms"], 300000)
         self.assertFalse(report["duration_over_five_minutes"])
@@ -76,16 +76,16 @@ class OpticalLatencyAuditTest(unittest.TestCase):
         self.write(rows)
         with self.assertRaises(ValueError):
             audit_csv(self.path, maximum_event_gap_ms=0)
-        report = audit_csv(self.path, maximum_event_gap_ms=31000)
-        self.assertTrue(report["event_coverage_sufficient"])
-        self.assertTrue(report["eligible_for_independent_field_review"])
-        self.assertFalse(report["gate_b_20_pass"])
+        with self.assertRaisesRegex(ValueError, "coverage ceiling"):
+            audit_csv(self.path, maximum_event_gap_ms=31000)
 
     def test_invalid_thresholds_cannot_force_review_eligibility(self):
         self.write(self.valid())
         for kwargs in (
             {"minimum_events": 0}, {"minimum_events": 1},
             {"minimum_events": 2.5}, {"minimum_events": True},
+            {"minimum_events": 9}, {"maximum_latency_ms": 1501},
+            {"minimum_duration_ms": 299999}, {"maximum_event_gap_ms": 5001},
             {"maximum_latency_ms": 0}, {"maximum_latency_ms": -1},
             {"maximum_latency_ms": float("nan")},
             {"minimum_duration_ms": 0}, {"minimum_duration_ms": -300000},
@@ -95,11 +95,19 @@ class OpticalLatencyAuditTest(unittest.TestCase):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 audit_csv(self.path, **kwargs)
 
+    def test_stricter_thresholds_remain_supported(self):
+        rows = [(str(i), str(i * 1000), str(i * 1000 + 950), "optical", "optical") for i in range(311)]
+        self.write(rows)
+        report = audit_csv(self.path, minimum_events=20, maximum_latency_ms=1100,
+                           minimum_duration_ms=305000, maximum_event_gap_ms=2000)
+        self.assertTrue(report["eligible_for_independent_field_review"])
+        self.assertFalse(report["gate_b_20_pass"])
+
     def test_missing_required_csv_column_fails_closed(self):
         self.path.write_text("event_id,scene_ms,display_ms,scene_source\\n"
                              "a,0,950,optical\\n", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "missing required"):
-            audit_csv(self.path, minimum_events=2)
+            audit_csv(self.path, minimum_events=10)
 
     def test_uncertainty_can_push_p95_over_threshold(self):
         rows = [(*row, "600") for row in
