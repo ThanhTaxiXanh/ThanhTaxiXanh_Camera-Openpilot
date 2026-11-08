@@ -83,6 +83,10 @@ def audit_csv(path, *, minimum_events=10, maximum_latency_ms=1500, minimum_durat
     if not math.isfinite(maximum_event_gap_ms) or maximum_event_gap_ms <= 0:
         raise ValueError("maximum_event_gap_ms must be positive and finite")
     sufficient_coverage = maximum_observed_gap_ms <= maximum_event_gap_ms
+    # A low P95 can conceal a small number of multi-second display stalls.
+    # Treat any observed delay over the hard 5s continuity guard as a review
+    # blocker, even when fewer than 5% of samples are affected.
+    no_observed_long_stall = ordered[-1] <= 5000
     return {
         "events": len(ordered),
         "median_ms": statistics.median(ordered),
@@ -94,9 +98,10 @@ def audit_csv(path, *, minimum_events=10, maximum_latency_ms=1500, minimum_durat
         "duration_display_ms": display_duration_ms,
         "maximum_observed_event_gap_ms": maximum_observed_gap_ms,
         "event_coverage_sufficient": sufficient_coverage,
+        "no_observed_long_stall": no_observed_long_stall,
         "duration_over_five_minutes": both_timelines_long_enough,
-        "eligible_for_independent_field_review": both_timelines_long_enough and sufficient_coverage and uncertainty_complete and conservative_p95 <= maximum_latency_ms,
+        "eligible_for_independent_field_review": both_timelines_long_enough and sufficient_coverage and no_observed_long_stall and uncertainty_complete and conservative_p95 <= maximum_latency_ms,
         "within_latency_target": uncertainty_complete and conservative_p95 <= maximum_latency_ms,
         "gate_b_20_pass": False,
-        "note": "Requires independently reviewed >5-minute uninterrupted A500S stream, optical method and uncertainty; uncertainty is an externally reviewed bound; both scene and display timelines must span >5 minutes; event coverage is only a sampling guard, not proof of no freezes; numeric audit alone never passes Gate B."
+        "note": "Requires independently reviewed >5-minute uninterrupted A500S stream, optical method and uncertainty; uncertainty is an externally reviewed bound; both scene and display timelines must span >5 minutes; event coverage and the observed-stall guard cannot prove absence of unsampled freezes; numeric audit alone never passes Gate B."
     }
