@@ -5,7 +5,7 @@ Input JSON: image_width, image_height, fx, fy, cx, cy,
 rotation_world_to_camera (3x3), translation_world_to_camera_m (3),
 markers: [{id, world_m:[x,y,z], observed_px:[u,v]}].
 Coordinate convention: camera x right, y down, z forward.
-This audits measured correspondences; it does not estimate intrinsics or prove provenance.
+Optional distortion_brown_conrady: {k1,k2,p1,p2,k3} in normalized camera coordinates.\nOmit the object for a verified undistorted/pinhole image.\nThis audits measured correspondences; it does not estimate intrinsics or prove provenance.
 """
 import argparse
 import json
@@ -31,6 +31,12 @@ def audit(data, max_rms_px=3.0, max_error_px=6.0):
     fx, fy, cx, cy = (_vec([data[k]], 1, k)[0] for k in ("fx", "fy", "cx", "cy"))
     if fx <= 0 or fy <= 0 or not (0 <= cx < width and 0 <= cy < height):
         raise ValueError("invalid camera intrinsics")
+    distortion = data.get("distortion_brown_conrady")
+    if distortion is not None:
+        required = {"k1", "k2", "p1", "p2", "k3"}
+        if not isinstance(distortion, dict) or set(distortion) != required:
+            raise ValueError("distortion_brown_conrady requires exactly k1,k2,p1,p2,k3")
+        distortion = {k: _vec([distortion[k]], 1, k)[0] for k in required}
     rotation = data["rotation_world_to_camera"]
     if not isinstance(rotation, list) or len(rotation) != 3:
         raise ValueError("rotation must be 3x3")
@@ -64,7 +70,16 @@ def audit(data, max_rms_px=3.0, max_error_px=6.0):
         camera = [sum(r[i][j]*xyz[j] for j in range(3)) + t[i] for i in range(3)]
         if camera[2] <= 0:
             raise ValueError("marker behind camera")
-        projected = [fx*camera[0]/camera[2]+cx, fy*camera[1]/camera[2]+cy]
+        x, y = camera[0] / camera[2], camera[1] / camera[2]
+        if distortion is not None:
+            radius2 = x*x + y*y
+            radial = 1 + distortion["k1"]*radius2 + distortion["k2"]*radius2**2 + distortion["k3"]*radius2**3
+            xd = x*radial + 2*distortion["p1"]*x*y + distortion["p2"]*(radius2 + 2*x*x)
+            yd = y*radial + distortion["p1"]*(radius2 + 2*y*y) + 2*distortion["p2"]*x*y
+            x, y = xd, yd
+        projected = [fx*x+cx, fy*y+cy]
+        if not all(math.isfinite(v) for v in projected):
+            raise ValueError("nonfinite distorted projection")
         errors.append({"id": key, "error_px": math.hypot(projected[0]-observed[0], projected[1]-observed[1]),
                        "projected_px": projected})
     rms = math.sqrt(sum(e["error_px"]**2 for e in errors)/len(errors))
