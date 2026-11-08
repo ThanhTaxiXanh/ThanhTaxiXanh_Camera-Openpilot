@@ -61,6 +61,23 @@ class OpticalLatencyAuditTest(unittest.TestCase):
         report = audit_csv(self.path)
         self.assertFalse(report["eligible_for_independent_field_review"])
 
+    def test_rare_long_optical_stall_blocks_review_despite_good_p95(self):
+        # The last five optical events drift by 1s each: display timestamps
+        # remain monotonic and inter-event gaps remain below 5s, while only
+        # 5/311 samples are high enough to leave nearest-rank P95 unchanged.
+        rows = []
+        for i in range(311):
+            delay = 950 + max(0, i - 305) * 1000
+            rows.append((str(i), str(i * 1000), str(i * 1000 + delay), "optical", "optical"))
+        self.write(rows)
+        report = audit_csv(self.path)
+        self.assertEqual(report["p95_ms"], 950)
+        self.assertTrue(report["event_coverage_sufficient"])
+        self.assertTrue(report["duration_over_five_minutes"])
+        self.assertFalse(report["no_observed_long_stall"])
+        self.assertFalse(report["eligible_for_independent_field_review"])
+        self.assertFalse(report["gate_b_20_pass"])
+
     def test_sparse_events_cannot_claim_uninterrupted_coverage(self):
         rows = [(str(i), str(i * 31000), str(i * 31000 + 950), "optical", "optical") for i in range(11)]
         self.write(rows)
