@@ -27,7 +27,7 @@ class PreviewViewportStructure(unittest.TestCase):
         self.assertIn("background = null", SOURCE)
         self.assertIn("holder.setFormat(PixelFormat.OPAQUE)", SOURCE)
 
-    def test_pip_uses_full_window_and_restores_nonzero_height(self):
+    def test_pip_uses_full_window_and_restores_original_layout(self):
         self.assertIn("val previewIndex = outer.indexOfChild(cameraVideoContainer)", SOURCE)
         self.assertIn("if (previewIndex < 0) return", SOURCE)
         self.assertIn("PipPreviewLayoutPolicy.showChild(", SOURCE)
@@ -35,8 +35,12 @@ class PreviewViewportStructure(unittest.TestCase):
         self.assertIn("savedVisibility, outer.getChildAt(i), View.VISIBLE", SOURCE)
         self.assertIn("prePipOuterVisibility = null", SOURCE)
         self.assertIn("IdentityHashMap<View, Int>", SOURCE)
-        self.assertIn("if (isInPictureInPictureMode) 1f else 0f", SOURCE)
-        self.assertIn("if (isInPictureInPictureMode) 0 else normalPreviewHeightPx", SOURCE)
+        self.assertIn("prePipPreviewLayoutParams = LinearLayout.LayoutParams(current)", SOURCE)
+        self.assertIn("pipParams.height = 0", SOURCE)
+        self.assertIn("pipParams.weight = 1f", SOURCE)
+        self.assertIn("cameraVideoContainer.layoutParams = LinearLayout.LayoutParams(it)", SOURCE)
+        self.assertIn("prePipPreviewLayoutParams = null", SOURCE)
+        self.assertNotIn("if (isInPictureInPictureMode) 0 else normalPreviewHeightPx", SOURCE)
 
 
 if __name__ == "__main__":
