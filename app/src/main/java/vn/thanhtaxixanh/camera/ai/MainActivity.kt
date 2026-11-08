@@ -52,6 +52,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var cameraVideoContainer: FrameLayout
     private lateinit var cameraControlsScroll: ScrollView
     private var normalPreviewHeightPx = 0
+    private var prePipPreviewLayoutParams: LinearLayout.LayoutParams? = null
     private lateinit var adasHud: AdasHudView
     private lateinit var gpsMonitor: GpsSpeedMonitor
     private var gpsEnabled = false
@@ -1846,12 +1847,25 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             }
         }
         if (!isInPictureInPictureMode) prePipOuterVisibility = null
-        // When other panes hide, video must occupy the PiP window rather
-        // than retain a phone-sized fixed height and become cropped.
-        cameraVideoContainer.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            if (isInPictureInPictureMode) 0 else normalPreviewHeightPx,
-            if (isInPictureInPictureMode) 1f else 0f)
+        // Preserve the exact pre-PiP dimensions, margins and gravity. A
+        // fixed-height reconstruction on exit discards user layout settings.
+        if (isInPictureInPictureMode) {
+            if (prePipPreviewLayoutParams == null) {
+                val current = cameraVideoContainer.layoutParams as? LinearLayout.LayoutParams
+                if (current != null) prePipPreviewLayoutParams = LinearLayout.LayoutParams(current)
+            }
+            val pipParams = LinearLayout.LayoutParams(
+                prePipPreviewLayoutParams
+                    ?: cameraVideoContainer.layoutParams as LinearLayout.LayoutParams)
+            pipParams.height = 0
+            pipParams.weight = 1f
+            cameraVideoContainer.layoutParams = pipParams
+        } else {
+            prePipPreviewLayoutParams?.let {
+                cameraVideoContainer.layoutParams = LinearLayout.LayoutParams(it)
+            }
+            prePipPreviewLayoutParams = null
+        }
         if (isInPictureInPictureMode) suspendIjkSurfaceTap()
         if (backend == Backend.IJK && surfaceView.holder.surface.isValid) {
             try { ijk?.setDisplay(surfaceView.holder) } catch (_: Throwable) {}
