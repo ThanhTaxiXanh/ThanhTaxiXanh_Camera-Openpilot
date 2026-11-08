@@ -31,6 +31,36 @@ class MarkerAuditTest(unittest.TestCase):
         self.assertFalse(result["eligible_for_independent_review"])
         self.assertGreater(result["max_error_px"], 6)
 
+    def test_measured_radial_distortion_matches_independent_reference(self):
+        d = fixture()
+        d["distortion_brown_conrady"] = dict(k1=0.2, k2=0, p1=0, p2=0, k3=0)
+        # Independently calculate the radial displacement from measured
+        # normalized coordinates, not from the implementation's projection.
+        for marker in d["markers"]:
+            x = marker["world_m"][0] / 10
+            y = marker["world_m"][1] / 10
+            scale = 1 + 0.2 * (x*x + y*y)
+            marker["observed_px"] = [320 + 400*x*scale, 240 + 400*y*scale]
+        self.assertTrue(audit(d)["eligible_for_independent_review"])
+        d["distortion_brown_conrady"]["k1"] = 0
+        self.assertGreater(audit(d)["rms_error_px"], 0)
+
+    def test_tangential_distortion_changes_projection(self):
+        d = fixture()
+        d["distortion_brown_conrady"] = dict(k1=0, k2=0, p1=0.1, p2=0, k3=0)
+        # x=0.1, y=0.05: delta x=2*p1*x*y=0.001,
+        # delta y=p1*(x*x+3*y*y)=0.00175.
+        d["markers"][5]["observed_px"] = [360.4, 260.7]
+        self.assertAlmostEqual(audit(d)["markers"][5]["error_px"], 0, places=8)
+
+    def test_malformed_distortion_fails_closed(self):
+        for distortion in ({"k1": 0.1}, dict(k1=0, k2=0, p1=0, p2=0, k3=float("nan")),
+                           dict(k1=0, k2=0, p1=True, p2=0, k3=0)):
+            d = fixture()
+            d["distortion_brown_conrady"] = distortion
+            with self.assertRaises(ValueError):
+                audit(d)
+
     def test_bad_rotation_rejected(self):
         d = fixture()
         d["rotation_world_to_camera"][0][0] = 2
