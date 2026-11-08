@@ -60,5 +60,18 @@ class IjkFirstA500sUI(unittest.TestCase):
         self.assertIn("IjkPlaybackHealthGate.Verdict.STALLED", MAIN)
         self.assertIn('recoverIjk(generation,', MAIN)
 
+    def test_pip_restores_original_preview_layout_not_default_height(self):
+        # Structural guard only: device PiP entry/exit and IJK Surface
+        # continuity still require independent Android field evidence.
+        start = MAIN.index("override fun onPictureInPictureModeChanged(")
+        end = MAIN.index("override fun onDestroy()", start)
+        callback = MAIN[start:end]
+        self.assertIn("prePipPreviewLayoutParams = LinearLayout.LayoutParams(current)", callback)
+        self.assertIn("pipParams.height = 0", callback)
+        self.assertIn("pipParams.weight = 1f", callback)
+        self.assertIn("cameraVideoContainer.layoutParams = LinearLayout.LayoutParams(it)", callback)
+        self.assertIn("prePipPreviewLayoutParams = null", callback)
+        self.assertNotIn("else normalPreviewHeightPx", callback)
+
 if __name__ == "__main__":
     unittest.main()
