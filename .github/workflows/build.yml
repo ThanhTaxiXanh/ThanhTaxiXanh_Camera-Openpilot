@@ -30,6 +30,8 @@ jobs:
           python3 -m unittest discover -s tools -p 'test_two_gate.py' -v
       - name: Verify independent optical latency audit fail-closed tests
         run: python3 -m unittest discover -s tools -p 'test_optical_latency_audit.py' -v
+      - name: Audit independent A500S marker reprojection geometry (synthetic negative controls only)
+        run: python3 -m unittest discover -s tools -p 'test_a500s_marker_reprojection_audit.py' -v
       - name: Guard persistent camera viewport on compact screens
         run: python3 -m unittest discover -s tools -p 'test_preview_viewport.py' -v
       - name: Keep IJKPlayer/FFmpeg the primary A500S live UI
